@@ -11,23 +11,26 @@ export default function Sidebar() {
       </div>
       
       <nav className="nav-menu">
-        <a href="/dashboard" className={`nav-item ${pathname === '/dashboard' ? 'active' : ''}`}>
+        <a href="/hermes/dashboard" className={`nav-item ${pathname === '/hermes/dashboard' ? 'active' : ''}`}>
           <span>📊 Dashboard</span>
         </a>
-        <a href="/campaigns" className={`nav-item ${pathname === '/campaigns' ? 'active' : ''}`}>
+        <a href="/hermes/campaigns" className={`nav-item ${pathname === '/hermes/campaigns' ? 'active' : ''}`}>
           <span>📈 Campaigns</span>
         </a>
-        <a href="/numbers" className={`nav-item ${pathname === '/numbers' ? 'active' : ''}`}>
+        <a href="/hermes/numbers" className={`nav-item ${pathname === '/hermes/numbers' ? 'active' : ''}`}>
           <span>📱 Numbers</span>
         </a>
-        <a href="/messages" className={`nav-item ${pathname === '/messages' ? 'active' : ''}`}>
+        <a href="/hermes/messages" className={`nav-item ${pathname === '/hermes/messages' ? 'active' : ''}`}>
           <span>💬 Messages</span>
         </a>
-        <a href="/contacts" className={`nav-item ${pathname === '/contacts' ? 'active' : ''}`}>
+        <a href="/hermes/contacts" className={`nav-item ${pathname === '/hermes/contacts' ? 'active' : ''}`}>
           <span>👥 Contacts</span>
         </a>
-        <a href="/settings" className={`nav-item ${pathname === '/settings' ? 'active' : ''}`}>
+        <a href="/hermes/settings" className={`nav-item ${pathname === '/hermes/settings' ? 'active' : ''}`}>
           <span>⚙️ Settings</span>
+        </a>
+        <a href="/hermes/console" className={`nav-item ${pathname === '/hermes/console' ? 'active' : ''}`}>
+          <span>🖥️ Console</span>
         </a>
       </nav>
 
