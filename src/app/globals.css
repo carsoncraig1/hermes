@@ -206,4 +206,107 @@ a {
 
 .dashboard-content {
   padding: 2rem;
+}
+
+.contacts-table-container {
+  padding: 20px;
+  background: var(--secondary-bg);
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.search-input {
+  width: 100%;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.search-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.contacts-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 10px;
+  color: var(--text-primary);
+}
+
+.contacts-table th,
+.contacts-table td {
+  padding: 14px 16px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.contacts-table th {
+  background-color: rgba(255, 255, 255, 0.05);
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.contacts-table th.sortable {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.contacts-table th.sortable:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.contacts-table tbody tr {
+  transition: background-color 0.2s;
+}
+
+.contacts-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.contacts-table td {
+  font-size: 0.9375rem;
+}
+
+/* Style for the sort indicators */
+.contacts-table th[aria-sort="ascending"] span:after {
+  content: " 🔼";
+  font-size: 0.75em;
+}
+
+.contacts-table th[aria-sort="descending"] span:after {
+  content: " 🔽";
+  font-size: 0.75em;
+}
+
+.filter-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-dropdown {
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.filter-dropdown:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.filter-dropdown option {
+  background: var(--secondary-bg);
+  color: var(--text-primary);
 } 
