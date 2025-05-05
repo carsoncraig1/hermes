@@ -54,16 +54,22 @@ export async function POST(request) {
       }
     }
 
+    // Build the data object for prisma.contact.create
+    const contactData = {
+      firstName: data.firstName,
+      lastName: data.lastName,
+      email: data.email || null,
+      phone: data.phone,
+      clickid: data.clickId || null,
+      subscribed: data.subscribed || true,
+    }
+    // Only add tags if provided
+    if (data.tags) {
+      contactData.tags = data.tags
+    }
+
     const contact = await prisma.contact.create({
-      data: {
-        firstName: data.firstName,
-        lastName: data.lastName,
-        email: data.email || null,
-        phone: data.phone,
-        clickid: data.clickId || null,
-        subscribed: data.subscribed || true,
-        tags: data.tags || [], // Initialize empty array if no tags provided
-      }
+      data: contactData
     })
 
     return Response.json(contact, { status: 201 })
