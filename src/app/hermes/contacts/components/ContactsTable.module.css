@@ -1,0 +1,433 @@
+.tableContainer {
+  background: #1a1a1a;
+  border-radius: 4px;
+  overflow: visible;
+}
+
+.tableHeader {
+  padding: 12px 16px;
+  border-bottom: 1px solid #333;
+  position: relative;
+  z-index: 51;
+}
+
+.tableControls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.filters {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.filterButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #2a2a2a;
+  border: 1px solid #333;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.filterButton:hover {
+  background: #333;
+}
+
+.badge {
+  background: #333;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.showing {
+  color: #888;
+  font-size: 14px;
+  margin-left: 16px;
+}
+
+.addRecord {
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid #333;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tableWrapper {
+  overflow-x: auto;
+  position: relative;
+  z-index: 50;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th {
+  background: #1a1a1a;
+  padding: 12px 16px;
+  text-align: left;
+  color: #888;
+  font-weight: normal;
+  border-bottom: 1px solid #333;
+  white-space: nowrap;
+  position: relative;
+}
+
+.table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #333;
+  color: #fff;
+}
+
+.table tr:hover {
+  background: #2a2a2a;
+}
+
+.checkboxCell {
+  width: 40px;
+  text-align: center !important;
+}
+
+.checkboxCell input {
+  margin: 0;
+}
+
+.loading {
+  padding: 20px;
+  text-align: center;
+  color: #888;
+}
+
+/* Null value styling */
+.table td:empty::before {
+  content: 'null';
+  color: #666;
+  font-style: italic;
+}
+
+/* Column header sorting indicators */
+.table th::after {
+  margin-left: 4px;
+  color: #666;
+}
+
+.table th[data-sortable]:hover {
+  background: #2a2a2a;
+  cursor: pointer;
+}
+
+.searchInput {
+  background: #2a2a2a;
+  border: 1px solid #333;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  width: 200px;
+  outline: none;
+}
+
+.searchInput:focus {
+  border-color: #666;
+}
+
+.searchInput::placeholder {
+  color: #666;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.actionButton {
+  background: #2a2a2a;
+  border: 1px solid #333;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.actionButton:hover {
+  background: #333;
+}
+
+.syncButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #2a2a2a;
+  border: 1px solid #333;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.syncButton:hover {
+  background: #333;
+}
+
+.syncButton.syncing {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.syncing::before {
+  content: '↻';
+  display: inline-block;
+  animation: spin 1s linear infinite;
+  margin-right: 4px;
+}
+
+.tagContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tag {
+  background: #2a2a2a;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  white-space: nowrap;
+  border: 1px solid #ff6b2c;
+}
+
+.filterMenu,
+.fieldsMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  padding: 16px;
+  min-width: 280px;
+  max-height: 80vh;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.filterMenuHeader,
+.fieldsMenuHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #333;
+}
+
+.filterMenuHeader h3,
+.fieldsMenuHeader h3 {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.filterMenuHeader button,
+.fieldsMenuHeader button {
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.filterList,
+.fieldsList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.filterItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filterItem label {
+  color: #888;
+  font-size: 12px;
+}
+
+.filterItem select,
+.filterItem input {
+  background: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #fff;
+  padding: 6px 8px;
+  font-size: 14px;
+  width: 100%;
+}
+
+.filterItem select:focus,
+.filterItem input:focus {
+  border-color: #666;
+  outline: none;
+}
+
+.fieldItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.fieldItem input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  background: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.chevron {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+/* Add styles for the fields menu actions */
+.fieldsMenuActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.fieldsMenuActions button {
+  background: #2a2a2a;
+  border: 1px solid #333;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fieldsMenuActions button:last-child {
+  background: none;
+  border: none;
+  padding: 4px;
+  font-size: 18px;
+  color: #666;
+}
+
+.fieldsMenuActions button:hover {
+  background: #333;
+}
+
+.fieldsMenuActions button:last-child:hover {
+  background: none;
+  color: #888;
+}
+
+.tagFilterInput {
+  position: relative;
+}
+
+.tagSuggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1001;
+}
+
+.tagSuggestion {
+  padding: 8px 12px;
+  cursor: pointer;
+  color: #fff;
+}
+
+.tagSuggestion:hover {
+  background: #2a2a2a;
+  border: 1px solid #ff6b2c;
+}
+
+.selectedTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.selectedTag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #2a2a2a;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 12px;
+  border: 1px solid #ff6b2c;
+}
+
+.selectedTag button {
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.selectedTag button:hover {
+  color: #ff6b2c;
+}
+
+.dateRangeInputs {
+  display: flex;
+  gap: 8px;
+}
+
+.dateRangeInputs input {
+  flex: 1;
+}
+
+/* Add this style */
+.table td[data-column="phone"],
+.table th[data-column="phone"] {
+  min-width: 150px; /* or whatever width fits your phone numbers */
+} 

@@ -1,17 +1,21 @@
-export default function Dashboard() {
+import { getSubscribedContactsCount } from '@/lib/actions/contacts';
+import DashboardHeader from './components/DashboardHeader';
+import './dashboard.css';
+
+export default async function Dashboard() {
+  const subscribedCount = await getSubscribedContactsCount();
+
   return (
     <div className="dashboard-container">
-      <header className="dashboard-header">
-        <h1>Dashboard</h1>
-        <input 
-          type="search" 
-          placeholder="Search..." 
-          className="search-bar"
-        />
-      </header>
+      <DashboardHeader />
       <div className="dashboard-content">
-        {/* Content will go here */}
+        <div className="stats-container">
+          <div className="stat-card">
+            <h3>Subscribed Contacts:</h3>
+            <p className="stat-number">{subscribedCount}</p>
+          </div>
+        </div>
       </div>
     </div>
-  )
+  );
 } 
