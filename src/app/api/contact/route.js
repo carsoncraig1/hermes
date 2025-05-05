@@ -35,7 +35,7 @@ export async function POST(request) {
     const data = await request.json()
     
     // Validate required fields
-    const requiredFields = ['firstName', 'lastName', 'phone'] // Updated required fields
+    const requiredFields = ['firstName', 'lastName'] // Phone is now optional
     const missingFields = requiredFields.filter(field => !data[field])
     
     if (missingFields.length > 0) {
@@ -59,7 +59,7 @@ export async function POST(request) {
       firstName: data.firstName,
       lastName: data.lastName,
       email: data.email || null,
-      phone: data.phone,
+      phone: data.phone || null,
       clickid: data.clickId || null,
       subscribed: data.subscribed || true,
     }

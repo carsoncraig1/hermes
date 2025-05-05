@@ -27,7 +27,7 @@ model Contact {
   firstName       String
   lastName        String
   email           String?
-  phone           String
+  phone           String?
   clickid         String?
   subscribed      Boolean?
   lastMessageSent DateTime?
