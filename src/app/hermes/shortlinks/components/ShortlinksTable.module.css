@@ -1,0 +1,203 @@
+/* Copy the styles from ContactsTable.module.css and adjust as needed */
+.tableContainer {
+  background: #1a1a1a;
+  border-radius: 4px;
+  overflow: visible;
+}
+
+.tableHeader {
+  padding: 12px 16px;
+  border-bottom: 1px solid #333;
+  position: relative;
+  z-index: 51;
+}
+
+.tableControls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.filters {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.filterButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #2a2a2a;
+  border: 1px solid #333;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.filterButton:hover {
+  background: #333;
+}
+
+.badge {
+  background: #333;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.showing {
+  color: #888;
+  font-size: 14px;
+  margin-left: 16px;
+}
+
+.addRecord {
+  background: #FF6B00;
+  color: #fff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.addRecord:hover {
+  background: #ff8533;
+}
+
+.tableWrapper {
+  overflow-x: auto;
+  position: relative;
+  z-index: 50;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th {
+  background: #1a1a1a;
+  padding: 12px 16px;
+  text-align: left;
+  color: #888;
+  font-weight: normal;
+  border-bottom: 1px solid #333;
+  white-space: nowrap;
+  position: relative;
+}
+
+.table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #333;
+  color: #fff;
+}
+
+.table tr:hover {
+  background: #2a2a2a;
+}
+
+.checkboxCell {
+  width: 40px;
+  text-align: center !important;
+}
+
+.checkboxCell input {
+  margin: 0;
+}
+
+.loading {
+  padding: 20px;
+  text-align: center;
+  color: #888;
+}
+
+.table td:empty::before {
+  content: 'null';
+  color: #666;
+  font-style: italic;
+}
+
+.searchInput {
+  background: #2a2a2a;
+  border: 1px solid #333;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  width: 200px;
+  outline: none;
+}
+
+.searchInput:focus {
+  border-color: #666;
+}
+
+.searchInput::placeholder {
+  color: #666;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.actionButton {
+  background: #2a2a2a;
+  border: 1px solid #333;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.actionButton:hover {
+  background: #333;
+}
+
+.syncButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #2a2a2a;
+  border: 1px solid #333;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.syncButton:hover {
+  background: #333;
+}
+
+.syncButton.syncing {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.syncing::before {
+  content: '↻';
+  display: inline-block;
+  animation: spin 1s linear infinite;
+  margin-right: 4px;
+}
+
+/* ... rest of the styles from ContactsTable.module.css ... */ 

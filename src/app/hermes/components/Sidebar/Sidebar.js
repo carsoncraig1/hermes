@@ -17,6 +17,9 @@ export default function Sidebar() {
         <a href="/hermes/campaigns" className={`nav-item ${pathname === '/hermes/campaigns' ? 'active' : ''}`}>
           <span>📈 Campaigns</span>
         </a>
+        <a href="/hermes/shortlinks" className={`nav-item ${pathname === '/hermes/shortlinks' ? 'active' : ''}`}>
+          <span>🔗 Shortlinks</span>
+        </a>
         <a href="/hermes/numbers" className={`nav-item ${pathname === '/hermes/numbers' ? 'active' : ''}`}>
           <span>📱 Numbers</span>
         </a>

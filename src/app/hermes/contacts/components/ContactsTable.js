@@ -514,7 +514,7 @@ export default function ContactsTable({ initialContacts }) {
             className={styles.addRecord}
             onClick={() => setShowAddModal(true)}
           >
-            Add record
+            Add Contact
           </button>
         </div>
       </div>

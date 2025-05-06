@@ -55,12 +55,18 @@
 }
 
 .addRecord {
-  background: #2a2a2a;
+  background: #FF6B00;
   color: #fff;
-  border: 1px solid #333;
+  border: none;
   padding: 6px 12px;
   border-radius: 4px;
   cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.addRecord:hover {
+  background: #ff8533;
 }
 
 .tableWrapper {
