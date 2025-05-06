@@ -1,6 +1,3 @@
-import { redirect } from 'next/navigation'
-import prisma from '@/lib/prisma'
-
 const NotFoundPage = () => (
   <div style={{
     minHeight: '100vh',
@@ -37,36 +34,4 @@ const NotFoundPage = () => (
   </div>
 )
 
-export default async function ShortlinkRedirect({ params }) {
-  const { slug } = params
-
-  try {
-    // First find the shortlink
-    const shortlink = await prisma.shortlink.findUnique({
-      where: { slug }
-    })
-
-    if (!shortlink) {
-      return <NotFoundPage />
-    }
-
-    // Only update click count if we found the shortlink
-    // This is where linkclick metric tracking will be added
-    await prisma.shortlink.update({
-      where: { id: shortlink.id },
-      data: { clicks: { increment: 1 } }
-    })
-
-    // Ensure the URL has a protocol
-    let destinationUrl = shortlink.destination
-    if (!destinationUrl.startsWith('http://') && !destinationUrl.startsWith('https://')) {
-      destinationUrl = `https://${destinationUrl}`
-    }
-
-    // Now redirect
-    redirect(destinationUrl)
-  } catch (error) {
-    console.error('Redirect error:', error)
-    return <NotFoundPage />
-  }
-}
+export default NotFoundPage

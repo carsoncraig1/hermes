@@ -1,5 +1,6 @@
 'use client'
 import { usePathname } from 'next/navigation'
+import Image from 'next/image'
 
 export default function Sidebar() {
   const pathname = usePathname()
@@ -7,7 +8,26 @@ export default function Sidebar() {
   return (
     <div className="sidebar">
       <div className="logo">
-        <h2>Hermes SMS</h2>
+        <h2 style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '8px',
+          fontSize: '1.5rem',
+          fontWeight: 600,
+          letterSpacing: '-0.025em'
+        }}>
+          Hermes 
+          <Image 
+            src="/hermes.png" 
+            alt="Hermes Logo" 
+            width={24} 
+            height={24} 
+            style={{ 
+              display: 'inline-block',
+              verticalAlign: 'middle'
+            }} 
+          />
+        </h2>
       </div>
       
       <nav className="nav-menu">

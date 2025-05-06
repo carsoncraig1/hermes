@@ -101,6 +101,7 @@ export default function ShortlinksTable({ initialShortlinks }) {
             <tr>
               <th>Slug</th>
               <th>Destination</th>
+              <th>Campaign</th>
               <th>Clicks</th>
               <th>Created</th>
               <th>Actions</th>
@@ -111,6 +112,13 @@ export default function ShortlinksTable({ initialShortlinks }) {
               <tr key={link.id}>
                 <td>{link.slug}</td>
                 <td>{link.destination}</td>
+                <td>
+                  {link.campaign?.name ? (
+                    <span className={styles.campaign}>{link.campaign.name}</span>
+                  ) : (
+                    <span className={styles.noCampaign}>-</span>
+                  )}
+                </td>
                 <td>{link.clicks}</td>
                 <td>{new Date(link.createdAt).toLocaleDateString()}</td>
                 <td className={styles.actions}>

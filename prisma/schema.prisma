@@ -13,11 +13,12 @@ datasource db {
 // Models
 
 model Tag {
-  id        Int       @id @default(autoincrement())
-  name      String    @unique
-  contacts  Contact[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id              Int              @id @default(autoincrement())
+  name            String           @unique
+  contacts        Contact[]
+  campaignTargets CampaignTarget[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@map("tags")
 }
@@ -39,13 +40,28 @@ model Contact {
 }
 
 model Campaign {
-  id          Int         @id @default(autoincrement())
-  name        String
-  shortlinks  Shortlink[]
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id              Int              @id @default(autoincrement())
+  name            String
+  shortlinks      Shortlink[]
+  lastMessageSent DateTime?
+  targets         CampaignTarget[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@map("campaigns")
+}
+
+model CampaignTarget {
+  id          Int       @id @default(autoincrement())
+  campaign    Campaign  @relation(fields: [campaignId], references: [id])
+  campaignId  Int
+  targetType  String    // Either "TAG" or "ALL_SUBSCRIBED"
+  tagId       Int?      // Only used when targetType is "TAG"
+  tag         Tag?      @relation(fields: [tagId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("campaign_targets")
 }
 
 model Shortlink {

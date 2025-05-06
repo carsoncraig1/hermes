@@ -5,6 +5,9 @@ import prisma from '@/lib/prisma'
 export async function getShortlinks() {
   try {
     const shortlinks = await prisma.shortlink.findMany({
+      include: {
+        campaign: true
+      },
       orderBy: {
         createdAt: 'desc'
       }
