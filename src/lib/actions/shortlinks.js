@@ -34,19 +34,23 @@ export async function addShortlink(data) {
   }
 }
 
-export async function updateShortlink(data) {
+export async function updateShortlink({ id, slug, destination, campaignId }) {
   try {
     const shortlink = await prisma.shortlink.update({
-      where: { id: data.id },
+      where: { id },
       data: {
-        slug: data.slug,
-        destination: data.destination
+        slug,
+        destination,
+        campaignId: campaignId || null // Allow removing campaign association
+      },
+      include: {
+        campaign: true
       }
     })
     return shortlink
   } catch (error) {
     console.error('Error updating shortlink:', error)
-    throw new Error('Failed to update shortlink')
+    throw error
   }
 }
 

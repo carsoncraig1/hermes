@@ -42,6 +42,7 @@ model Contact {
 model Campaign {
   id              Int              @id @default(autoincrement())
   name            String
+  message         String           @default("")
   shortlinks      Shortlink[]
   lastMessageSent DateTime?
   targets         CampaignTarget[]

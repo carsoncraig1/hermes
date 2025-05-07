@@ -14,6 +14,7 @@ import styles from './ContactsTable.module.css';
 import AddContactModal from './AddContactModal';
 import { addContact, updateContact, deleteContact, getContacts } from '@/lib/actions/contacts';
 import { ChevronDownIcon } from '@heroicons/react/24/solid';
+import EditContactModal from './EditContactModal';
 
 const columnHelper = createColumnHelper();
 
@@ -334,6 +335,7 @@ export default function ContactsTable({ initialContacts }) {
     'id', 'firstName', 'lastName', 'email', 'phone', 'clickId', 
     'subscribed', 'tags', 'lastMessageSent', 'createdAt', 'updatedAt'
   ]);
+  const [editingContact, setEditingContact] = useState(null);
 
   // Add search effect
   useEffect(() => {
@@ -391,15 +393,21 @@ export default function ContactsTable({ initialContacts }) {
     }
   };
 
-  const handleEdit = async (contact) => {
+  const handleEdit = (contact) => {
+    setEditingContact(contact);
+  };
+
+  const handleUpdate = async (updatedContact) => {
     try {
       setLoading(true);
-      const updatedContact = await updateContact(contact);
-      const updatedContacts = contacts.map(c => 
-        c.id === updatedContact.id ? updatedContact : c
-      );
-      setContacts(updatedContacts);
-      setFilteredContacts(updatedContacts);
+      const result = await updateContact(updatedContact);
+      setContacts(contacts.map(c => 
+        c.id === result.id ? result : c
+      ));
+      setFilteredContacts(filteredContacts.map(c => 
+        c.id === result.id ? result : c
+      ));
+      setEditingContact(null);
     } catch (error) {
       console.error('Error updating contact:', error);
     } finally {
@@ -595,6 +603,14 @@ export default function ContactsTable({ initialContacts }) {
           </tbody>
         </table>
       </div>
+
+      {editingContact && (
+        <EditContactModal
+          contact={editingContact}
+          onClose={() => setEditingContact(null)}
+          onUpdate={handleUpdate}
+        />
+      )}
 
       {showAddModal && (
         <AddContactModal

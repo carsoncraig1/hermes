@@ -34,52 +34,26 @@
 .header-left {
   display: flex;
   align-items: center;
-  gap: 0.75rem;  /* Slightly increased gap */
-}
-
-.refresh-button {
-  background: white;  /* White background */
-  border: none;
-  cursor: pointer;
-  padding: 0.25rem;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #1a365d;  /* Keep the blue icon */
-  transition: all 0.2s;
-  margin-left: 0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);  /* Subtle shadow to make it stand out */
-}
-
-.refresh-button:hover {
-  background: white;  /* Keep white background on hover */
-  transform: scale(1.1);  /* Keep the grow effect */
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);  /* Slightly stronger shadow on hover */
-}
-
-.refresh-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.refresh-icon {
-  transition: transform 0.5s ease;
-}
-
-.refresh-icon.spinning {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  gap: 0.75rem;
 }
 
 .dashboard-header h1 {
-  margin: 0;  /* Remove default margin */
+  margin: 0;
+}
+
+.dashboard-content {
+  display: flex;
+  padding: 1rem;
+  gap: 1rem;
+  height: calc(100vh - 80px); /* Adjust based on your header height */
+}
+
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.side-content {
+  width: 300px;
+  overflow-y: auto;
 } 

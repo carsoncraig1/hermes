@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import styles from './ShortlinksTable.module.css'
 import { getShortlinks, deleteShortlink, updateShortlink } from '@/lib/actions/shortlinks'
 import AddShortlinkModal from './AddShortlinkModal'
+import EditShortlinkModal from './EditShortlinkModal'
 
 export default function ShortlinksTable({ initialShortlinks }) {
   const [shortlinks, setShortlinks] = useState(initialShortlinks)
@@ -11,6 +12,7 @@ export default function ShortlinksTable({ initialShortlinks }) {
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
+  const [editingShortlink, setEditingShortlink] = useState(null)
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -57,6 +59,20 @@ export default function ShortlinksTable({ initialShortlinks }) {
   const handleAdd = async (newShortlink) => {
     setShortlinks([newShortlink, ...shortlinks])
     setFilteredShortlinks([newShortlink, ...filteredShortlinks])
+  }
+
+  const handleEdit = (shortlink) => {
+    setEditingShortlink(shortlink)
+  }
+
+  const handleUpdate = (updatedShortlink) => {
+    setShortlinks(shortlinks.map(s => 
+      s.id === updatedShortlink.id ? updatedShortlink : s
+    ))
+    setFilteredShortlinks(filteredShortlinks.map(s => 
+      s.id === updatedShortlink.id ? updatedShortlink : s
+    ))
+    setEditingShortlink(null)
   }
 
   if (loading) {
@@ -140,6 +156,14 @@ export default function ShortlinksTable({ initialShortlinks }) {
           </tbody>
         </table>
       </div>
+
+      {editingShortlink && (
+        <EditShortlinkModal
+          shortlink={editingShortlink}
+          onClose={() => setEditingShortlink(null)}
+          onUpdate={handleUpdate}
+        />
+      )}
 
       {showAddModal && (
         <AddShortlinkModal

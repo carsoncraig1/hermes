@@ -1,5 +1,6 @@
 import { getSubscribedContactsCount } from '@/lib/actions/contacts';
 import DashboardHeader from './components/DashboardHeader';
+import ConsoleWindow from '../console/components/ConsoleWindow';
 import './dashboard.css';
 
 export default async function Dashboard() {
@@ -9,11 +10,16 @@ export default async function Dashboard() {
     <div className="dashboard-container">
       <DashboardHeader />
       <div className="dashboard-content">
-        <div className="stats-container">
-          <div className="stat-card">
-            <h3>Subscribed Contacts:</h3>
-            <p className="stat-number">{subscribedCount}</p>
+        <div className="main-content">
+          <div className="stats-container">
+            <div className="stat-card">
+              <h3>Subscribed Contacts:</h3>
+              <p className="stat-number">{subscribedCount}</p>
+            </div>
           </div>
+        </div>
+        <div className="side-content">
+          <ConsoleWindow compact={true} />
         </div>
       </div>
     </div>
