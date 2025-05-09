@@ -46,7 +46,7 @@ const columns = [
   columnHelper.accessor('email', {
     header: 'Email',
   }),
-  columnHelper.accessor('clickId', {
+  columnHelper.accessor('clickid', {
     header: 'Click ID',
   }),
   columnHelper.accessor('subscribed', {
@@ -264,7 +264,7 @@ function FieldsMenu({ isOpen, onClose, visibleFields, setVisibleFields }) {
     { field: 'lastName', label: 'Last Name' },
     { field: 'email', label: 'Email' },
     { field: 'phone', label: 'Phone' },
-    { field: 'clickId', label: 'Click ID' },
+    { field: 'clickid', label: 'Click ID' },
     { field: 'subscribed', label: 'Subscribed' },
     { field: 'tags', label: 'Tags' },
     { field: 'lastMessageSent', label: 'Last Message' },
@@ -332,7 +332,7 @@ export default function ContactsTable({ initialContacts }) {
   const [showFieldsMenu, setShowFieldsMenu] = useState(false);
   const [activeFilters, setActiveFilters] = useState({});
   const [visibleFields, setVisibleFields] = useState([
-    'id', 'firstName', 'lastName', 'email', 'phone', 'clickId', 
+    'id', 'firstName', 'lastName', 'email', 'phone', 'clickid', 
     'subscribed', 'tags', 'lastMessageSent', 'createdAt', 'updatedAt'
   ]);
   const [editingContact, setEditingContact] = useState(null);
@@ -539,7 +539,7 @@ export default function ContactsTable({ initialContacts }) {
               {visibleFields.includes('lastName') && renderHeader('lastName', 'Last Name ▲')}
               {visibleFields.includes('phone') && renderHeader('phone', 'Phone ▲')}
               {visibleFields.includes('email') && renderHeader('email', 'Email ▲?')}
-              {visibleFields.includes('clickId') && renderHeader('clickId', 'Click ID ▲?')}
+              {visibleFields.includes('clickid') && renderHeader('clickid', 'Click ID ▲?')}
               {visibleFields.includes('subscribed') && renderHeader('subscribed', 'Subscribed ?')}
               {visibleFields.includes('tags') && renderHeader('tags', 'Tags')}
               {visibleFields.includes('lastMessageSent') && renderHeader('lastMessageSent', 'Last Message ?')}
@@ -559,7 +559,7 @@ export default function ContactsTable({ initialContacts }) {
                 {visibleFields.includes('lastName') && <td>{contact.lastName}</td>}
                 {visibleFields.includes('phone') && <td data-column="phone">{contact.phone}</td>}
                 {visibleFields.includes('email') && <td>{contact.email || 'null'}</td>}
-                {visibleFields.includes('clickId') && <td>{contact.clickid || 'null'}</td>}
+                {visibleFields.includes('clickid') && <td>{contact.clickid || 'null'}</td>}
                 {visibleFields.includes('subscribed') && <td>{contact.subscribed?.toString() || 'null'}</td>}
                 {visibleFields.includes('tags') && (
                   <td>

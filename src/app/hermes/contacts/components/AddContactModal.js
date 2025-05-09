@@ -9,7 +9,7 @@ export default function AddContactModal({ onClose, onAdd }) {
     lastName: '',
     email: '',
     phone: '',
-    clickId: '',
+    clickid: '',
     subscribed: true,
     tags: []
   });
@@ -24,7 +24,7 @@ export default function AddContactModal({ onClose, onAdd }) {
       lastName: formState.lastName,
       email: formState.email,
       phone: formState.phone,
-      clickId: formState.clickId,
+      clickid: formState.clickid,
       subscribed: formState.subscribed,
       tags: formState.tags // Tags are already in array format
     };
@@ -112,12 +112,12 @@ export default function AddContactModal({ onClose, onAdd }) {
             />
           </div>
           <div className={styles.formGroup}>
-            <label htmlFor="clickId">Click ID</label>
+            <label htmlFor="clickid">Click ID</label>
             <input
               type="text"
-              id="clickId"
-              name="clickId"
-              value={formState.clickId}
+              id="clickid"
+              name="clickid"
+              value={formState.clickid}
               onChange={handleChange}
             />
           </div>

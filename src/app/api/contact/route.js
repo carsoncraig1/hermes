@@ -111,7 +111,7 @@ export async function PUT(request) {
         lastName: data.lastName,
         email: data.email || null,
         phone: data.phone,
-        clickid: data.clickId || null,
+        clickid: data.clickid || null,
         subscribed: data.subscribed,
         tags: data.tags || [], // Update tags array
       }
