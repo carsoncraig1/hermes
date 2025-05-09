@@ -60,7 +60,7 @@ export async function POST(request) {
       lastName: data.lastName,
       email: data.email || null,
       phone: data.phone || null,
-      clickid: data.clickId || null,
+      clickid: data.clickid || null,
       subscribed: data.subscribed || true,
     }
     // Only add tags if provided
