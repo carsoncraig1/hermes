@@ -63,13 +63,29 @@ export async function POST(request) {
       clickid: data.clickid || null,
       subscribed: data.subscribed || true,
     }
-    // Only add tags if provided
-    if (data.tags) {
-      contactData.tags = data.tags
+
+    // Handle tags - support both single tag and tags array
+    if (data.tag) {
+      contactData.tags = {
+        connectOrCreate: {
+          where: { name: data.tag },
+          create: { name: data.tag }
+        }
+      }
+    } else if (data.tags) {
+      contactData.tags = {
+        connectOrCreate: data.tags.map(tag => ({
+          where: { name: tag },
+          create: { name: tag }
+        }))
+      }
     }
 
     const contact = await prisma.contact.create({
-      data: contactData
+      data: contactData,
+      include: {
+        tags: true
+      }
     })
 
     return Response.json(contact, { status: 201 })
