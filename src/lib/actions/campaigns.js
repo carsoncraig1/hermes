@@ -1,7 +1,7 @@
 'use server'
 import prisma from '@/lib/prisma'
 
-export async function createCampaign({ name, message, targetAllSubscribed, selectedTags }) {
+export async function createCampaign({ name, message, targetAllSubscribed, selectedTags, numbers }) {
   try {
     return await prisma.$transaction(async (tx) => {
       // Create the campaign
@@ -9,6 +9,7 @@ export async function createCampaign({ name, message, targetAllSubscribed, selec
         data: {
           name,
           message,
+          numbers: numbers && numbers.length > 0 ? { connect: numbers.map(id => ({ id })) } : undefined,
         },
         include: {
           targets: {
@@ -16,7 +17,8 @@ export async function createCampaign({ name, message, targetAllSubscribed, selec
               tag: true
             }
           },
-          shortlinks: true
+          shortlinks: true,
+          numbers: true
         }
       })
 
@@ -49,7 +51,8 @@ export async function createCampaign({ name, message, targetAllSubscribed, selec
               tag: true
             }
           },
-          shortlinks: true
+          shortlinks: true,
+          numbers: true
         }
       })
     })
@@ -136,7 +139,7 @@ export async function deleteCampaign(id) {
   }
 }
 
-export async function updateCampaign({ id, name, message, targetAllSubscribed, selectedTags }) {
+export async function updateCampaign({ id, name, message, targetAllSubscribed, selectedTags, numbers }) {
   try {
     return await prisma.$transaction(async (tx) => {
       // Update the campaign
@@ -145,6 +148,7 @@ export async function updateCampaign({ id, name, message, targetAllSubscribed, s
         data: {
           name,
           message,
+          numbers: numbers && numbers.length > 0 ? { set: numbers.map(numId => ({ id: numId })) } : { set: [] },
         }
       })
 
@@ -180,7 +184,8 @@ export async function updateCampaign({ id, name, message, targetAllSubscribed, s
               tag: true
             }
           },
-          shortlinks: true
+          shortlinks: true,
+          numbers: true
         }
       })
     })

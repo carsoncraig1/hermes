@@ -1,17 +1,17 @@
-export default function Numbers() {
+import { getNumbers } from '@/lib/actions/numbers';
+import NumbersTable from './components/NumbersTable';
+
+export default async function Numbers() {
+  const initialNumbers = await getNumbers();
+
   return (
     <div className="dashboard-container">
       <header className="dashboard-header">
         <h1>Numbers</h1>
-        <input 
-          type="search" 
-          placeholder="Search numbers..." 
-          className="search-bar"
-        />
       </header>
       <div className="dashboard-content">
-        {/* Numbers content will go here */}
+        <NumbersTable initialNumbers={initialNumbers} />
       </div>
     </div>
-  )
+  );
 } 

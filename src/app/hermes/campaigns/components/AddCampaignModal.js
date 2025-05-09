@@ -5,12 +5,13 @@ import { createCampaign } from '@/lib/actions/campaigns'
 import { getTags } from '@/lib/actions/tags'
 import styles from './AddCampaignModal.module.css'
 
-export default function AddCampaignModal({ onClose, onAdd }) {
+export default function AddCampaignModal({ onClose, onAdd, numbers = [] }) {
   const [name, setName] = useState('')
   const [message, setMessage] = useState('')
   const [targetAllSubscribed, setTargetAllSubscribed] = useState(false)
   const [selectedTags, setSelectedTags] = useState([])
   const [availableTags, setAvailableTags] = useState([])
+  const [selectedNumbers, setSelectedNumbers] = useState([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -34,7 +35,8 @@ export default function AddCampaignModal({ onClose, onAdd }) {
         name,
         message,
         targetAllSubscribed,
-        selectedTags: targetAllSubscribed ? [] : selectedTags
+        selectedTags: targetAllSubscribed ? [] : selectedTags,
+        numbers: selectedNumbers
       })
       onAdd(campaign)
       onClose()
@@ -125,6 +127,27 @@ export default function AddCampaignModal({ onClose, onAdd }) {
                 )}
               </div>
             )}
+          </div>
+
+          <div className={styles.formGroup}>
+            <label>Attach Numbers</label>
+            <div className={styles.tagsGrid}>
+              {numbers.map(num => (
+                <label key={num.id} className={styles.tagLabel}>
+                  <input
+                    type="checkbox"
+                    checked={selectedNumbers.includes(num.id)}
+                    onChange={() => setSelectedNumbers(prev =>
+                      prev.includes(num.id)
+                        ? prev.filter(id => id !== num.id)
+                        : [...prev, num.id]
+                    )}
+                    className={styles.checkbox}
+                  />
+                  {num.phoneNumber}
+                </label>
+              ))}
+            </div>
           </div>
 
           <div className={styles.actions}>

@@ -4,8 +4,13 @@ import { headers } from 'next/headers'
 export async function middleware(request) {
   const pathname = request.nextUrl.pathname
   
-  // Skip middleware for non-shortlink routes
-  if (pathname.startsWith('/hermes') || pathname === '/') {
+  // Skip middleware for system paths
+  if (
+    pathname.startsWith('/hermes') ||
+    pathname.startsWith('/api') ||
+    pathname.startsWith('/_next') ||
+    pathname === '/'
+  ) {
     return NextResponse.next()
   }
 
@@ -33,5 +38,14 @@ export async function middleware(request) {
 }
 
 export const config = {
-  matcher: '/:slug*'
+  matcher: [
+    /*
+     * Match all paths except:
+     * - /hermes/* (admin interface)
+     * - /api/* (API routes)
+     * - /_next/* (Next.js internals)
+     * - / (homepage)
+     */
+    '/((?!hermes|api|_next).*)',
+  ]
 } 

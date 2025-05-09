@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import styles from './CampaignsTable.module.css'
 import { getCampaigns, deleteCampaign } from '@/lib/actions/campaigns'
+import { getNumbers } from '@/lib/actions/numbers'
 import AddCampaignModal from './AddCampaignModal'
 import EditCampaignModal from './EditCampaignModal'
 
@@ -13,6 +14,7 @@ export default function CampaignsTable({ initialCampaigns }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingCampaign, setEditingCampaign] = useState(null)
+  const [numbers, setNumbers] = useState([])
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -26,6 +28,14 @@ export default function CampaignsTable({ initialCampaigns }) {
     )
     setFilteredCampaigns(filtered)
   }, [searchQuery, campaigns])
+
+  useEffect(() => {
+    async function fetchNumbers() {
+      const nums = await getNumbers();
+      setNumbers(nums);
+    }
+    fetchNumbers();
+  }, []);
 
   const handleSync = async () => {
     setLoading(true)
@@ -123,6 +133,7 @@ export default function CampaignsTable({ initialCampaigns }) {
               <th>Message</th>
               <th>Target Type</th>
               <th>Shortlinks</th>
+              <th>Numbers</th>
               <th>Last Message Sent</th>
               <th>Created</th>
               <th>Actions</th>
@@ -145,6 +156,7 @@ export default function CampaignsTable({ initialCampaigns }) {
                   )) || <span className={styles.noCampaign}>No targets</span>}
                 </td>
                 <td>{campaign.shortlinks.length}</td>
+                <td>{campaign.numbers ? campaign.numbers.length : 0}</td>
                 <td>
                   {campaign.lastMessageSent 
                     ? new Date(campaign.lastMessageSent).toLocaleDateString()
@@ -177,6 +189,7 @@ export default function CampaignsTable({ initialCampaigns }) {
           campaign={editingCampaign}
           onClose={() => setEditingCampaign(null)}
           onUpdate={handleUpdate}
+          numbers={numbers}
         />
       )}
       
@@ -184,6 +197,7 @@ export default function CampaignsTable({ initialCampaigns }) {
         <AddCampaignModal
           onClose={() => setShowAddModal(false)}
           onAdd={handleAdd}
+          numbers={numbers}
         />
       )}
     </div>
