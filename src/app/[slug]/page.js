@@ -1,3 +1,34 @@
+import { redirect } from 'next/navigation'
+import prisma from '@/lib/prisma'
+
+export default async function SlugPage({ params }) {
+  const { slug } = params
+  
+  try {
+    // Look up the shortlink in the database
+    const shortlink = await prisma.shortlink.findUnique({
+      where: { slug }
+    })
+
+    if (shortlink) {
+      // Increment the click count
+      await prisma.shortlink.update({
+        where: { id: shortlink.id },
+        data: { clicks: { increment: 1 } }
+      })
+      
+      // Redirect to the destination URL
+      redirect(shortlink.destination)
+    }
+    
+    // If shortlink not found, show 404 page
+    return <NotFoundPage />
+  } catch (error) {
+    console.error('Error handling shortlink:', error)
+    return <NotFoundPage />
+  }
+}
+
 const NotFoundPage = () => (
   <div style={{
     minHeight: '100vh',
@@ -33,5 +64,3 @@ const NotFoundPage = () => (
     </div>
   </div>
 )
-
-export default NotFoundPage
