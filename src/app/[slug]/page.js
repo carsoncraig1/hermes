@@ -24,6 +24,13 @@ export default async function SlugPage({ params }) {
     // If shortlink not found, show 404 page
     return <NotFoundPage />
   } catch (error) {
+    // Check if this is a Next.js redirect (which is expected behavior)
+    if (error.digest && error.digest.startsWith('NEXT_REDIRECT')) {
+      // This is a normal redirect, re-throw it
+      throw error
+    }
+    
+    // Log actual errors
     console.error('Error handling shortlink:', error)
     return <NotFoundPage />
   }
