@@ -19,8 +19,8 @@ export default async function SlugPage({ params }) {
           enabled: shortlink.enabled 
         })
         
-        // Return 404 status without custom HTML - appears as broken/timeout
-        notFound()
+        // Force connection error to show browser's native error page
+        throw new Error('CONNECTION_REFUSED')
       }
       
       // Increment the click count
@@ -45,8 +45,8 @@ export default async function SlugPage({ params }) {
       slug: slug
     })
     
-    // If shortlink not found, return 404
-    notFound()
+    // Force connection error to show browser's native error page
+    throw new Error('CONNECTION_REFUSED')
   } catch (error) {
     // Check if this is a Next.js redirect (which is expected behavior)
     if (error.digest && error.digest.startsWith('NEXT_REDIRECT')) {
@@ -54,14 +54,20 @@ export default async function SlugPage({ params }) {
       throw error
     }
     
+    // Check if this is an intentional connection error for disabled/missing links
+    if (error.message === 'CONNECTION_REFUSED') {
+      // Re-throw to show browser's native error page
+      throw error
+    }
+    
     // Log actual errors and blocked redirect due to error
     console.error('Error handling shortlink:', error)
     console.log('Blocked redirect due to error:', { 
       slug: slug, 
-      error: error.message,
-      redirectTo: 'https://google.com' 
+      error: error.message
     })
-    redirect('https://google.com')
+    // For real errors, also show connection error
+    throw new Error('CONNECTION_REFUSED')
   }
 }
 
