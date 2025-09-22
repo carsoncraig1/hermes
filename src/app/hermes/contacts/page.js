@@ -1,6 +1,9 @@
 import { getContacts } from '@/lib/actions/contacts'
 import ContactsTable from './components/ContactsTable'
 
+// Force dynamic rendering to avoid build-time database calls
+export const dynamic = 'force-dynamic'
+
 export default async function Contacts() {
   try {
     const contacts = await getContacts()

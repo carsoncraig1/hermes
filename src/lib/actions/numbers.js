@@ -5,10 +5,6 @@ import prisma from '@/lib/prisma'
 export async function getNumbers() {
   try {
     console.log('Starting getNumbers...');
-    
-    // Test database connection
-    await prisma.$connect();
-    console.log('Database connected successfully');
 
     const numbers = await prisma.number.findMany({
       orderBy: {
@@ -25,8 +21,6 @@ export async function getNumbers() {
   } catch (error) {
     console.error('Error fetching numbers:', error);
     throw error;
-  } finally {
-    await prisma.$disconnect();
   }
 }
 

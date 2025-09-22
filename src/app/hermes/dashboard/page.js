@@ -3,6 +3,9 @@ import DashboardHeader from './components/DashboardHeader';
 import ConsoleWindow from '../console/components/ConsoleWindow';
 import './dashboard.css';
 
+// Force dynamic rendering to avoid build-time database calls
+export const dynamic = 'force-dynamic'
+
 export default async function Dashboard() {
   const subscribedCount = await getSubscribedContactsCount();
 

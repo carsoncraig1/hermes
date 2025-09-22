@@ -1,6 +1,9 @@
 import { getCampaigns } from '@/lib/actions/campaigns'
 import CampaignsTable from './components/CampaignsTable'
 
+// Force dynamic rendering to avoid build-time database calls
+export const dynamic = 'force-dynamic'
+
 export default async function Campaigns() {
   const initialCampaigns = await getCampaigns()
 

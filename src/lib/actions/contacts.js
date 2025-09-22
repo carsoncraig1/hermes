@@ -5,12 +5,7 @@ import prisma from '@/lib/prisma'
 export async function getContacts() {
   try {
     console.log('Starting getContacts...');
-    console.log('Database URL:', process.env.DATABASE_URL); // Log DB URL (redact sensitive info)
     
-    // Test database connection
-    await prisma.$connect();
-    console.log('Database connected successfully');
-
     const contacts = await prisma.contact.findMany({
       orderBy: {
         createdAt: 'desc'
@@ -25,8 +20,6 @@ export async function getContacts() {
   } catch (error) {
     console.error('Error fetching contacts:', error);
     throw error;
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
