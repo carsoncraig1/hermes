@@ -17,9 +17,22 @@ export default async function SlugPage({ params }) {
         data: { clicks: { increment: 1 } }
       })
       
+      // Log successful redirect
+      console.log('Successful redirect:', { 
+        slug: shortlink.slug, 
+        destination: shortlink.destination,
+        clicks: shortlink.clicks + 1 
+      })
+      
       // Redirect to the destination URL
       redirect(shortlink.destination)
     }
+    
+    // Log blocked redirect (shortlink not found)
+    console.log('Blocked redirect - shortlink not found:', { 
+      slug: slug, 
+      redirectTo: 'https://google.com' 
+    })
     
     // If shortlink not found, redirect to Google
     redirect('https://google.com')
@@ -30,8 +43,13 @@ export default async function SlugPage({ params }) {
       throw error
     }
     
-    // Log actual errors
+    // Log actual errors and blocked redirect due to error
     console.error('Error handling shortlink:', error)
+    console.log('Blocked redirect due to error:', { 
+      slug: slug, 
+      error: error.message,
+      redirectTo: 'https://google.com' 
+    })
     redirect('https://google.com')
   }
 }
