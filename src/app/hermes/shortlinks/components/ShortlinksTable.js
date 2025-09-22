@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import styles from './ShortlinksTable.module.css'
-import { getShortlinks, deleteShortlink, updateShortlink } from '@/lib/actions/shortlinks'
+import { getShortlinks, deleteShortlink, updateShortlink, toggleShortlinkStatus } from '@/lib/actions/shortlinks'
 import AddShortlinkModal from './AddShortlinkModal'
 import EditShortlinkModal from './EditShortlinkModal'
 
@@ -75,6 +75,23 @@ export default function ShortlinksTable({ initialShortlinks }) {
     setEditingShortlink(null)
   }
 
+  const handleToggleStatus = async (id, currentEnabled) => {
+    try {
+      setLoading(true)
+      const updatedShortlink = await toggleShortlinkStatus(id, !currentEnabled)
+      setShortlinks(shortlinks.map(s => 
+        s.id === id ? updatedShortlink : s
+      ))
+      setFilteredShortlinks(filteredShortlinks.map(s => 
+        s.id === id ? updatedShortlink : s
+      ))
+    } catch (error) {
+      console.error('Error toggling shortlink status:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (loading) {
     return <div className={styles.loading}>Loading...</div>
   }
@@ -119,6 +136,7 @@ export default function ShortlinksTable({ initialShortlinks }) {
               <th>Destination</th>
               <th>Campaign</th>
               <th>Clicks</th>
+              <th>Status</th>
               <th>Created</th>
               <th>Actions</th>
             </tr>
@@ -136,8 +154,20 @@ export default function ShortlinksTable({ initialShortlinks }) {
                   )}
                 </td>
                 <td>{link.clicks}</td>
+                <td>
+                  <span className={`${styles.status} ${link.enabled ? styles.enabled : styles.disabled}`}>
+                    {link.enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </td>
                 <td>{new Date(link.createdAt).toLocaleDateString()}</td>
                 <td className={styles.actions}>
+                  <button 
+                    onClick={() => handleToggleStatus(link.id, link.enabled)}
+                    className={`${styles.actionButton} ${link.enabled ? styles.disableButton : styles.enableButton}`}
+                    disabled={loading}
+                  >
+                    {link.enabled ? 'Disable' : 'Enable'}
+                  </button>
                   <button 
                     onClick={() => handleEdit(link)}
                     className={styles.actionButton}

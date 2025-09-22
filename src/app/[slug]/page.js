@@ -11,6 +11,52 @@ export default async function SlugPage({ params }) {
     })
 
     if (shortlink) {
+      // Check if shortlink is enabled
+      if (!shortlink.enabled) {
+        // Log blocked redirect (shortlink disabled)
+        console.log('Blocked redirect - shortlink disabled:', { 
+          slug: shortlink.slug, 
+          enabled: shortlink.enabled 
+        })
+        
+        // Return 404 page for disabled shortlinks
+        return (
+          <div style={{
+            minHeight: '100vh',
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#1C1C1C',
+            margin: 0,
+            padding: 0
+          }}>
+            <div style={{ textAlign: 'center' }}>
+              <h1 style={{
+                color: '#FF6B00',
+                fontSize: '4rem',
+                fontWeight: 'bold',
+                marginBottom: '1rem'
+              }}>
+                TXT.CX
+              </h1>
+              <div style={{ color: '#FF6B00' }}>
+                <h2 style={{
+                  fontSize: '2.5rem',
+                  fontWeight: 'bold',
+                  marginBottom: '0.5rem'
+                }}>
+                  404
+                </h2>
+                <p style={{ fontSize: '1.25rem' }}>
+                  Link not found
+                </p>
+              </div>
+            </div>
+          </div>
+        )
+      }
+      
       // Increment the click count
       await prisma.shortlink.update({
         where: { id: shortlink.id },

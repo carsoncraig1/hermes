@@ -24,7 +24,11 @@ export async function addShortlink(data) {
     const shortlink = await prisma.shortlink.create({
       data: {
         slug: data.slug,
-        destination: data.destination
+        destination: data.destination,
+        enabled: true // Default to enabled
+      },
+      include: {
+        campaign: true
       }
     })
     return shortlink
@@ -63,5 +67,21 @@ export async function deleteShortlink(id) {
   } catch (error) {
     console.error('Error deleting shortlink:', error)
     throw new Error('Failed to delete shortlink')
+  }
+}
+
+export async function toggleShortlinkStatus(id, enabled) {
+  try {
+    const shortlink = await prisma.shortlink.update({
+      where: { id },
+      data: { enabled },
+      include: {
+        campaign: true
+      }
+    })
+    return shortlink
+  } catch (error) {
+    console.error('Error toggling shortlink status:', error)
+    throw new Error('Failed to toggle shortlink status')
   }
 } 
