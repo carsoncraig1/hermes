@@ -14,21 +14,8 @@ export async function GET(request, { params }) {
     if (shortlink) {
       // Check if shortlink is enabled
       if (!shortlink.enabled) {
-        // Log blocked redirect (shortlink disabled)
-        console.log('Blocked redirect - shortlink disabled:', { 
-          slug: shortlink.slug, 
-          enabled: shortlink.enabled 
-        })
-        
-        // Return corrupted image data to show broken image icon
-        return new NextResponse('corrupted-image-data', {
-          status: 200,
-          headers: {
-            'Content-Type': 'image/png',
-            'Content-Length': '0',
-            'Cache-Control': 'no-cache'
-          }
-        })
+        console.log(`❌ Shortlink disabled: ${slug}`)
+        redirect('http://51353153153421.com/')
       }
       
       // Increment the click count
@@ -37,31 +24,16 @@ export async function GET(request, { params }) {
         data: { clicks: { increment: 1 } }
       })
       
-      // Log successful redirect
-      console.log('Successful redirect:', { 
-        slug: shortlink.slug, 
-        destination: shortlink.destination,
-        clicks: shortlink.clicks + 1 
-      })
+      console.log(`✅ Redirect: ${slug} → ${shortlink.destination} (${shortlink.clicks + 1} clicks)`)
       
       // Redirect to the destination URL
       redirect(shortlink.destination)
     }
     
-    // Log blocked redirect (shortlink not found)
-    console.log('Blocked redirect - shortlink not found:', { 
-      slug: slug
-    })
+    console.log(`❌ Shortlink not found: ${slug}`)
     
-    // Return corrupted image data to show broken image icon
-    return new NextResponse('corrupted-image-data', {
-      status: 200,
-      headers: {
-        'Content-Type': 'image/png',
-        'Content-Length': '0',
-        'Cache-Control': 'no-cache'
-      }
-    })
+    // Redirect to non-existent domain to show browser error
+    redirect('http://51353153153421.com/')
   } catch (error) {
     // Check if this is a Next.js redirect (which is expected behavior)
     if (error.digest && error.digest.startsWith('NEXT_REDIRECT')) {
@@ -69,21 +41,9 @@ export async function GET(request, { params }) {
       throw error
     }
     
-    // Log actual errors and blocked redirect due to error
-    console.error('Error handling shortlink:', error)
-    console.log('Blocked redirect due to error:', { 
-      slug: slug, 
-      error: error.message
-    })
+    console.log(`❌ Shortlink error: ${slug} - ${error.message}`)
     
-    // Return corrupted image data to show broken image icon
-    return new NextResponse('corrupted-image-data', {
-      status: 200,
-      headers: {
-        'Content-Type': 'image/png',
-        'Content-Length': '0',
-        'Cache-Control': 'no-cache'
-      }
-    })
+    // Redirect to non-existent domain to show browser error
+    redirect('http://51353153153421.com/')
   }
 }
