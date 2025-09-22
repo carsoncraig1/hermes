@@ -1,7 +1,8 @@
-import { redirect, notFound } from 'next/navigation'
+import { redirect } from 'next/navigation'
+import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 
-export default async function SlugPage({ params }) {
+export async function GET(request, { params }) {
   const { slug } = params
   
   try {
@@ -19,8 +20,15 @@ export default async function SlugPage({ params }) {
           enabled: shortlink.enabled 
         })
         
-        // Force connection error to show browser's native error page
-        throw new Error('CONNECTION_REFUSED')
+        // Return corrupted image data to show broken image icon
+        return new NextResponse('corrupted-image-data', {
+          status: 200,
+          headers: {
+            'Content-Type': 'image/png',
+            'Content-Length': '0',
+            'Cache-Control': 'no-cache'
+          }
+        })
       }
       
       // Increment the click count
@@ -45,18 +53,19 @@ export default async function SlugPage({ params }) {
       slug: slug
     })
     
-    // Force connection error to show browser's native error page
-    throw new Error('CONNECTION_REFUSED')
+    // Return corrupted image data to show broken image icon
+    return new NextResponse('corrupted-image-data', {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/png',
+        'Content-Length': '0',
+        'Cache-Control': 'no-cache'
+      }
+    })
   } catch (error) {
     // Check if this is a Next.js redirect (which is expected behavior)
     if (error.digest && error.digest.startsWith('NEXT_REDIRECT')) {
       // This is a normal redirect, re-throw it
-      throw error
-    }
-    
-    // Check if this is an intentional connection error for disabled/missing links
-    if (error.message === 'CONNECTION_REFUSED') {
-      // Re-throw to show browser's native error page
       throw error
     }
     
@@ -66,8 +75,15 @@ export default async function SlugPage({ params }) {
       slug: slug, 
       error: error.message
     })
-    // For real errors, also show connection error
-    throw new Error('CONNECTION_REFUSED')
+    
+    // Return corrupted image data to show broken image icon
+    return new NextResponse('corrupted-image-data', {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/png',
+        'Content-Length': '0',
+        'Cache-Control': 'no-cache'
+      }
+    })
   }
 }
-
