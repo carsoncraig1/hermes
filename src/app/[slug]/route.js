@@ -15,7 +15,7 @@ export async function GET(request, { params }) {
       // Check if shortlink is enabled
       if (!shortlink.enabled) {
         console.log(`❌ Shortlink disabled: ${slug}`)
-        redirect('http://51353153153421.com/')
+        redirect('https://lp.stockstotrade.com/algo-trader')
       }
       
       // Increment the click count
@@ -33,7 +33,7 @@ export async function GET(request, { params }) {
     console.log(`❌ Shortlink not found: ${slug}`)
     
     // Redirect to non-existent domain to show browser error
-    redirect('http://51353153153421.com/')
+    redirect('https://lp.stockstotrade.com/algo-trader')
   } catch (error) {
     // Check if this is a Next.js redirect (which is expected behavior)
     if (error.digest && error.digest.startsWith('NEXT_REDIRECT')) {
@@ -44,6 +44,6 @@ export async function GET(request, { params }) {
     console.log(`❌ Shortlink error: ${slug} - ${error.message}`)
     
     // Redirect to non-existent domain to show browser error
-    redirect('http://51353153153421.com/')
+    redirect('https://lp.stockstotrade.com/algo-trader')
   }
 }
