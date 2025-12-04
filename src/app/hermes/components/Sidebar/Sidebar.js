@@ -1,9 +1,15 @@
 'use client'
 import { usePathname } from 'next/navigation'
+import { useSession, signOut } from 'next-auth/react'
 import Image from 'next/image'
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const { data: session } = useSession()
+
+  const handleSignOut = () => {
+    signOut({ callbackUrl: '/login' })
+  }
 
   return (
     <div className="sidebar">
@@ -59,10 +65,16 @@ export default function Sidebar() {
 
       <div className="user-section">
         <div className="user-info">
-          <span className="user-name">Admin User</span>
-          <span className="user-email">admin@txt.cx</span>
+          <span className="user-name">{session?.user?.name || 'User'}</span>
+          <span className="user-email">{session?.user?.email || ''}</span>
         </div>
+        <button 
+          onClick={handleSignOut}
+          className="logout-button"
+        >
+          Sign out
+        </button>
       </div>
     </div>
   )
-} 
+}

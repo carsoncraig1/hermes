@@ -1,10 +1,22 @@
 'use server'
 
 import prisma from '@/lib/prisma'
+import { auth } from '@/lib/auth'
+
+async function getUserId() {
+  const session = await auth()
+  if (!session?.user?.id) {
+    throw new Error('Unauthorized')
+  }
+  return session.user.id
+}
 
 export async function getShortlinks() {
   try {
+    const userId = await getUserId()
+    
     const shortlinks = await prisma.shortlink.findMany({
+      where: { userId },
       include: {
         campaign: true
       },
@@ -21,8 +33,11 @@ export async function getShortlinks() {
 
 export async function addShortlink(data) {
   try {
+    const userId = await getUserId()
+    
     const shortlink = await prisma.shortlink.create({
       data: {
+        userId,
         slug: data.slug,
         destination: data.destination,
         enabled: true // Default to enabled
@@ -40,6 +55,16 @@ export async function addShortlink(data) {
 
 export async function updateShortlink({ id, slug, destination, campaignId }) {
   try {
+    const userId = await getUserId()
+    
+    // Verify ownership
+    const existing = await prisma.shortlink.findFirst({
+      where: { id, userId }
+    })
+    if (!existing) {
+      throw new Error('Shortlink not found')
+    }
+    
     const shortlink = await prisma.shortlink.update({
       where: { id },
       data: {
@@ -60,6 +85,16 @@ export async function updateShortlink({ id, slug, destination, campaignId }) {
 
 export async function deleteShortlink(id) {
   try {
+    const userId = await getUserId()
+    
+    // Verify ownership
+    const existing = await prisma.shortlink.findFirst({
+      where: { id, userId }
+    })
+    if (!existing) {
+      throw new Error('Shortlink not found')
+    }
+    
     await prisma.shortlink.delete({
       where: { id }
     })
@@ -72,6 +107,16 @@ export async function deleteShortlink(id) {
 
 export async function toggleShortlinkStatus(id, enabled) {
   try {
+    const userId = await getUserId()
+    
+    // Verify ownership
+    const existing = await prisma.shortlink.findFirst({
+      where: { id, userId }
+    })
+    if (!existing) {
+      throw new Error('Shortlink not found')
+    }
+    
     const shortlink = await prisma.shortlink.update({
       where: { id },
       data: { enabled },
@@ -84,4 +129,4 @@ export async function toggleShortlinkStatus(id, enabled) {
     console.error('Error toggling shortlink status:', error)
     throw new Error('Failed to toggle shortlink status')
   }
-} 
+}

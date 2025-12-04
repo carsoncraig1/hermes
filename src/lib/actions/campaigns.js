@@ -1,12 +1,24 @@
 'use server'
 import prisma from '@/lib/prisma'
+import { auth } from '@/lib/auth'
+
+async function getUserId() {
+  const session = await auth()
+  if (!session?.user?.id) {
+    throw new Error('Unauthorized')
+  }
+  return session.user.id
+}
 
 export async function createCampaign({ name, message, targetAllSubscribed, selectedTags, numbers }) {
   try {
+    const userId = await getUserId()
+    
     return await prisma.$transaction(async (tx) => {
       // Create the campaign
       const campaign = await tx.campaign.create({
         data: {
+          userId,
           name,
           message,
           numbers: numbers && numbers.length > 0 ? { connect: numbers.map(id => ({ id })) } : undefined,
@@ -64,8 +76,10 @@ export async function createCampaign({ name, message, targetAllSubscribed, selec
 
 // Function to get all contacts for a campaign
 export async function getCampaignContacts(campaignId) {
-  const campaign = await prisma.campaign.findUnique({
-    where: { id: campaignId },
+  const userId = await getUserId()
+  
+  const campaign = await prisma.campaign.findFirst({
+    where: { id: campaignId, userId },
     include: {
       targets: {
         include: {
@@ -77,10 +91,11 @@ export async function getCampaignContacts(campaignId) {
 
   if (!campaign) throw new Error('Campaign not found')
 
-  // If any target is ALL_SUBSCRIBED, get all subscribed contacts
+  // If any target is ALL_SUBSCRIBED, get all subscribed contacts for this user
   if (campaign.targets.some(target => target.targetType === 'ALL_SUBSCRIBED')) {
     return await prisma.contact.findMany({
       where: {
+        userId,
         subscribed: true
       }
     })
@@ -93,6 +108,7 @@ export async function getCampaignContacts(campaignId) {
 
   return await prisma.contact.findMany({
     where: {
+      userId,
       subscribed: true,
       tags: {
         some: {
@@ -107,7 +123,10 @@ export async function getCampaignContacts(campaignId) {
 
 export async function getCampaigns() {
   try {
+    const userId = await getUserId()
+    
     const campaigns = await prisma.campaign.findMany({
+      where: { userId },
       include: {
         targets: {
           include: {
@@ -129,6 +148,16 @@ export async function getCampaigns() {
 
 export async function deleteCampaign(id) {
   try {
+    const userId = await getUserId()
+    
+    // Verify ownership
+    const existing = await prisma.campaign.findFirst({
+      where: { id, userId }
+    })
+    if (!existing) {
+      throw new Error('Campaign not found')
+    }
+    
     await prisma.campaign.delete({
       where: { id }
     })
@@ -141,6 +170,16 @@ export async function deleteCampaign(id) {
 
 export async function updateCampaign({ id, name, message, targetAllSubscribed, selectedTags, numbers }) {
   try {
+    const userId = await getUserId()
+    
+    // Verify ownership
+    const existing = await prisma.campaign.findFirst({
+      where: { id, userId }
+    })
+    if (!existing) {
+      throw new Error('Campaign not found')
+    }
+    
     return await prisma.$transaction(async (tx) => {
       // Update the campaign
       const campaign = await tx.campaign.update({
@@ -193,4 +232,4 @@ export async function updateCampaign({ id, name, message, targetAllSubscribed, s
     console.error('Error updating campaign:', error)
     throw error
   }
-} 
+}

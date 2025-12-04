@@ -1,7 +1,8 @@
 import { Inter } from 'next/font/google'
+import { auth } from '@/lib/auth'
 import Sidebar from './components/Sidebar/Sidebar'
+import SessionProvider from './components/SessionProvider'
 import './globals.css'
-import { Metadata } from 'next'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -16,13 +17,17 @@ export const metadata = {
   ],
 }
 
-export default function HermesLayout({ children }) {
+export default async function HermesLayout({ children }) {
+  const session = await auth()
+
   return (
     <html lang="en">
       <body className={inter.className}>
-        <Sidebar />
-        {children}
+        <SessionProvider session={session}>
+          <Sidebar />
+          {children}
+        </SessionProvider>
       </body>
     </html>
   )
-} 
+}
