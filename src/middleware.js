@@ -1,17 +1,10 @@
-import { auth } from "@/lib/auth"
 import { NextResponse } from "next/server"
+import { getToken } from "next-auth/jwt"
 
-export default auth((req) => {
-  const isLoggedIn = !!req.auth
-  const pathname = req.nextUrl.pathname
+export async function middleware(request) {
+  const pathname = request.nextUrl.pathname
   
-  // Protected routes - require authentication
-  const isHermesRoute = pathname.startsWith('/hermes')
-  
-  // Auth routes - redirect to dashboard if already logged in
-  const isAuthRoute = pathname === '/login' || pathname === '/signup'
-  
-  // Skip middleware for API routes (except protected ones), static files, etc.
+  // Skip middleware for static files and API routes
   if (
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/_next') ||
@@ -23,29 +16,33 @@ export default auth((req) => {
     return NextResponse.next()
   }
 
+  // Check for JWT token
+  const token = await getToken({ 
+    req: request, 
+    secret: process.env.AUTH_SECRET 
+  })
+  
+  const isLoggedIn = !!token
+  const isHermesRoute = pathname.startsWith('/hermes')
+  const isAuthRoute = pathname === '/login' || pathname === '/signup'
+
   // Redirect to login if trying to access protected route while not logged in
   if (isHermesRoute && !isLoggedIn) {
-    const loginUrl = new URL('/login', req.url)
+    const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('callbackUrl', pathname)
     return NextResponse.redirect(loginUrl)
   }
 
   // Redirect to dashboard if trying to access auth routes while logged in
   if (isAuthRoute && isLoggedIn) {
-    return NextResponse.redirect(new URL('/hermes/dashboard', req.url))
+    return NextResponse.redirect(new URL('/hermes/dashboard', request.url))
   }
 
   return NextResponse.next()
-})
+}
 
 export const config = {
   matcher: [
-    /*
-     * Match all paths except:
-     * - /_next/* (Next.js internals)
-     * - /api/shortlinks/* (public shortlink redirect API)
-     * - Static files (favicon, images)
-     */
-    '/((?!_next/static|_next/image).*)',
+    '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 }

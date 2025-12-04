@@ -1,10 +1,8 @@
-import NextAuth from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import prisma from "@/lib/prisma"
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  // Don't use adapter with Credentials provider + JWT strategy
-  // The adapter is for OAuth providers that need to store accounts
+// Auth options for NextAuth v4
+export const authOptions = {
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // 30 days
@@ -30,9 +28,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             return null
           }
 
-          // Dynamic import to avoid Edge Runtime bundling issues
-          const { verifyPassword } = await import('@/lib/password')
-          const isPasswordValid = await verifyPassword(
+          const bcrypt = require('bcryptjs')
+          const isPasswordValid = await bcrypt.compare(
             credentials.password,
             user.password
           )
@@ -76,5 +73,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
     error: "/login",
   },
-  trustHost: true,
-})
+  secret: process.env.AUTH_SECRET,
+}
+
+// Helper to get session in server components/actions
+export async function auth() {
+  const { getServerSession } = await import("next-auth")
+  return getServerSession(authOptions)
+}
