@@ -1,15 +1,15 @@
 import NextAuth from "next-auth"
-import { PrismaAdapter } from "@auth/prisma-adapter"
 import CredentialsProvider from "next-auth/providers/credentials"
 import prisma from "@/lib/prisma"
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(prisma),
+  // Don't use adapter with Credentials provider + JWT strategy
+  // The adapter is for OAuth providers that need to store accounts
   session: {
-    strategy: "jwt", // Use JWT for credentials provider compatibility
+    strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   providers: [
-    // Email/Password authentication
     CredentialsProvider({
       name: "credentials",
       credentials: {
@@ -18,33 +18,38 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error("Email and password are required")
+          return null
         }
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email }
-        })
+        try {
+          const user = await prisma.user.findUnique({
+            where: { email: credentials.email }
+          })
 
-        if (!user || !user.password) {
-          throw new Error("Invalid email or password")
-        }
+          if (!user || !user.password) {
+            return null
+          }
 
-        // Dynamic import to avoid Edge Runtime bundling issues
-        const { verifyPassword } = await import('@/lib/password')
-        const isPasswordValid = await verifyPassword(
-          credentials.password,
-          user.password
-        )
+          // Dynamic import to avoid Edge Runtime bundling issues
+          const { verifyPassword } = await import('@/lib/password')
+          const isPasswordValid = await verifyPassword(
+            credentials.password,
+            user.password
+          )
 
-        if (!isPasswordValid) {
-          throw new Error("Invalid email or password")
-        }
+          if (!isPasswordValid) {
+            return null
+          }
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          image: user.image,
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            image: user.image,
+          }
+        } catch (error) {
+          console.error('Auth error:', error)
+          return null
         }
       }
     }),
@@ -53,12 +58,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id
+        token.email = user.email
+        token.name = user.name
       }
       return token
     },
     async session({ session, token }) {
       if (token && session.user) {
         session.user.id = token.id
+        session.user.email = token.email
+        session.user.name = token.name
       }
       return session
     },
@@ -67,4 +76,5 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
     error: "/login",
   },
+  trustHost: true,
 })
