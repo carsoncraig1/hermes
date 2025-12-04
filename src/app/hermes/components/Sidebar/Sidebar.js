@@ -8,7 +8,9 @@ export default function Sidebar() {
   const { data: session } = useSession()
 
   const handleSignOut = () => {
-    signOut({ callbackUrl: '/login' })
+    // Use window.location.origin to get the current domain dynamically
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+    signOut({ callbackUrl: `${baseUrl}/login` })
   }
 
   return (
