@@ -16,10 +16,10 @@ export async function middleware(request) {
     return NextResponse.next()
   }
 
-  // Check for JWT token
+  // Check for JWT token - support both AUTH_SECRET and NEXTAUTH_SECRET
   const token = await getToken({ 
     req: request, 
-    secret: process.env.AUTH_SECRET 
+    secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET
   })
   
   const isLoggedIn = !!token

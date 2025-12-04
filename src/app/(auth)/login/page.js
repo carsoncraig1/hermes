@@ -9,10 +9,11 @@ function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/hermes/dashboard'
+  const errorParam = searchParams.get('error')
   
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState(errorParam ? 'Authentication failed. Please try again.' : '')
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e) {
@@ -25,17 +26,28 @@ function LoginForm() {
         email,
         password,
         redirect: false,
+        callbackUrl,
       })
 
+      console.log('SignIn result:', result)
+
       if (result?.error) {
-        setError('Invalid email or password')
+        setError(result.error === 'CredentialsSignin' 
+          ? 'Invalid email or password' 
+          : result.error)
         setLoading(false)
         return
       }
 
-      router.push(callbackUrl)
-      router.refresh()
+      if (result?.ok) {
+        router.push(callbackUrl)
+        router.refresh()
+      } else {
+        setError('Login failed. Please try again.')
+        setLoading(false)
+      }
     } catch (err) {
+      console.error('Login error:', err)
       setError('Something went wrong. Please try again.')
       setLoading(false)
     }

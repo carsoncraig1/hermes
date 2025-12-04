@@ -73,7 +73,9 @@ export const authOptions = {
     signIn: "/login",
     error: "/login",
   },
-  secret: process.env.AUTH_SECRET,
+  // Support both AUTH_SECRET and NEXTAUTH_SECRET
+  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
+  debug: process.env.NODE_ENV === 'development',
 }
 
 // Helper to get session in server components/actions
