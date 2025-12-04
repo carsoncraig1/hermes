@@ -1,9 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Suppress punycode deprecation warning
+  // Map AUTH_URL to NEXTAUTH_URL for NextAuth v4 compatibility
+  env: {
+    NEXTAUTH_URL: process.env.AUTH_URL || process.env.NEXTAUTH_URL,
+    NEXTAUTH_SECRET: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
+  },
   webpack: (config, { isServer }) => {
     if (!isServer) {
-      // Don't resolve 'fs' module on the client
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
@@ -13,13 +16,6 @@ const nextConfig = {
     }
     return config
   },
-  // Experimental features for Auth.js compatibility
-  experimental: {
-    serverActions: {
-      bodySizeLimit: '2mb',
-    },
-  },
 }
 
 module.exports = nextConfig
-
