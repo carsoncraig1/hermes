@@ -47,5 +47,5 @@ export const config = {
      * - Static files (favicon, images)
      */
     '/((?!_next/static|_next/image).*)',
-  ]
+  ],
 }

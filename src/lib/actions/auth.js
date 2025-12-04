@@ -1,7 +1,7 @@
 'use server'
 
 import prisma from '@/lib/prisma'
-import bcrypt from 'bcryptjs'
+import { hashPassword } from '@/lib/password'
 import { signIn } from '@/lib/auth'
 
 export async function register(data) {
@@ -18,7 +18,7 @@ export async function register(data) {
     }
 
     // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12)
+    const hashedPassword = await hashPassword(password)
 
     // Create user
     const user = await prisma.user.create({
@@ -50,4 +50,3 @@ export async function login(data) {
     return { error: 'Invalid email or password' }
   }
 }
-

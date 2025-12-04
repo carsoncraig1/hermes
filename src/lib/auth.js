@@ -1,8 +1,6 @@
 import NextAuth from "next-auth"
 import { PrismaAdapter } from "@auth/prisma-adapter"
 import CredentialsProvider from "next-auth/providers/credentials"
-import GoogleProvider from "next-auth/providers/google"
-import bcrypt from "bcryptjs"
 import prisma from "@/lib/prisma"
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -11,12 +9,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     strategy: "jwt", // Use JWT for credentials provider compatibility
   },
   providers: [
-    // Google OAuth - uncomment and add credentials to enable
-    // GoogleProvider({
-    //   clientId: process.env.GOOGLE_CLIENT_ID,
-    //   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    // }),
-    
     // Email/Password authentication
     CredentialsProvider({
       name: "credentials",
@@ -37,7 +29,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           throw new Error("Invalid email or password")
         }
 
-        const isPasswordValid = await bcrypt.compare(
+        // Dynamic import to avoid Edge Runtime bundling issues
+        const { verifyPassword } = await import('@/lib/password')
+        const isPasswordValid = await verifyPassword(
           credentials.password,
           user.password
         )
@@ -74,4 +68,3 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     error: "/login",
   },
 })
-
