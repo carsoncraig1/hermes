@@ -144,7 +144,7 @@ export default function ShortlinksTable({ initialShortlinks }) {
           <tbody>
             {filteredShortlinks.map((link) => (
               <tr key={link.id}>
-                <td>{link.slug}</td>
+                <td>https://txt.cx/{link.slug}</td>
                 <td>{link.destination}</td>
                 <td>
                   {link.campaign?.name ? (
