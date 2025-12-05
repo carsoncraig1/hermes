@@ -17,6 +17,7 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
   const [ogImage, setOgImage] = useState(shortlink.ogImage || '')
   const [ogTitle, setOgTitle] = useState(shortlink.ogTitle || '')
   const [ogDescription, setOgDescription] = useState(shortlink.ogDescription || '')
+  const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
     const loadCampaigns = async () => {
@@ -29,6 +30,34 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
     }
     loadCampaigns()
   }, [])
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await fetch('/api/upload/og-image', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error('Upload failed')
+      }
+
+      const data = await response.json()
+      setOgImage(data.url)
+    } catch (error) {
+      console.error('Error uploading image:', error)
+      alert('Failed to upload image')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -115,14 +144,26 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
             {ogEnabled && (
               <div className={styles.ogFields}>
                 <div className={styles.formGroup}>
-                  <label>OG Image URL</label>
-                  <input
-                    type="url"
-                    value={ogImage}
-                    onChange={(e) => setOgImage(e.target.value)}
-                    placeholder="https://example.com/image.jpg"
-                    className={styles.input}
-                  />
+                  <label>OG Image</label>
+                  <div className={styles.uploadGroup}>
+                    <input
+                      type="url"
+                      value={ogImage}
+                      onChange={(e) => setOgImage(e.target.value)}
+                      placeholder="https://example.com/image.jpg"
+                      className={styles.input}
+                    />
+                    <label className={styles.uploadButton}>
+                      {uploading ? '...' : '📁'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        style={{ display: 'none' }}
+                        disabled={uploading}
+                      />
+                    </label>
+                  </div>
                 </div>
                 
                 <div className={styles.formGroup}>

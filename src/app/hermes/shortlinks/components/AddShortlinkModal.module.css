@@ -252,4 +252,35 @@
   justify-content: flex-end;
   gap: 12px;
   margin-top: 24px;
+}
+
+/* Upload Group */
+.uploadGroup {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.uploadGroup input[type="url"] {
+  flex: 1;
+}
+
+.uploadButton {
+  background: #2a2a2a;
+  border: 1px solid #333;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+}
+
+.uploadButton:hover {
+  background: #333;
+  border-color: #FF6B00;
 } 

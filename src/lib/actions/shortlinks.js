@@ -40,7 +40,12 @@ export async function addShortlink(data) {
         userId,
         slug: data.slug,
         destination: data.destination,
-        enabled: true // Default to enabled
+        enabled: true,
+        campaignId: data.campaignId || null,
+        ogEnabled: data.ogEnabled ?? false,
+        ogImage: data.ogImage || null,
+        ogTitle: data.ogTitle || null,
+        ogDescription: data.ogDescription || null
       },
       include: {
         campaign: true

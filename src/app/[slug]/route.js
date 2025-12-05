@@ -32,6 +32,11 @@ function generateOgHtml(shortlink) {
   const { destination, ogImage, ogTitle, ogDescription, slug } = shortlink
   const shortUrl = `https://txt.cx/${slug}`
   
+  // Convert relative image paths to absolute URLs for OG tags
+  const absoluteOgImage = ogImage?.startsWith('/') 
+    ? `https://txt.cx${ogImage}` 
+    : ogImage
+  
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -44,13 +49,13 @@ function generateOgHtml(shortlink) {
   <meta property="og:url" content="${shortUrl}">
   ${ogTitle ? `<meta property="og:title" content="${ogTitle}">` : ''}
   ${ogDescription ? `<meta property="og:description" content="${ogDescription}">` : ''}
-  ${ogImage ? `<meta property="og:image" content="${ogImage}">` : ''}
+  ${absoluteOgImage ? `<meta property="og:image" content="${absoluteOgImage}">` : ''}
   
   <!-- Twitter Card Meta Tags -->
   <meta name="twitter:card" content="summary_large_image">
   ${ogTitle ? `<meta name="twitter:title" content="${ogTitle}">` : ''}
   ${ogDescription ? `<meta name="twitter:description" content="${ogDescription}">` : ''}
-  ${ogImage ? `<meta name="twitter:image" content="${ogImage}">` : ''}
+  ${absoluteOgImage ? `<meta name="twitter:image" content="${absoluteOgImage}">` : ''}
   
   <!-- Redirect after a brief delay for crawlers to parse OG tags -->
   <meta http-equiv="refresh" content="0;url=${destination}">
