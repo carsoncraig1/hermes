@@ -142,17 +142,23 @@ model CampaignTarget {
 }
 
 model Shortlink {
-  id          Int       @id @default(autoincrement())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  slug        String    @unique
-  destination String
-  clicks      Int       @default(0)
-  enabled     Boolean   @default(true)
-  campaign    Campaign? @relation(fields: [campaignId], references: [id])
-  campaignId  Int?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id            Int       @id @default(autoincrement())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug          String    @unique
+  destination   String
+  clicks        Int       @default(0)
+  opens         Int       @default(0)  // Tracks preview fetches from messaging apps
+  enabled       Boolean   @default(true)
+  campaign      Campaign? @relation(fields: [campaignId], references: [id])
+  campaignId    Int?
+  // OG Preview fields
+  ogEnabled     Boolean   @default(false)
+  ogImage       String?
+  ogTitle       String?
+  ogDescription String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@map("shortlinks")
 }

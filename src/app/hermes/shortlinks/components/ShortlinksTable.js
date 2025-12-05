@@ -135,6 +135,7 @@ export default function ShortlinksTable({ initialShortlinks }) {
               <th>Slug</th>
               <th>Destination</th>
               <th>Campaign</th>
+              <th>Opens</th>
               <th>Clicks</th>
               <th>Status</th>
               <th>Created</th>
@@ -153,6 +154,7 @@ export default function ShortlinksTable({ initialShortlinks }) {
                     <span className={styles.noCampaign}>-</span>
                   )}
                 </td>
+                <td>{link.opens || 0}</td>
                 <td>{link.clicks}</td>
                 <td>
                   <span className={`${styles.status} ${link.enabled ? styles.enabled : styles.disabled}`}>

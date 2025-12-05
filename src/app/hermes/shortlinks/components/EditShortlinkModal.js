@@ -11,6 +11,12 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
   const [campaignId, setCampaignId] = useState(shortlink.campaignId || '')
   const [campaigns, setCampaigns] = useState([])
   const [loading, setLoading] = useState(false)
+  
+  // OG Preview fields
+  const [ogEnabled, setOgEnabled] = useState(shortlink.ogEnabled || false)
+  const [ogImage, setOgImage] = useState(shortlink.ogImage || '')
+  const [ogTitle, setOgTitle] = useState(shortlink.ogTitle || '')
+  const [ogDescription, setOgDescription] = useState(shortlink.ogDescription || '')
 
   useEffect(() => {
     const loadCampaigns = async () => {
@@ -33,7 +39,11 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
         id: shortlink.id,
         slug,
         destination,
-        campaignId: campaignId || null
+        campaignId: campaignId || null,
+        ogEnabled,
+        ogImage: ogImage || null,
+        ogTitle: ogTitle || null,
+        ogDescription: ogDescription || null
       })
       onUpdate(updatedShortlink)
       onClose()
@@ -87,6 +97,76 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className={styles.ogSection}>
+            <div className={styles.ogToggle}>
+              <label className={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={ogEnabled}
+                  onChange={(e) => setOgEnabled(e.target.checked)}
+                  className={styles.checkbox}
+                />
+                <span>Enable OG Preview (Link Preview Image)</span>
+              </label>
+            </div>
+
+            {ogEnabled && (
+              <div className={styles.ogFields}>
+                <div className={styles.formGroup}>
+                  <label>OG Image URL</label>
+                  <input
+                    type="url"
+                    value={ogImage}
+                    onChange={(e) => setOgImage(e.target.value)}
+                    placeholder="https://example.com/image.jpg"
+                    className={styles.input}
+                  />
+                </div>
+                
+                <div className={styles.formGroup}>
+                  <label>OG Title</label>
+                  <input
+                    type="text"
+                    value={ogTitle}
+                    onChange={(e) => setOgTitle(e.target.value)}
+                    placeholder="Preview title"
+                    className={styles.input}
+                  />
+                </div>
+                
+                <div className={styles.formGroup}>
+                  <label>OG Description</label>
+                  <textarea
+                    value={ogDescription}
+                    onChange={(e) => setOgDescription(e.target.value)}
+                    placeholder="Preview description"
+                    className={styles.input}
+                    rows={2}
+                  />
+                </div>
+
+                {ogImage && (
+                  <div className={styles.ogPreview}>
+                    <label>Preview</label>
+                    <div className={styles.previewCard}>
+                      <img 
+                        src={ogImage} 
+                        alt="OG Preview" 
+                        className={styles.previewImage}
+                        onError={(e) => e.target.style.display = 'none'}
+                      />
+                      <div className={styles.previewText}>
+                        <div className={styles.previewTitle}>{ogTitle || 'No title'}</div>
+                        <div className={styles.previewDescription}>{ogDescription || 'No description'}</div>
+                        <div className={styles.previewUrl}>txt.cx/{slug}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className={styles.actions}>

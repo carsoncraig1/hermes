@@ -53,7 +53,7 @@ export async function addShortlink(data) {
   }
 }
 
-export async function updateShortlink({ id, slug, destination, campaignId }) {
+export async function updateShortlink({ id, slug, destination, campaignId, ogEnabled, ogImage, ogTitle, ogDescription }) {
   try {
     const userId = await getUserId()
     
@@ -70,7 +70,11 @@ export async function updateShortlink({ id, slug, destination, campaignId }) {
       data: {
         slug,
         destination,
-        campaignId: campaignId || null // Allow removing campaign association
+        campaignId: campaignId || null, // Allow removing campaign association
+        ogEnabled: ogEnabled ?? false,
+        ogImage: ogImage || null,
+        ogTitle: ogTitle || null,
+        ogDescription: ogDescription || null
       },
       include: {
         campaign: true
