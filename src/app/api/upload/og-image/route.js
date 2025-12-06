@@ -1,8 +1,20 @@
 import { NextResponse } from 'next/server'
-import { writeFile, mkdir } from 'fs/promises'
-import { existsSync } from 'fs'
-import path from 'path'
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { auth } from '@/lib/auth'
+
+// S3-compatible client (works with DigitalOcean Spaces, Cloudflare R2, AWS S3)
+const s3Client = new S3Client({
+  region: process.env.S3_REGION || 'us-east-1',
+  endpoint: process.env.S3_ENDPOINT, // e.g., https://nyc3.digitaloceanspaces.com
+  credentials: {
+    accessKeyId: process.env.S3_ACCESS_KEY_ID,
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+  },
+  forcePathStyle: false, // Required for DigitalOcean Spaces
+})
+
+const BUCKET_NAME = process.env.S3_BUCKET_NAME
+const CDN_URL = process.env.S3_CDN_URL // e.g., https://your-space.nyc3.cdn.digitaloceanspaces.com
 
 export async function POST(request) {
   try {
@@ -10,6 +22,13 @@ export async function POST(request) {
     const session = await auth()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Check if S3 is configured
+    if (!BUCKET_NAME || !process.env.S3_ACCESS_KEY_ID) {
+      return NextResponse.json({ 
+        error: 'Cloud storage not configured. Please set up S3/Spaces credentials.' 
+      }, { status: 500 })
     }
 
     const formData = await request.formData()
@@ -38,20 +57,23 @@ export async function POST(request) {
     const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
     const timestamp = Date.now()
     const randomStr = Math.random().toString(36).substring(2, 8)
-    const filename = `${timestamp}-${randomStr}.${ext}`
+    const filename = `og-images/${timestamp}-${randomStr}.${ext}`
 
-    // Ensure the og-images directory exists
-    const uploadDir = path.join(process.cwd(), 'public', 'og-images')
-    if (!existsSync(uploadDir)) {
-      await mkdir(uploadDir, { recursive: true })
-    }
+    // Upload to S3/Spaces
+    const command = new PutObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: filename,
+      Body: buffer,
+      ContentType: file.type,
+      ACL: 'public-read', // Make the file publicly accessible
+    })
 
-    // Write file to disk
-    const filepath = path.join(uploadDir, filename)
-    await writeFile(filepath, buffer)
+    await s3Client.send(command)
 
     // Return the public URL
-    const url = `/og-images/${filename}`
+    const url = CDN_URL 
+      ? `${CDN_URL}/${filename}`
+      : `${process.env.S3_ENDPOINT}/${BUCKET_NAME}/${filename}`
 
     return NextResponse.json({ 
       success: true, 
@@ -63,4 +85,3 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Failed to upload file' }, { status: 500 })
   }
 }
-

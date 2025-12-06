@@ -17,7 +17,11 @@
   padding: 0;
 }
 
-body {
+/* 
+ * Auth container handles all layout instead of body
+ * This prevents CSS from persisting during navigation to dashboard
+ */
+.auth-container {
   background: var(--auth-bg);
   color: var(--auth-text);
   min-height: 100vh;
@@ -27,10 +31,12 @@ body {
   font-family: inherit;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  width: 100%;
+  position: relative;
 }
 
 /* Animated gradient background */
-body::before {
+.auth-container::before {
   content: '';
   position: fixed;
   top: 0;
@@ -45,13 +51,10 @@ body::before {
   z-index: -1;
 }
 
-.auth-container {
+.auth-card {
   width: 100%;
   max-width: 420px;
-  padding: 2rem;
-}
-
-.auth-card {
+  margin: 0 1rem;
   background: var(--auth-card);
   border: 1px solid var(--auth-border);
   border-radius: 16px;

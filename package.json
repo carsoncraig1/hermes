@@ -12,6 +12,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.946.0",
     "@heroicons/react": "^2.2.0",
     "@prisma/client": "^6.7.0",
     "@tanstack/match-sorter-utils": "^8.19.4",

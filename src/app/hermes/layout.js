@@ -1,10 +1,14 @@
-import { Inter } from 'next/font/google'
+import { Outfit } from 'next/font/google'
 import { auth } from '@/lib/auth'
 import Sidebar from './components/Sidebar/Sidebar'
 import SessionProvider from './components/SessionProvider'
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'] })
+const outfit = Outfit({ 
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-outfit'
+})
 
 export const metadata = {
   title: 'Hermes Admin',
@@ -22,7 +26,7 @@ export default async function HermesLayout({ children }) {
 
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body className={outfit.className}>
         <SessionProvider session={session}>
           <Sidebar />
           {children}

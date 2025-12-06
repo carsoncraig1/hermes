@@ -16,24 +16,14 @@ export default function Sidebar() {
   return (
     <div className="sidebar">
       <div className="logo">
-        <h2 style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '8px',
-          fontSize: '1.5rem',
-          fontWeight: 600,
-          letterSpacing: '-0.025em'
-        }}>
+        <h2>
           Hermes 
           <Image 
             src="/hermes.png" 
             alt="Hermes Logo" 
-            width={24} 
-            height={24} 
-            style={{ 
-              display: 'inline-block',
-              verticalAlign: 'middle'
-            }} 
+            width={28} 
+            height={28}
+            priority
           />
         </h2>
       </div>

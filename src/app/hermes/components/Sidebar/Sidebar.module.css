@@ -1,3 +1,8 @@
+/* =============================================================================
+   SIDEBAR - Modern Dark Theme
+   This file is for module-specific overrides; main sidebar styles in globals.css
+   ============================================================================= */
+
 .logo {
   display: flex;
   align-items: center;
@@ -7,5 +12,16 @@
 .logo h2 {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-} 
+  gap: 0.625rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.logo h2 img {
+  filter: drop-shadow(0 0 12px var(--accent-orange-glow));
+}
