@@ -1,12 +1,302 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
+import styles from './page.module.css';
+
 export default function Settings() {
+  const { data: session } = useSession();
+  const [apiKey, setApiKey] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showDocs, setShowDocs] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [optOutText, setOptOutText] = useState('');
+  const [optOutLoading, setOptOutLoading] = useState(true);
+  const [optOutSaving, setOptOutSaving] = useState(false);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [apiKeyResponse, optOutResponse] = await Promise.all([
+          fetch('/api/user/api-key'),
+          fetch('/api/user/opt-out-text'),
+        ]);
+        
+        if (apiKeyResponse.ok) {
+          const apiKeyData = await apiKeyResponse.json();
+          setApiKey(apiKeyData.apiKey);
+        }
+        
+        if (optOutResponse.ok) {
+          const optOutData = await optOutResponse.json();
+          setOptOutText(optOutData.optOutText || '');
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      } finally {
+        setLoading(false);
+        setOptOutLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const handleCopy = () => {
+    if (apiKey) {
+      navigator.clipboard.writeText(apiKey);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleSaveOptOut = async () => {
+    setOptOutSaving(true);
+    try {
+      const response = await fetch('/api/user/opt-out-text', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ optOutText }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setOptOutText(data.optOutText || '');
+        alert('Opt-out text saved successfully!');
+      } else {
+        alert('Failed to save opt-out text');
+      }
+    } catch (error) {
+      console.error('Error saving opt-out text:', error);
+      alert('Failed to save opt-out text');
+    } finally {
+      setOptOutSaving(false);
+    }
+  };
+
   return (
     <div className="dashboard-container">
       <header className="dashboard-header">
         <h1>Settings</h1>
       </header>
-      <div className="dashboard-content">
-        {/* Settings content will go here */}
+      <div className="dashboard-content" style={{ maxWidth: '900px', margin: '0 auto' }}>
+        {/* API Key Card */}
+        <div className={styles.settingsCard}>
+          <div className={styles.cardHeader}>
+            <h2>Your API Key</h2>
+            <span className={styles.cardBadge}>Hermes API</span>
+          </div>
+          <div className={styles.cardContent}>
+            {loading ? (
+              <div className={styles.loading}>Loading...</div>
+            ) : apiKey ? (
+              <>
+                <p className={styles.cardDescription}>
+                  Use this API key to authenticate requests to the Hermes API. Keep it secure and never share it publicly.
+                </p>
+                <div className={styles.apiKeyDisplay}>
+                  <code className={styles.apiKeyValue}>{apiKey}</code>
+                  <button 
+                    onClick={handleCopy}
+                    className={styles.copyButton}
+                    title="Copy to clipboard"
+                  >
+                    {copied ? '✓ Copied' : '📋 Copy'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className={styles.error}>Failed to load API key. Please refresh the page.</div>
+            )}
+          </div>
+        </div>
+
+        {/* API Documentation Card */}
+        <div className={styles.settingsCard}>
+          <div className={styles.cardHeader}>
+            <h2>API Documentation</h2>
+            <button 
+              onClick={() => setShowDocs(!showDocs)}
+              className={styles.toggleButton}
+            >
+              {showDocs ? '▼ Hide' : '▶ Show'} Documentation
+            </button>
+          </div>
+          {showDocs && (
+            <div className={styles.cardContent}>
+              <div className={styles.markdownContent}>
+                <h3>Endpoint</h3>
+                <pre className={styles.codeBlock}>
+                  <code>POST /api/contact</code>
+                </pre>
+
+                <h3>Authentication</h3>
+                <p>Include your API key in the request header:</p>
+                <pre className={styles.codeBlock}>
+                  <code>{`hermes-api-key: ${apiKey || 'your-api-key-here'}`}</code>
+                </pre>
+
+                <h3>Request Body</h3>
+                <p>All fields are optional except <code>phone</code> (must be a valid US phone number):</p>
+                <pre className={styles.codeBlock}>
+                  <code>{`{
+  "phone": "+15551234567",        // Required - US phone number only (10 digits, or with +1)
+  "firstName": "John",            // Optional
+  "lastName": "Doe",              // Optional
+  "email": "john@example.com",   // Optional
+  "clickid": ["click1", "click2"], // Optional - Array of click IDs
+  "source": "facebook",            // Optional
+  "age": "25",                    // Optional
+  "ip": "192.168.1.1",           // Optional
+  "useragent": "Mozilla/5.0...",  // Optional
+  "referrer": "https://example.com", // Optional
+  "subscribed": true,             // Optional - Default: true
+  "tags": ["vip", "customer"]    // Optional - Array of tag names
+}`}</code>
+                </pre>
+
+                <h3>Example Request</h3>
+                <p>Using cURL:</p>
+                <pre className={styles.codeBlock}>
+                  <code>{`curl -X POST https://your-domain.com/api/contact \\
+  -H "Content-Type: application/json" \\
+  -H "hermes-api-key: ${apiKey || 'your-api-key-here'}" \\
+  -d '{
+    "phone": "5551234567",
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "john@example.com",
+    "source": "facebook",
+    "clickid": ["click123"],
+    "subscribed": true
+  }'`}</code>
+                </pre>
+
+                <p>Using JavaScript (fetch):</p>
+                <pre className={styles.codeBlock}>
+                  <code>{`fetch('https://your-domain.com/api/contact', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'hermes-api-key': '${apiKey || 'your-api-key-here'}'
+  },
+  body: JSON.stringify({
+    phone: '5551234567',  // 10-digit US number (will be normalized to +15551234567)
+    firstName: 'John',
+    lastName: 'Doe',
+    email: 'john@example.com',
+    source: 'facebook',
+    clickid: ['click123'],
+    subscribed: true
+  })
+})
+.then(response => response.json())
+.then(data => console.log(data))
+.catch(error => console.error('Error:', error));`}</code>
+                </pre>
+
+                <h3>Response</h3>
+                <p><strong>Success (201 Created):</strong></p>
+                <pre className={styles.codeBlock}>
+                  <code>{`{
+  "id": 123,
+  "phone": "+15551234567",
+  "firstName": "John",
+  "lastName": "Doe",
+  "email": "john@example.com",
+  ...
+  "createdAt": "2024-01-01T00:00:00.000Z"
+}`}</code>
+                </pre>
+
+                <p><strong>Update (200 OK):</strong> If a contact with the same phone number already exists, it will be updated instead of creating a new one.</p>
+
+                <p><strong>Error (400/401):</strong></p>
+                <pre className={styles.codeBlock}>
+                  <code>{`{
+  "error": "Error message here"
+}`}</code>
+                </pre>
+                <p>Common error messages:</p>
+                <ul>
+                  <li><code>"Phone number is required"</code> - Phone field is missing</li>
+                  <li><code>"Invalid phone number format. Only US phone numbers are accepted..."</code> - Non-US number or invalid format</li>
+                  <li><code>"Invalid API key"</code> - API key is missing or invalid</li>
+                  <li><code>"Authentication required..."</code> - No valid authentication provided</li>
+                </ul>
+
+                <h3>Phone Number Format</h3>
+                <p><strong>US phone numbers only.</strong> Phone numbers should be in E.164 format:</p>
+                <ul>
+                  <li>10-digit US number: <code>5551234567</code> → normalized to <code>+15551234567</code></li>
+                  <li>11-digit US number with country code: <code>15551234567</code> → normalized to <code>+15551234567</code></li>
+                  <li>US number with +1: <code>+15551234567</code> → accepted as-is</li>
+                  <li>The API will automatically normalize valid US formats</li>
+                  <li><strong>Non-US country codes are rejected</strong></li>
+                </ul>
+
+                <h3>Deduplication</h3>
+                <p>Contacts are automatically deduplicated by phone number <strong>per account</strong>. If a contact with the same phone number already exists:</p>
+                <ul>
+                  <li>The existing contact will be updated with any new data provided</li>
+                  <li>New click IDs will be appended to existing ones</li>
+                  <li>Tags will be merged</li>
+                </ul>
+
+                <h3>Click IDs</h3>
+                <p>Click IDs can be provided as:</p>
+                <ul>
+                  <li>Single value: <code>"clickid": "click123"</code></li>
+                  <li>Array: <code>"clickid": ["click1", "click2", "click3"]</code></li>
+                  <li>When updating, new click IDs are appended to existing ones</li>
+                </ul>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Standard Opt-Out Language Card */}
+        <div className={styles.settingsCard}>
+          <div className={styles.cardHeader}>
+            <h2>Standard Opt-Out Language</h2>
+            <span className={styles.cardBadge}>Optional</span>
+          </div>
+          <div className={styles.cardContent}>
+            <p className={styles.cardDescription}>
+              Set standard opt-out language that will be automatically appended to all messages sent through campaigns and workflows.
+            </p>
+            {optOutLoading ? (
+              <div className={styles.loading}>Loading...</div>
+            ) : (
+              <>
+                <textarea
+                  value={optOutText}
+                  onChange={(e) => setOptOutText(e.target.value)}
+                  placeholder="e.g., Reply STOP to opt out"
+                  className={styles.optOutTextarea}
+                  rows={3}
+                />
+                <div className={styles.optOutActions}>
+                  <button
+                    onClick={handleSaveOptOut}
+                    disabled={optOutSaving}
+                    className={styles.saveButton}
+                  >
+                    {optOutSaving ? 'Saving...' : 'Save Opt-Out Text'}
+                  </button>
+                </div>
+                {optOutText && (
+                  <div className={styles.preview}>
+                    <strong>Preview:</strong>
+                    <div className={styles.previewText}>
+                      Your message text here... {optOutText}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </div>
-  )
-} 
+  );
+}

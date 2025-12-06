@@ -29,7 +29,9 @@ export default async function HermesLayout({ children }) {
       <body className={outfit.className}>
         <SessionProvider session={session}>
           <Sidebar />
-          {children}
+          <div className="main-content-wrapper">
+            {children}
+          </div>
         </SessionProvider>
       </body>
     </html>

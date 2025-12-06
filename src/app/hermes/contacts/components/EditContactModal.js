@@ -1,15 +1,25 @@
 'use client'
 
 import { useState } from 'react'
-import styles from './AddContactModal.module.css' // Reuse existing styles
+import styles from './AddContactModal.module.css'
 
 export default function EditContactModal({ contact, onClose, onUpdate }) {
+  // Handle clickid as array - convert to comma-separated string for display
+  const clickidDisplay = Array.isArray(contact.clickid) 
+    ? contact.clickid.join(', ') 
+    : (contact.clickid || '')
+
   const [formState, setFormState] = useState({
-    firstName: contact.firstName,
-    lastName: contact.lastName,
+    firstName: contact.firstName || '',
+    lastName: contact.lastName || '',
     email: contact.email || '',
     phone: contact.phone || '',
-    clickId: contact.clickid || '',
+    clickid: clickidDisplay,
+    source: contact.source || '',
+    age: contact.age || '',
+    ip: contact.ip || '',
+    useragent: contact.useragent || '',
+    referrer: contact.referrer || '',
     subscribed: contact.subscribed || false,
     tags: contact.tags?.map(tag => tag.name) || []
   })
@@ -22,13 +32,24 @@ export default function EditContactModal({ contact, onClose, onUpdate }) {
     setLoading(true)
     
     try {
+      // Convert clickid to array
+      let clickidArray = []
+      if (formState.clickid) {
+        clickidArray = formState.clickid.split(',').map(c => c.trim()).filter(c => c)
+      }
+      
       const submitData = {
         id: contact.id,
-        firstName: formState.firstName,
-        lastName: formState.lastName,
-        email: formState.email,
+        firstName: formState.firstName || null,
+        lastName: formState.lastName || null,
+        email: formState.email || null,
         phone: formState.phone,
-        clickId: formState.clickId,
+        clickId: clickidArray.length > 0 ? clickidArray : [],
+        source: formState.source || null,
+        age: formState.age || null,
+        ip: formState.ip || null,
+        useragent: formState.useragent || null,
+        referrer: formState.referrer || null,
         subscribed: formState.subscribed,
         tags: formState.tags
       }
@@ -79,25 +100,34 @@ export default function EditContactModal({ contact, onClose, onUpdate }) {
         </div>
         <form onSubmit={handleSubmit} className={styles.form}>
           <div className={styles.formGroup}>
-            <label htmlFor="firstName">First Name *</label>
+            <label htmlFor="phone">Phone *</label>
+            <input
+              type="tel"
+              id="phone"
+              name="phone"
+              value={formState.phone}
+              onChange={handleChange}
+              required
+            />
+          </div>
+          <div className={styles.formGroup}>
+            <label htmlFor="firstName">First Name</label>
             <input
               type="text"
               id="firstName"
               name="firstName"
               value={formState.firstName}
               onChange={handleChange}
-              required
             />
           </div>
           <div className={styles.formGroup}>
-            <label htmlFor="lastName">Last Name *</label>
+            <label htmlFor="lastName">Last Name</label>
             <input
               type="text"
               id="lastName"
               name="lastName"
               value={formState.lastName}
               onChange={handleChange}
-              required
             />
           </div>
           <div className={styles.formGroup}>
@@ -111,24 +141,68 @@ export default function EditContactModal({ contact, onClose, onUpdate }) {
             />
           </div>
           <div className={styles.formGroup}>
-            <label htmlFor="phone">Phone *</label>
+            <label htmlFor="clickid">Click IDs (comma-separated)</label>
             <input
-              type="tel"
-              id="phone"
-              name="phone"
-              value={formState.phone}
+              type="text"
+              id="clickid"
+              name="clickid"
+              value={formState.clickid}
               onChange={handleChange}
-              required
+              placeholder="click1, click2, click3"
             />
           </div>
           <div className={styles.formGroup}>
-            <label htmlFor="clickId">Click ID</label>
+            <label htmlFor="source">Source</label>
             <input
               type="text"
-              id="clickId"
-              name="clickId"
-              value={formState.clickId}
+              id="source"
+              name="source"
+              value={formState.source}
               onChange={handleChange}
+              placeholder="e.g., facebook, google, direct"
+            />
+          </div>
+          <div className={styles.formGroup}>
+            <label htmlFor="age">Age</label>
+            <input
+              type="text"
+              id="age"
+              name="age"
+              value={formState.age}
+              onChange={handleChange}
+            />
+          </div>
+          <div className={styles.formGroup}>
+            <label htmlFor="ip">IP Address</label>
+            <input
+              type="text"
+              id="ip"
+              name="ip"
+              value={formState.ip}
+              onChange={handleChange}
+              placeholder="192.168.1.1"
+            />
+          </div>
+          <div className={styles.formGroup}>
+            <label htmlFor="useragent">User Agent</label>
+            <textarea
+              id="useragent"
+              name="useragent"
+              value={formState.useragent}
+              onChange={handleChange}
+              rows={2}
+              placeholder="Mozilla/5.0..."
+            />
+          </div>
+          <div className={styles.formGroup}>
+            <label htmlFor="referrer">Referrer</label>
+            <input
+              type="text"
+              id="referrer"
+              name="referrer"
+              value={formState.referrer}
+              onChange={handleChange}
+              placeholder="https://example.com"
             />
           </div>
           <div className={styles.formGroup}>
@@ -190,4 +264,4 @@ export default function EditContactModal({ contact, onClose, onUpdate }) {
       </div>
     </div>
   )
-} 
+}

@@ -22,6 +22,7 @@ export default function ShortlinksTable({ initialShortlinks }) {
 
     const query = searchQuery.toLowerCase()
     const filtered = shortlinks.filter(link => 
+      (link.nickname?.toLowerCase().includes(query)) ||
       link.slug.toLowerCase().includes(query) ||
       link.destination.toLowerCase().includes(query)
     )
@@ -132,6 +133,7 @@ export default function ShortlinksTable({ initialShortlinks }) {
         <table className={styles.table}>
           <thead>
             <tr>
+              <th>Nickname</th>
               <th>Slug</th>
               <th>Destination</th>
               <th>Campaign</th>
@@ -145,6 +147,7 @@ export default function ShortlinksTable({ initialShortlinks }) {
           <tbody>
             {filteredShortlinks.map((link) => (
               <tr key={link.id}>
+                <td>{link.nickname || '-'}</td>
                 <td>https://txt.cx/{link.slug}</td>
                 <td>{link.destination}</td>
                 <td>

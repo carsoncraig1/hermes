@@ -1,23 +1,97 @@
 import prisma from '@/lib/prisma'
+import { auth } from '@/lib/auth'
+import { triggerWorkflowsForContact } from '@/lib/workflow/executor'
 
-// Helper function to validate API key
-function validateApiKey(request) {
-  const apiKey = request.headers.get('hermes-api-key')
-  if (!apiKey || apiKey !== process.env.HERMES_API_KEY) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 })
+// Helper function to normalize phone numbers
+// Only accepts US phone numbers and converts to E.164 format (+1XXXXXXXXXX)
+// Rejects any phone numbers with non-US country codes
+function normalizePhoneNumber(phone) {
+  if (!phone) return null
+  
+  // Remove all non-digit characters except leading +
+  const cleaned = phone.trim()
+  
+  // Extract digits only
+  const digits = cleaned.replace(/\D/g, '')
+  
+  // Check if it starts with + (indicating country code)
+  if (cleaned.startsWith('+')) {
+    // If it starts with +1, it's a US number
+    if (digits.startsWith('1') && digits.length === 11) {
+      return `+${digits}`
+    }
+    // If it starts with + but not +1, reject (non-US country code)
+    if (digits.length > 0 && !digits.startsWith('1')) {
+      return null // Reject non-US country codes
+    }
+    // If it's +1 but wrong length, reject
+    if (digits.startsWith('1') && digits.length !== 11) {
+      return null
+    }
   }
+  
+  // If it has 11 digits and starts with 1, it's a US number
+  if (digits.length === 11 && digits[0] === '1') {
+    return `+${digits}`
+  }
+  
+  // If it has exactly 10 digits, assume US number and add +1
+  if (digits.length === 10) {
+    return `+1${digits}`
+  }
+  
+  // Reject anything else (wrong length, invalid format, etc.)
   return null
 }
 
-export async function GET(request) {
-  // Validate API key
-  const authError = validateApiKey(request)
-  if (authError) return authError
-
+// Helper function to get user ID from session or API key
+async function getUserId(request) {
+  // Try to get from session first (for web app usage)
   try {
+    const session = await auth()
+    if (session?.user?.id) {
+      return { userId: session.user.id }
+    }
+  } catch (error) {
+    // Session not available, continue to API key method
+  }
+  
+  // Try to get from API key header (for external API usage)
+  const apiKey = request.headers.get('hermes-api-key')
+  if (apiKey) {
+    const user = await prisma.user.findUnique({
+      where: { apiKey: apiKey }
+    })
+    if (!user) {
+      return { 
+        error: Response.json({ error: 'Invalid API key' }, { status: 401 }) 
+      }
+    }
+    return { userId: user.id }
+  }
+  
+  // If no authentication found, return error
+  return { 
+    error: Response.json({ 
+      error: 'Authentication required. Please provide hermes-api-key header or authenticate via session.' 
+    }, { status: 401 }) 
+  }
+}
+
+export async function GET(request) {
+  try {
+    // Get userId from session or API key
+    const userIdResult = await getUserId(request)
+    if (userIdResult.error) return userIdResult.error
+    const userId = userIdResult.userId
+
     const contacts = await prisma.contact.findMany({
+      where: { userId },
       orderBy: {
         createdAt: 'desc'
+      },
+      include: {
+        tags: true
       }
     })
     return Response.json(contacts)
@@ -27,20 +101,27 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  // Validate API key
-  const authError = validateApiKey(request)
-  if (authError) return authError
-
   try {
     const data = await request.json()
     
-    // Validate required fields
-    const requiredFields = ['firstName', 'lastName'] // Phone is now optional
-    const missingFields = requiredFields.filter(field => !data[field])
+    // Get userId from session or API key
+    const userIdResult = await getUserId(request)
+    if (userIdResult.error) return userIdResult.error
+    const userId = userIdResult.userId
     
-    if (missingFields.length > 0) {
+    // Validate required field: phone number
+    if (!data.phone) {
       return Response.json({
-        error: `Missing required fields: ${missingFields.join(', ')}`
+        error: 'Phone number is required'
+      }, { status: 400 })
+    }
+
+    // Normalize phone number
+    const normalizedPhone = normalizePhoneNumber(data.phone)
+    
+    if (!normalizedPhone) {
+      return Response.json({
+        error: 'Invalid phone number format. Only US phone numbers are accepted. Please provide a 10-digit US phone number (with or without +1).'
       }, { status: 400 })
     }
 
@@ -53,42 +134,164 @@ export async function POST(request) {
         }, { status: 400 })
       }
     }
-
-    // Build the data object for prisma.contact.create
-    const contactData = {
-      firstName: data.firstName,
-      lastName: data.lastName,
-      email: data.email || null,
-      phone: data.phone || null,
-      clickid: data.clickid || null,
-      subscribed: data.subscribed || true,
-    }
-
-    // Handle tags - support both single tag and tags array
-    if (data.tag) {
-      contactData.tags = {
-        connectOrCreate: {
-          where: { name: data.tag },
-          create: { name: data.tag }
-        }
-      }
-    } else if (data.tags) {
-      contactData.tags = {
-        connectOrCreate: data.tags.map(tag => ({
-          where: { name: tag },
-          create: { name: tag }
-        }))
-      }
-    }
-
-    const contact = await prisma.contact.create({
-      data: contactData,
+    
+    // Check for existing contact with same phone number (within same user)
+    // If found, we'll update it instead of creating a new one
+    const existingContact = await prisma.contact.findFirst({
+      where: {
+        userId,
+        phone: normalizedPhone
+      },
       include: {
         tags: true
       }
     })
 
-    return Response.json(contact, { status: 201 })
+    // Handle tags - support both single tag and tags array (for backward compatibility)
+    let tagConnections = []
+    if (data.tag) {
+      const tag = await prisma.tag.upsert({
+        where: {
+          name_userId: {
+            name: data.tag,
+            userId
+          }
+        },
+        update: {},
+        create: {
+          name: data.tag,
+          userId
+        }
+      })
+      tagConnections = [{ id: tag.id }]
+    } else if (data.tags && Array.isArray(data.tags)) {
+      tagConnections = await Promise.all(
+        data.tags.map(async (tagName) => {
+          const tag = await prisma.tag.upsert({
+            where: {
+              name_userId: {
+                name: tagName,
+                userId
+              }
+            },
+            update: {},
+            create: {
+              name: tagName,
+              userId
+            }
+          })
+          return { id: tag.id }
+        })
+      )
+    }
+
+    // Handle clickid - merge arrays if duplicate found
+    let clickidArray = []
+    if (data.clickid) {
+      // Support both single clickid and array
+      if (Array.isArray(data.clickid)) {
+        clickidArray = data.clickid.filter(c => c) // Remove empty values
+      } else {
+        clickidArray = [data.clickid]
+      }
+    }
+
+    let contact
+
+    if (existingContact) {
+      // Update existing contact with new data
+      // Only update fields that are provided in the request
+      const updatePayload = {
+        phone: normalizedPhone // Phone is always updated
+      }
+      
+      // Only update fields if they're provided in the request
+      if (data.firstName !== undefined) updatePayload.firstName = data.firstName || null
+      if (data.lastName !== undefined) updatePayload.lastName = data.lastName || null
+      if (data.email !== undefined) updatePayload.email = data.email || null
+      if (data.source !== undefined) updatePayload.source = data.source || null
+      if (data.age !== undefined) updatePayload.age = data.age || null
+      if (data.ip !== undefined) updatePayload.ip = data.ip || null
+      if (data.useragent !== undefined) updatePayload.useragent = data.useragent || null
+      if (data.referrer !== undefined) updatePayload.referrer = data.referrer || null
+      if (data.subscribed !== undefined) updatePayload.subscribed = data.subscribed
+
+      // Merge clickids - combine existing and new, remove duplicates
+      if (clickidArray.length > 0) {
+        const existingClickids = existingContact.clickid || []
+        const mergedClickids = [...new Set([...existingClickids, ...clickidArray])]
+        updatePayload.clickid = mergedClickids
+      }
+
+      // Update tags if provided
+      if (tagConnections.length > 0) {
+        updatePayload.tags = {
+          set: tagConnections
+        }
+      }
+
+      contact = await prisma.contact.update({
+        where: { id: existingContact.id },
+        data: updatePayload,
+        include: {
+          tags: true
+        }
+      })
+    } else {
+      // Create new contact - all fields except phone are optional
+      const contactData = {
+        userId,
+        firstName: data.firstName || null,
+        lastName: data.lastName || null,
+        email: data.email || null,
+        phone: normalizedPhone, // Required
+        clickid: clickidArray,
+        source: data.source || null,
+        age: data.age || null,
+        ip: data.ip || null,
+        useragent: data.useragent || null,
+        referrer: data.referrer || null,
+        subscribed: data.subscribed !== undefined ? data.subscribed : true,
+      }
+
+      if (tagConnections.length > 0) {
+        contactData.tags = {
+          connect: tagConnections
+        }
+      }
+
+      contact = await prisma.contact.create({
+        data: contactData,
+        include: {
+          tags: true
+        }
+      })
+
+      // Log new lead event to console
+      if (userId) {
+        const { serverLog } = await import('@/lib/serverLogger')
+        const logMessage = `New lead received: ${contact.phone}${contact.firstName || contact.lastName ? ` (${[contact.firstName, contact.lastName].filter(Boolean).join(' ')})` : ''}`
+        const logMeta = {
+          contactId: contact.id,
+          phone: contact.phone,
+          source: contact.source,
+          clickid: contact.clickid,
+          tags: contact.tags.map(t => t.name)
+        }
+        serverLog(logMessage, 'info', logMeta, userId).catch(err => {
+          console.error('Error logging new lead event:', err)
+        })
+      }
+
+      // Trigger workflows for new contact (only for new contacts, not updates)
+      if (userId) {
+        triggerWorkflowsForContact(contact, userId).catch(err => {
+          console.error('Error triggering workflows:', err);
+        });
+      }
+    }
+
+    return Response.json(contact, { status: existingContact ? 200 : 201 })
   } catch (error) {
     console.error('API Error:', error)
     
@@ -99,19 +302,28 @@ export async function POST(request) {
     }
 
     return Response.json({ 
-      error: 'Failed to create contact',
+      error: 'Failed to create/update contact',
       details: error.message 
     }, { status: 500 })
   }
 }
 
 export async function PUT(request) {
-  // Validate API key
-  const authError = validateApiKey(request)
-  if (authError) return authError
-
   try {
     const data = await request.json()
+    
+    // Get userId from session or API key
+    const userIdResult = await getUserId(request)
+    if (userIdResult.error) return userIdResult.error
+    const userId = userIdResult.userId
+    
+    // Verify contact belongs to this user
+    const existing = await prisma.contact.findFirst({
+      where: { id: data.id, userId }
+    })
+    if (!existing) {
+      return Response.json({ error: 'Contact not found' }, { status: 404 })
+    }
     
     // Ensure phone is provided if updating
     if (data.phone === undefined || data.phone === null) {
@@ -120,16 +332,51 @@ export async function PUT(request) {
       }, { status: 400 })
     }
 
+    // Normalize phone number
+    const normalizedPhone = normalizePhoneNumber(data.phone)
+    
+    // Check for duplicate phone number (excluding current contact)
+    if (normalizedPhone) {
+      const duplicateContact = await prisma.contact.findFirst({
+        where: {
+          userId,
+          phone: normalizedPhone,
+          id: { not: data.id }
+        }
+      })
+      
+      if (duplicateContact) {
+        return Response.json({
+          error: 'A contact with this phone number already exists',
+          existingContactId: duplicateContact.id
+        }, { status: 409 })
+      }
+    }
+
+    // Handle clickid array for PUT
+    let clickidArray = []
+    if (data.clickid !== undefined) {
+      if (Array.isArray(data.clickid)) {
+        clickidArray = data.clickid.filter(c => c)
+      } else if (data.clickid) {
+        clickidArray = [data.clickid]
+      }
+    }
+
     const contact = await prisma.contact.update({
       where: { id: data.id },
       data: {
         firstName: data.firstName,
         lastName: data.lastName,
         email: data.email || null,
-        phone: data.phone,
-        clickid: data.clickid || null,
+        phone: normalizedPhone,
+        clickid: clickidArray.length > 0 ? clickidArray : undefined,
+        source: data.source !== undefined ? (data.source || null) : undefined,
+        age: data.age !== undefined ? (data.age || null) : undefined,
+        ip: data.ip !== undefined ? (data.ip || null) : undefined,
+        useragent: data.useragent !== undefined ? (data.useragent || null) : undefined,
+        referrer: data.referrer !== undefined ? (data.referrer || null) : undefined,
         subscribed: data.subscribed,
-        tags: data.tags || [], // Update tags array
       }
     })
     return Response.json(contact)
@@ -139,12 +386,22 @@ export async function PUT(request) {
 }
 
 export async function DELETE(request) {
-  // Validate API key
-  const authError = validateApiKey(request)
-  if (authError) return authError
-
   try {
     const data = await request.json()
+    
+    // Get userId from session or API key
+    const userIdResult = await getUserId(request)
+    if (userIdResult.error) return userIdResult.error
+    const userId = userIdResult.userId
+    
+    // Verify contact belongs to this user
+    const existing = await prisma.contact.findFirst({
+      where: { id: data.id, userId }
+    })
+    if (!existing) {
+      return Response.json({ error: 'Contact not found' }, { status: 404 })
+    }
+    
     await prisma.contact.delete({
       where: { id: data.id }
     })
@@ -152,4 +409,4 @@ export async function DELETE(request) {
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 })
   }
-} 
+}

@@ -52,15 +52,28 @@ export async function addContact(data) {
       })
     );
 
+    // Handle clickid - support both array and single value
+    let clickidArray = []
+    if (data.clickid) {
+      clickidArray = Array.isArray(data.clickid) ? data.clickid : [data.clickid]
+    } else if (data.clickId) {
+      clickidArray = Array.isArray(data.clickId) ? data.clickId : [data.clickId]
+    }
+
     const contact = await prisma.contact.create({
       data: {
         userId,
-        firstName: data.firstName,
-        lastName: data.lastName,
+        firstName: data.firstName || null,
+        lastName: data.lastName || null,
         email: data.email || null,
         phone: data.phone,
-        clickid: data.clickId || null,
-        subscribed: data.subscribed || true,
+        clickid: clickidArray,
+        source: data.source || null,
+        age: data.age || null,
+        ip: data.ip || null,
+        useragent: data.useragent || null,
+        referrer: data.referrer || null,
+        subscribed: data.subscribed !== undefined ? data.subscribed : true,
         tags: {
           connect: tagConnections
         }
@@ -102,14 +115,27 @@ export async function updateContact(data) {
       })
     );
 
+    // Handle clickid - support both array and single value
+    let clickidArray = []
+    if (data.clickid !== undefined) {
+      clickidArray = Array.isArray(data.clickid) ? data.clickid : (data.clickid ? [data.clickid] : [])
+    } else if (data.clickId !== undefined) {
+      clickidArray = Array.isArray(data.clickId) ? data.clickId : (data.clickId ? [data.clickId] : [])
+    }
+
     const contact = await prisma.contact.update({
       where: { id: data.id },
       data: {
-        firstName: data.firstName,
-        lastName: data.lastName,
-        email: data.email,
+        firstName: data.firstName || null,
+        lastName: data.lastName || null,
+        email: data.email || null,
         phone: data.phone,
-        clickid: data.clickId,
+        clickid: clickidArray.length > 0 ? clickidArray : undefined,
+        source: data.source !== undefined ? (data.source || null) : undefined,
+        age: data.age !== undefined ? (data.age || null) : undefined,
+        ip: data.ip !== undefined ? (data.ip || null) : undefined,
+        useragent: data.useragent !== undefined ? (data.useragent || null) : undefined,
+        referrer: data.referrer !== undefined ? (data.referrer || null) : undefined,
         subscribed: data.subscribed,
         tags: {
           set: [], // Clear existing tags

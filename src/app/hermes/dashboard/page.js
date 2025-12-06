@@ -1,6 +1,7 @@
 import { getSubscribedContactsCount } from '@/lib/actions/contacts';
 import DashboardHeader from './components/DashboardHeader';
 import ConsoleWindow from '../console/components/ConsoleWindow';
+import DedicatedSendCard from './components/DedicatedSendCard';
 import './dashboard.css';
 
 // Force dynamic rendering to avoid build-time database calls
@@ -20,6 +21,7 @@ export default async function Dashboard() {
               <p className="stat-number">{subscribedCount}</p>
             </div>
           </div>
+          <DedicatedSendCard />
         </div>
         <div className="side-content">
           <ConsoleWindow compact={true} />

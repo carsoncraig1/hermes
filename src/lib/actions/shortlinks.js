@@ -38,6 +38,7 @@ export async function addShortlink(data) {
     const shortlink = await prisma.shortlink.create({
       data: {
         userId,
+        nickname: data.nickname || null,
         slug: data.slug,
         destination: data.destination,
         enabled: true,
@@ -58,7 +59,7 @@ export async function addShortlink(data) {
   }
 }
 
-export async function updateShortlink({ id, slug, destination, campaignId, ogEnabled, ogImage, ogTitle, ogDescription }) {
+export async function updateShortlink({ id, nickname, slug, destination, campaignId, ogEnabled, ogImage, ogTitle, ogDescription }) {
   try {
     const userId = await getUserId()
     
@@ -73,6 +74,7 @@ export async function updateShortlink({ id, slug, destination, campaignId, ogEna
     const shortlink = await prisma.shortlink.update({
       where: { id },
       data: {
+        nickname: nickname || null,
         slug,
         destination,
         campaignId: campaignId || null, // Allow removing campaign association

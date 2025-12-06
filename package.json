@@ -17,6 +17,7 @@
     "@prisma/client": "^6.7.0",
     "@tanstack/match-sorter-utils": "^8.19.4",
     "@tanstack/react-table": "^8.21.3",
+    "@xyflow/react": "^12.10.0",
     "bcryptjs": "^2.4.3",
     "date-fns": "^4.1.0",
     "googleapis": "^128.0.0",

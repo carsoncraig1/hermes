@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { getLogs } from '@/lib/serverLogger'
+import { getLogs, clearLogs } from '@/lib/serverLogger'
 import styles from './ConsoleWindow.module.css'
 
 export default function ConsoleWindow({ compact = false }) {
@@ -18,13 +18,22 @@ export default function ConsoleWindow({ compact = false }) {
     return () => clearInterval(interval)
   }, [])
 
+  const handleClear = async () => {
+    try {
+      await clearLogs()
+      setLogs([])
+    } catch (error) {
+      console.error('Error clearing logs:', error)
+    }
+  }
+
   return (
     <div className={`${styles.consoleWindow} ${compact ? styles.compact : ''}`}>
       <div className={styles.consoleHeader}>
         <span>Console</span>
         <button 
           className={styles.clearButton}
-          onClick={() => setLogs([])}
+          onClick={handleClear}
         >
           Clear
         </button>
@@ -35,16 +44,16 @@ export default function ConsoleWindow({ compact = false }) {
             No logs to display
           </div>
         ) : (
-          logs.map((log, index) => (
+          logs.map((log) => (
             <div 
-              key={index} 
+              key={log.id || log.timestamp} 
               className={`${styles.logEntry} ${styles[log.level]}`}
             >
-              <span className={styles.timestamp}>{log.timestamp}</span>
+              <span className={styles.timestamp}>{new Date(log.timestamp).toLocaleTimeString()}</span>
               <span className={styles.level}>[{log.level.toUpperCase()}]</span>
               <span className={styles.message}>{log.message}</span>
               {log.meta && (
-                <span className={styles.meta}>{JSON.stringify(log.meta)}</span>
+                <span className={styles.meta}>{JSON.stringify(log.meta, null, 2)}</span>
               )}
             </div>
           ))

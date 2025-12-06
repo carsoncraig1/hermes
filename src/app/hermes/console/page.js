@@ -1,9 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { logger } from '@/lib/clientLogger'
 import styles from './page.module.css'
-import { getLogs } from '@/lib/serverLogger'
+import { getLogs, clearLogs } from '@/lib/serverLogger'
 
 export default function Console() {
   const [logs, setLogs] = useState([])
@@ -22,6 +21,15 @@ export default function Console() {
     return () => clearInterval(interval)
   }, [])
 
+  const handleClear = async () => {
+    try {
+      await clearLogs()
+      setLogs([])
+    } catch (error) {
+      console.error('Error clearing logs:', error)
+    }
+  }
+
   return (
     <div className="dashboard-container">
       <header className="dashboard-header">
@@ -33,7 +41,7 @@ export default function Console() {
             <span>Console</span>
             <button 
               className={styles.clearButton}
-              onClick={() => setLogs([])}
+              onClick={handleClear}
             >
               Clear
             </button>
@@ -44,16 +52,16 @@ export default function Console() {
                 No logs to display
               </div>
             ) : (
-              logs.map((log, index) => (
+              logs.map((log) => (
                 <div 
-                  key={index} 
+                  key={log.id || log.timestamp} 
                   className={`${styles.logEntry} ${styles[log.level]}`}
                 >
-                  <span className={styles.timestamp}>{log.timestamp}</span>
+                  <span className={styles.timestamp}>{new Date(log.timestamp).toLocaleTimeString()}</span>
                   <span className={styles.level}>[{log.level.toUpperCase()}]</span>
                   <span className={styles.message}>{log.message}</span>
                   {log.meta && (
-                    <span className={styles.meta}>{JSON.stringify(log.meta)}</span>
+                    <span className={styles.meta}>{JSON.stringify(log.meta, null, 2)}</span>
                   )}
                 </div>
               ))

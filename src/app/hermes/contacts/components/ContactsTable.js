@@ -12,59 +12,117 @@ import {
 import { format } from 'date-fns';
 import styles from './ContactsTable.module.css';
 import AddContactModal from './AddContactModal';
+import CsvUploadModal from './CsvUploadModal';
 import { addContact, updateContact, deleteContact, getContacts } from '@/lib/actions/contacts';
 import { ChevronDownIcon } from '@heroicons/react/24/solid';
 import EditContactModal from './EditContactModal';
+import BulkEditModal from './BulkEditModal';
 
 const columnHelper = createColumnHelper();
 
-// Filter component for the Subscribed column
-function SubscribedFilter({ column }) {
+// Draggable column header component
+function DraggableColumnHeader({ header, column }) {
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleMouseDown = (e) => {
+    setIsDragging(true);
+    const startX = e.clientX;
+    const startOrder = column.getOrder();
+
+    const handleMouseMove = (e) => {
+      const deltaX = e.clientX - startX;
+      // Calculate column reordering logic here
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
   return (
-    <select
-      className="filter-dropdown"
-      value={column.getFilterValue() ?? ''}
-      onChange={e => column.setFilterValue(e.target.value)}
+    <th
+      className={styles.draggableHeader}
+      onMouseDown={handleMouseDown}
+      style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
     >
-      <option value="">All</option>
-      <option value="Yes">Subscribed</option>
-      <option value="No">Unsubscribed</option>
-    </select>
+      <div className={styles.headerContent}>
+        <span className={styles.dragHandle}>⋮⋮</span>
+        {header}
+      </div>
+    </th>
   );
 }
 
-const columns = [
+const createColumns = (columnOrder = [], rowSelection, setRowSelection, filteredContacts) => [
+  columnHelper.accessor('id', {
+    header: 'ID',
+    id: 'id',
+  }),
   columnHelper.accessor('firstName', {
     header: 'First Name',
+    id: 'firstName',
   }),
   columnHelper.accessor('lastName', {
     header: 'Last Name',
+    id: 'lastName',
   }),
   columnHelper.accessor('phone', {
     header: 'Phone',
+    id: 'phone',
   }),
   columnHelper.accessor('email', {
     header: 'Email',
+    id: 'email',
   }),
   columnHelper.accessor('clickid', {
-    header: 'Click ID',
+    header: 'Click IDs',
+    id: 'clickid',
+    cell: info => {
+      const clickids = info.getValue() || [];
+      return Array.isArray(clickids) ? clickids.join(', ') : (clickids || 'null');
+    }
+  }),
+  columnHelper.accessor('source', {
+    header: 'Source',
+    id: 'source',
+  }),
+  columnHelper.accessor('age', {
+    header: 'Age',
+    id: 'age',
+  }),
+  columnHelper.accessor('ip', {
+    header: 'IP',
+    id: 'ip',
+  }),
+  columnHelper.accessor('useragent', {
+    header: 'User Agent',
+    id: 'useragent',
+    cell: info => {
+      const ua = info.getValue();
+      return ua ? (ua.length > 50 ? ua.substring(0, 50) + '...' : ua) : 'null';
+    }
+  }),
+  columnHelper.accessor('referrer', {
+    header: 'Referrer',
+    id: 'referrer',
   }),
   columnHelper.accessor('subscribed', {
     header: 'Subscribed',
-    filterFn: 'equals',
-    header: ({ column }) => (
-      <div className="filter-header">
-        <span>Subscribed</span>
-        <SubscribedFilter column={column} />
-      </div>
-    ),
+    id: 'subscribed',
   }),
   columnHelper.accessor('lastMessageSent', {
     header: 'Last Message',
+    id: 'lastMessageSent',
     cell: info => info.getValue() ? format(new Date(info.getValue()), 'yyyy-MM-dd HH:mm') : 'Never',
   }),
   columnHelper.accessor('tags', {
     header: 'Tags',
+    id: 'tags',
     cell: info => {
       const tags = info.getValue() || [];
       return tags.length > 0 ? (
@@ -78,51 +136,111 @@ const columns = [
       ) : 'No tags';
     }
   }),
+  columnHelper.accessor('createdAt', {
+    header: 'Created At',
+    id: 'createdAt',
+    cell: info => format(new Date(info.getValue()), 'yyyy-MM-dd HH:mm'),
+  }),
+  columnHelper.accessor('updatedAt', {
+    header: 'Updated At',
+    id: 'updatedAt',
+    cell: info => format(new Date(info.getValue()), 'yyyy-MM-dd HH:mm'),
+  }),
 ];
 
-// Add these new components at the top of the file
-function FilterMenu({ isOpen, onClose, filters, setFilters, contacts, setFilteredContacts }) {
-  const [tagInput, setTagInput] = useState('');
-  const [isTagInputFocused, setIsTagInputFocused] = useState(false);
-  const [selectedTags, setSelectedTags] = useState([]);
+// Available filter fields with their types
+const FILTER_FIELDS = [
+  { id: 'firstName', label: 'First Name', type: 'text' },
+  { id: 'lastName', label: 'Last Name', type: 'text' },
+  { id: 'phone', label: 'Phone', type: 'text' },
+  { id: 'email', label: 'Email', type: 'text' },
+  { id: 'source', label: 'Source', type: 'text' },
+  { id: 'age', label: 'Age', type: 'text' },
+  { id: 'ip', label: 'IP Address', type: 'text' },
+  { id: 'useragent', label: 'User Agent', type: 'text' },
+  { id: 'referrer', label: 'Referrer', type: 'text' },
+  { id: 'clickid', label: 'Click ID', type: 'text' },
+  { id: 'tags', label: 'Tags', type: 'tags' },
+  { id: 'createdAt', label: 'Created At', type: 'date' },
+  { id: 'updatedAt', label: 'Updated At', type: 'date' },
+  { id: 'lastMessageSent', label: 'Last Message Sent', type: 'date' },
+];
 
-  // Get unique tags from all contacts
-  const availableTags = useMemo(() => {
+// Filter operators
+const FILTER_OPERATORS = [
+  { id: 'equals', label: 'Equals' },
+  { id: 'contains', label: 'Contains' },
+  { id: 'startsWith', label: 'Starts With' },
+  { id: 'endsWith', label: 'Ends With' },
+  { id: 'notEquals', label: 'Not Equals' },
+];
+
+// Date operators
+const DATE_OPERATORS = [
+  { id: 'equals', label: 'On' },
+  { id: 'before', label: 'Before' },
+  { id: 'after', label: 'After' },
+  { id: 'between', label: 'Between' },
+];
+
+// Filter menu component with 3-level nested filters
+function FilterMenu({ isOpen, onClose, filters, setFilters, contacts, setFilteredContacts }) {
+  const [availableTags] = useMemo(() => {
     const tagSet = new Set();
     contacts.forEach(contact => {
       contact.tags?.forEach(tag => tagSet.add(tag.name));
     });
-    return Array.from(tagSet);
+    return [Array.from(tagSet)];
   }, [contacts]);
+
+  // Get unique values for a field (for autocomplete/suggestions)
+  const getFieldValues = (fieldId) => {
+    const values = new Set();
+    contacts.forEach(contact => {
+      const value = contact[fieldId];
+      if (value !== null && value !== undefined && value !== '') {
+        if (Array.isArray(value)) {
+          value.forEach(v => values.add(String(v)));
+        } else {
+          values.add(String(value));
+        }
+      }
+    });
+    return Array.from(values).sort().slice(0, 20); // Limit to 20 for performance
+  };
 
   const handleFilterChange = (newFilters) => {
     setFilters(newFilters);
-    
-    // Apply filters to contacts
+    applyFilters(newFilters);
+  };
+
+  const applyFilters = (filterConfig) => {
     const filtered = contacts.filter(contact => {
-      // Subscription status filter
-      if (newFilters.subscribed && 
-          String(contact.subscribed) !== newFilters.subscribed) {
+      // Apply subscribed filter
+      if (filterConfig.subscribed === 'true' && !contact.subscribed) {
+        return false;
+      }
+      if (filterConfig.subscribed === 'false' && contact.subscribed) {
         return false;
       }
 
-      // Tags filter
-      if (newFilters.tags?.length > 0) {
-        const contactTagNames = contact.tags.map(t => t.name);
-        if (!newFilters.tags.every(tag => contactTagNames.includes(tag))) {
+      // Apply level 1 filter
+      if (filterConfig.level1?.field && filterConfig.level1?.value) {
+        if (!matchesFilter(contact, filterConfig.level1)) {
           return false;
         }
       }
 
-      // Last message filter
-      if (newFilters.lastMessageRange) {
-        const { start, end } = newFilters.lastMessageRange;
-        const messageDate = contact.lastMessageSent ? new Date(contact.lastMessageSent) : null;
-        
-        if (start && (!messageDate || messageDate < new Date(start))) {
+      // Apply level 2 filter
+      if (filterConfig.level2?.field && filterConfig.level2?.value) {
+        if (!matchesFilter(contact, filterConfig.level2)) {
           return false;
         }
-        if (end && (!messageDate || messageDate > new Date(end))) {
+      }
+
+      // Apply level 3 filter
+      if (filterConfig.level3?.field && filterConfig.level3?.value) {
+        if (!matchesFilter(contact, filterConfig.level3)) {
           return false;
         }
       }
@@ -133,6 +251,201 @@ function FilterMenu({ isOpen, onClose, filters, setFilters, contacts, setFiltere
     setFilteredContacts(filtered);
   };
 
+  const matchesFilter = (contact, filter) => {
+    const { field, operator, value, value2 } = filter;
+    const contactValue = contact[field];
+
+    // Handle array fields (clickid, tags)
+    if (field === 'clickid' && Array.isArray(contactValue)) {
+      const searchValue = value.toLowerCase();
+      return contactValue.some(cid => {
+        const cidStr = String(cid).toLowerCase();
+        switch (operator) {
+          case 'equals': return cidStr === searchValue;
+          case 'contains': return cidStr.includes(searchValue);
+          case 'startsWith': return cidStr.startsWith(searchValue);
+          case 'endsWith': return cidStr.endsWith(searchValue);
+          case 'notEquals': return cidStr !== searchValue;
+          default: return false;
+        }
+      });
+    }
+
+    if (field === 'tags' && Array.isArray(contact.tags)) {
+      const searchValue = value.toLowerCase();
+      return contact.tags.some(tag => {
+        const tagName = tag.name.toLowerCase();
+        switch (operator) {
+          case 'equals': return tagName === searchValue;
+          case 'contains': return tagName.includes(searchValue);
+          case 'startsWith': return tagName.startsWith(searchValue);
+          case 'endsWith': return tagName.endsWith(searchValue);
+          case 'notEquals': return tagName !== searchValue;
+          default: return false;
+        }
+      });
+    }
+
+    // Handle date fields
+    if (field === 'createdAt' || field === 'updatedAt' || field === 'lastMessageSent') {
+      if (!contactValue) return false;
+      const contactDate = new Date(contactValue);
+      const filterDate = new Date(value);
+      
+      switch (operator) {
+        case 'equals':
+          return contactDate.toDateString() === filterDate.toDateString();
+        case 'before':
+          return contactDate < filterDate;
+        case 'after':
+          return contactDate > filterDate;
+        case 'between':
+          if (!value2) return false;
+          const filterDate2 = new Date(value2);
+          return contactDate >= filterDate && contactDate <= filterDate2;
+        default:
+          return false;
+      }
+    }
+
+    // Handle text fields
+    const contactStr = String(contactValue || '').toLowerCase();
+    const searchStr = String(value || '').toLowerCase();
+
+    switch (operator) {
+      case 'equals':
+        return contactStr === searchStr;
+      case 'contains':
+        return contactStr.includes(searchStr);
+      case 'startsWith':
+        return contactStr.startsWith(searchStr);
+      case 'endsWith':
+        return contactStr.endsWith(searchStr);
+      case 'notEquals':
+        return contactStr !== searchStr;
+      default:
+        return false;
+    }
+  };
+
+  const updateLevelFilter = (level, updates) => {
+    const newFilters = { ...filters };
+    newFilters[level] = { ...newFilters[level], ...updates };
+    
+    // If clearing a filter, also clear all levels below it
+    if (updates.field === '' || !updates.value) {
+      if (level === 'level1') {
+        delete newFilters.level2;
+        delete newFilters.level3;
+      } else if (level === 'level2') {
+        delete newFilters.level3;
+      }
+    }
+    
+    handleFilterChange(newFilters);
+  };
+
+  const FilterLevel = ({ level, levelNumber }) => {
+    const filter = filters[level] || { field: '', operator: 'contains', value: '' };
+    const fieldConfig = FILTER_FIELDS.find(f => f.id === filter.field);
+    const isDateField = fieldConfig?.type === 'date';
+    const isTagsField = filter.field === 'tags';
+    const operators = isDateField ? DATE_OPERATORS : FILTER_OPERATORS;
+    const fieldValues = filter.field ? getFieldValues(filter.field) : [];
+
+    return (
+      <div className={styles.filterLevel}>
+        <div className={styles.filterItem}>
+          <label>Filter {levelNumber}</label>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+            <select
+              value={filter.field || ''}
+              onChange={(e) => updateLevelFilter(level, { 
+                field: e.target.value, 
+                operator: 'contains',
+                value: '',
+                value2: ''
+              })}
+              style={{ flex: 1 }}
+            >
+              <option value="">Select field...</option>
+              {FILTER_FIELDS.map(field => (
+                <option key={field.id} value={field.id}>{field.label}</option>
+              ))}
+            </select>
+            
+            {filter.field && (
+              <>
+                <select
+                  value={filter.operator || 'contains'}
+                  onChange={(e) => updateLevelFilter(level, { operator: e.target.value })}
+                  style={{ width: '140px' }}
+                >
+                  {operators.map(op => (
+                    <option key={op.id} value={op.id}>{op.label}</option>
+                  ))}
+                </select>
+
+                {isDateField && filter.operator === 'between' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 }}>
+                    <input
+                      type="date"
+                      value={filter.value || ''}
+                      onChange={(e) => updateLevelFilter(level, { value: e.target.value })}
+                      placeholder="Start date"
+                    />
+                    <input
+                      type="date"
+                      value={filter.value2 || ''}
+                      onChange={(e) => updateLevelFilter(level, { value2: e.target.value })}
+                      placeholder="End date"
+                    />
+                  </div>
+                ) : isDateField ? (
+                  <input
+                    type="date"
+                    value={filter.value || ''}
+                    onChange={(e) => updateLevelFilter(level, { value: e.target.value })}
+                    style={{ flex: 1 }}
+                  />
+                ) : isTagsField ? (
+                  <select
+                    value={filter.value || ''}
+                    onChange={(e) => updateLevelFilter(level, { value: e.target.value })}
+                    style={{ flex: 1 }}
+                  >
+                    <option value="">Select tag...</option>
+                    {availableTags.map(tag => (
+                      <option key={tag} value={tag}>{tag}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      list={`${level}-values`}
+                      value={filter.value || ''}
+                      onChange={(e) => updateLevelFilter(level, { value: e.target.value })}
+                      placeholder="Enter value..."
+                      style={{ flex: 1 }}
+                    />
+                    {fieldValues.length > 0 && (
+                      <datalist id={`${level}-values`}>
+                        {fieldValues.map((val, idx) => (
+                          <option key={idx} value={val} />
+                        ))}
+                      </datalist>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -141,9 +454,10 @@ function FilterMenu({ isOpen, onClose, filters, setFilters, contacts, setFiltere
         <h3>Filters</h3>
         <div className={styles.filterMenuActions}>
           <button onClick={() => {
-            setFilters({});
-            setFilteredContacts(contacts);
-          }}>Clear</button>
+            const clearedFilters = { subscribed: 'true' };
+            setFilters(clearedFilters);
+            applyFilters(clearedFilters);
+          }}>Clear All</button>
           <button onClick={onClose}>&times;</button>
         </div>
       </div>
@@ -152,119 +466,45 @@ function FilterMenu({ isOpen, onClose, filters, setFilters, contacts, setFiltere
         <div className={styles.filterItem}>
           <label>Subscription Status</label>
           <select
-            value={filters.subscribed || ''}
+            value={filters.subscribed || 'true'}
             onChange={(e) => handleFilterChange({
               ...filters,
-              subscribed: e.target.value || undefined
+              subscribed: e.target.value
             })}
           >
-            <option value="">Any</option>
             <option value="true">Subscribed</option>
             <option value="false">Unsubscribed</option>
+            <option value="">Any</option>
           </select>
         </div>
 
-        <div className={styles.filterItem}>
-          <label>Tags</label>
-          <div className={styles.tagFilterInput}>
-            <input
-              type="text"
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-              onFocus={() => setIsTagInputFocused(true)}
-              onBlur={() => {
-                setTimeout(() => setIsTagInputFocused(false), 200);
-              }}
-              placeholder="Type to search tags..."
-            />
-            {isTagInputFocused && (
-              <div className={styles.tagSuggestions}>
-                {availableTags
-                  .filter(tag => 
-                    (!tagInput.trim() || tag.toLowerCase().includes(tagInput.toLowerCase())) &&
-                    !filters.tags?.includes(tag)
-                  )
-                  .map(tag => (
-                    <div
-                      key={tag}
-                      className={styles.tagSuggestion}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                      }}
-                      onClick={() => {
-                        const newTags = [...(filters.tags || []), tag];
-                        handleFilterChange({
-                          ...filters,
-                          tags: newTags
-                        });
-                        setTagInput('');
-                      }}
-                    >
-                      {tag}
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-          <div className={styles.selectedTags}>
-            {filters.tags?.map(tag => (
-              <div key={tag} className={styles.selectedTag}>
-                {tag}
-                <button
-                  onClick={() => handleFilterChange({
-                    ...filters,
-                    tags: filters.tags.filter(t => t !== tag)
-                  })}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className={styles.filterItem}>
-          <label>Last Message</label>
-          <div className={styles.dateRangeInputs}>
-            <input
-              type="date"
-              value={filters.lastMessageRange?.start || ''}
-              onChange={(e) => handleFilterChange({
-                ...filters,
-                lastMessageRange: {
-                  ...filters.lastMessageRange,
-                  start: e.target.value
-                }
-              })}
-              placeholder="Start date"
-            />
-            <input
-              type="date"
-              value={filters.lastMessageRange?.end || ''}
-              onChange={(e) => handleFilterChange({
-                ...filters,
-                lastMessageRange: {
-                  ...filters.lastMessageRange,
-                  end: e.target.value
-                }
-              })}
-              placeholder="End date"
-            />
-          </div>
-        </div>
+        <FilterLevel level="level1" levelNumber={1} />
+        
+        {(filters.level1?.field && filters.level1?.value) && (
+          <FilterLevel level="level2" levelNumber={2} />
+        )}
+        
+        {(filters.level2?.field && filters.level2?.value) && (
+          <FilterLevel level="level3" levelNumber={3} />
+        )}
       </div>
     </div>
   );
 }
 
-function FieldsMenu({ isOpen, onClose, visibleFields, setVisibleFields }) {
+function FieldsMenu({ isOpen, onClose, visibleFields, setVisibleFields, columnOrder, setColumnOrder }) {
   const fieldOptions = [
     { field: 'id', label: 'ID' },
     { field: 'firstName', label: 'First Name' },
     { field: 'lastName', label: 'Last Name' },
-    { field: 'email', label: 'Email' },
     { field: 'phone', label: 'Phone' },
-    { field: 'clickid', label: 'Click ID' },
+    { field: 'email', label: 'Email' },
+    { field: 'clickid', label: 'Click IDs' },
+    { field: 'source', label: 'Source' },
+    { field: 'age', label: 'Age' },
+    { field: 'ip', label: 'IP' },
+    { field: 'useragent', label: 'User Agent' },
+    { field: 'referrer', label: 'Referrer' },
     { field: 'subscribed', label: 'Subscribed' },
     { field: 'tags', label: 'Tags' },
     { field: 'lastMessageSent', label: 'Last Message' },
@@ -279,13 +519,31 @@ function FieldsMenu({ isOpen, onClose, visibleFields, setVisibleFields }) {
   };
 
   const handleSelectNone = () => {
-    setVisibleFields(['id']); // Keep at least ID column
+    setVisibleFields(['id']);
+  };
+
+  const handleMoveUp = (field) => {
+    const currentIndex = columnOrder.indexOf(field);
+    if (currentIndex > 0) {
+      const newOrder = [...columnOrder];
+      [newOrder[currentIndex - 1], newOrder[currentIndex]] = [newOrder[currentIndex], newOrder[currentIndex - 1]];
+      setColumnOrder(newOrder);
+    }
+  };
+
+  const handleMoveDown = (field) => {
+    const currentIndex = columnOrder.indexOf(field);
+    if (currentIndex < columnOrder.length - 1) {
+      const newOrder = [...columnOrder];
+      [newOrder[currentIndex], newOrder[currentIndex + 1]] = [newOrder[currentIndex + 1], newOrder[currentIndex]];
+      setColumnOrder(newOrder);
+    }
   };
 
   return (
     <div className={styles.fieldsMenu}>
       <div className={styles.fieldsMenuHeader}>
-        <h3>Visible Fields</h3>
+        <h3>Visible Fields & Order</h3>
         <div className={styles.fieldsMenuActions}>
           <button onClick={handleSelectAll}>All</button>
           <button onClick={handleSelectNone}>None</button>
@@ -293,25 +551,49 @@ function FieldsMenu({ isOpen, onClose, visibleFields, setVisibleFields }) {
         </div>
       </div>
       <div className={styles.fieldsList}>
-        {fieldOptions.map((field) => (
-          <label key={field.field} className={styles.fieldItem}>
-            <input
-              type="checkbox"
-              checked={visibleFields.includes(field.field)}
-              onChange={(e) => {
-                if (e.target.checked) {
-                  setVisibleFields([...visibleFields, field.field]);
-                } else {
-                  // Prevent unchecking if it's the last visible field
-                  if (visibleFields.length > 1) {
-                    setVisibleFields(visibleFields.filter(f => f !== field.field));
-                  }
-                }
-              }}
-            />
-            {field.label}
-          </label>
-        ))}
+        {columnOrder.map((field) => {
+          const fieldOption = fieldOptions.find(f => f.field === field);
+          if (!fieldOption) return null;
+          const isVisible = visibleFields.includes(field);
+          const currentIndex = columnOrder.indexOf(field);
+          
+          return (
+            <div key={field} className={styles.fieldItemRow}>
+              <label className={styles.fieldItem}>
+                <input
+                  type="checkbox"
+                  checked={isVisible}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setVisibleFields([...visibleFields, field]);
+                    } else {
+                      if (visibleFields.length > 1) {
+                        setVisibleFields(visibleFields.filter(f => f !== field));
+                      }
+                    }
+                  }}
+                />
+                {fieldOption.label}
+              </label>
+              <div className={styles.fieldOrderControls}>
+                <button 
+                  onClick={() => handleMoveUp(field)}
+                  disabled={currentIndex === 0}
+                  className={styles.orderButton}
+                >
+                  ↑
+                </button>
+                <button 
+                  onClick={() => handleMoveDown(field)}
+                  disabled={currentIndex === columnOrder.length - 1}
+                  className={styles.orderButton}
+                >
+                  ↓
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -321,48 +603,185 @@ export default function ContactsTable({ initialContacts }) {
   const [contacts, setContacts] = useState(initialContacts);
   const [filteredContacts, setFilteredContacts] = useState(initialContacts);
   const [loading, setLoading] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
   const [globalFilter, setGlobalFilter] = useState('');
   const [columnFilters, setColumnFilters] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState(new Date());
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showCsvModal, setShowCsvModal] = useState(false);
   const [showFiltersMenu, setShowFiltersMenu] = useState(false);
   const [showFieldsMenu, setShowFieldsMenu] = useState(false);
-  const [activeFilters, setActiveFilters] = useState({});
-  const [visibleFields, setVisibleFields] = useState([
-    'id', 'firstName', 'lastName', 'email', 'phone', 'clickid', 
+  const [activeFilters, setActiveFilters] = useState({ subscribed: 'true' });
+  const defaultColumnOrder = [
+    'id', 'firstName', 'lastName', 'phone', 'email', 'clickid', 
+    'source', 'age', 'ip', 'useragent', 'referrer',
     'subscribed', 'tags', 'lastMessageSent', 'createdAt', 'updatedAt'
-  ]);
+  ];
+  const [columnOrder, setColumnOrder] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('contactsColumnOrder');
+      return saved ? JSON.parse(saved) : defaultColumnOrder;
+    }
+    return defaultColumnOrder;
+  });
+  const [visibleFields, setVisibleFields] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('contactsVisibleFields');
+      return saved ? JSON.parse(saved) : defaultColumnOrder;
+    }
+    return defaultColumnOrder;
+  });
   const [editingContact, setEditingContact] = useState(null);
+  const [rowSelection, setRowSelection] = useState({});
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
 
-  // Add search effect
+  // Save column order to localStorage
+  useEffect(() => {
+    localStorage.setItem('contactsColumnOrder', JSON.stringify(columnOrder));
+  }, [columnOrder]);
+
+  // Save visible fields to localStorage
+  useEffect(() => {
+    localStorage.setItem('contactsVisibleFields', JSON.stringify(visibleFields));
+  }, [visibleFields]);
+
   useEffect(() => {
     if (!Array.isArray(contacts)) {
       setFilteredContacts([]);
       return;
     }
 
+    // Apply filters first
+    let filtered = contacts;
+    
+    // Apply subscribed filter
+    if (activeFilters.subscribed === 'true') {
+      filtered = filtered.filter(contact => contact.subscribed === true);
+    } else if (activeFilters.subscribed === 'false') {
+      filtered = filtered.filter(contact => contact.subscribed === false);
+    }
+
+    // Apply level filters (using the same logic as FilterMenu)
+    if (activeFilters.level1?.field && activeFilters.level1?.value) {
+      filtered = filtered.filter(contact => {
+        return applyLevelFilter(contact, activeFilters.level1);
+      });
+    }
+    if (activeFilters.level2?.field && activeFilters.level2?.value) {
+      filtered = filtered.filter(contact => {
+        return applyLevelFilter(contact, activeFilters.level2);
+      });
+    }
+    if (activeFilters.level3?.field && activeFilters.level3?.value) {
+      filtered = filtered.filter(contact => {
+        return applyLevelFilter(contact, activeFilters.level3);
+      });
+    }
+
+    // Then apply search query
     if (!searchQuery.trim()) {
-      setFilteredContacts(contacts);
+      setFilteredContacts(filtered);
       return;
     }
 
     const query = searchQuery.toLowerCase();
-    const filtered = contacts.filter(contact => {
+    const searchFiltered = filtered.filter(contact => {
       return (
         contact.firstName?.toLowerCase().includes(query) ||
         contact.lastName?.toLowerCase().includes(query) ||
-        contact.phone.toLowerCase().includes(query) ||
+        contact.phone?.toLowerCase().includes(query) ||
         contact.email?.toLowerCase().includes(query) ||
-        contact.clickid?.toLowerCase().includes(query) ||
+        (Array.isArray(contact.clickid) ? contact.clickid.join(' ').toLowerCase() : String(contact.clickid || '')).includes(query) ||
+        contact.source?.toLowerCase().includes(query) ||
+        contact.age?.toLowerCase().includes(query) ||
+        contact.ip?.toLowerCase().includes(query) ||
+        contact.useragent?.toLowerCase().includes(query) ||
+        contact.referrer?.toLowerCase().includes(query) ||
         String(contact.subscribed).toLowerCase().includes(query) ||
         contact.tags?.some(tag => tag.name.toLowerCase().includes(query))
       );
     });
-    setFilteredContacts(filtered);
-  }, [searchQuery, contacts]);
+    setFilteredContacts(searchFiltered);
+  }, [searchQuery, contacts, activeFilters]);
+
+  // Helper function to apply level filter (matches FilterMenu logic)
+  const applyLevelFilter = (contact, filter) => {
+    const { field, operator, value, value2 } = filter;
+    const contactValue = contact[field];
+
+    // Handle array fields (clickid, tags)
+    if (field === 'clickid' && Array.isArray(contactValue)) {
+      const searchValue = value.toLowerCase();
+      return contactValue.some(cid => {
+        const cidStr = String(cid).toLowerCase();
+        switch (operator) {
+          case 'equals': return cidStr === searchValue;
+          case 'contains': return cidStr.includes(searchValue);
+          case 'startsWith': return cidStr.startsWith(searchValue);
+          case 'endsWith': return cidStr.endsWith(searchValue);
+          case 'notEquals': return cidStr !== searchValue;
+          default: return false;
+        }
+      });
+    }
+
+    if (field === 'tags' && Array.isArray(contact.tags)) {
+      const searchValue = value.toLowerCase();
+      return contact.tags.some(tag => {
+        const tagName = tag.name.toLowerCase();
+        switch (operator) {
+          case 'equals': return tagName === searchValue;
+          case 'contains': return tagName.includes(searchValue);
+          case 'startsWith': return tagName.startsWith(searchValue);
+          case 'endsWith': return tagName.endsWith(searchValue);
+          case 'notEquals': return tagName !== searchValue;
+          default: return false;
+        }
+      });
+    }
+
+    // Handle date fields
+    if (field === 'createdAt' || field === 'updatedAt' || field === 'lastMessageSent') {
+      if (!contactValue) return false;
+      const contactDate = new Date(contactValue);
+      const filterDate = new Date(value);
+      
+      switch (operator) {
+        case 'equals':
+          return contactDate.toDateString() === filterDate.toDateString();
+        case 'before':
+          return contactDate < filterDate;
+        case 'after':
+          return contactDate > filterDate;
+        case 'between':
+          if (!value2) return false;
+          const filterDate2 = new Date(value2);
+          return contactDate >= filterDate && contactDate <= filterDate2;
+        default:
+          return false;
+      }
+    }
+
+    // Handle text fields
+    const contactStr = String(contactValue || '').toLowerCase();
+    const searchStr = String(value || '').toLowerCase();
+
+    switch (operator) {
+      case 'equals':
+        return contactStr === searchStr;
+      case 'contains':
+        return contactStr.includes(searchStr);
+      case 'startsWith':
+        return contactStr.startsWith(searchStr);
+      case 'endsWith':
+        return contactStr.endsWith(searchStr);
+      case 'notEquals':
+        return contactStr !== searchStr;
+      default:
+        return false;
+    }
+  };
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -418,9 +837,7 @@ export default function ContactsTable({ initialContacts }) {
   const handleAdd = async (newContact) => {
     try {
       setLoading(true);
-      console.log('Adding contact with data:', newContact); // Debug log
       const contact = await addContact(newContact);
-      console.log('Received contact from server:', contact); // Debug log
       setContacts([contact, ...contacts]);
       setFilteredContacts([contact, ...filteredContacts]);
       setShowAddModal(false);
@@ -431,29 +848,34 @@ export default function ContactsTable({ initialContacts }) {
     }
   };
 
+  const columns = useMemo(() => createColumns(columnOrder, rowSelection, setRowSelection, filteredContacts), [columnOrder, rowSelection, filteredContacts]);
+  
+  const visibleColumns = useMemo(() => 
+    columns.filter(col => visibleFields.includes(col.id) || col.id === 'select')
+  , [columns, visibleFields]);
+
   const table = useReactTable({
-    data: contacts,
-    columns,
+    data: filteredContacts,
+    columns: visibleColumns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    enableRowSelection: true,
+    onRowSelectionChange: setRowSelection,
     state: {
       globalFilter,
       columnFilters,
+      rowSelection,
+      columnOrder: columnOrder.filter(f => visibleFields.includes(f)),
     },
     onGlobalFilterChange: setGlobalFilter,
     onColumnFiltersChange: setColumnFilters,
   });
 
-  // Add safety check in render
-  const contactsList = Array.isArray(filteredContacts) ? filteredContacts : [];
+  const selectedRows = table.getSelectedRowModel().rows;
+  const selectedContacts = selectedRows.map(row => row.original);
 
-  // Update the header rendering
-  const renderHeader = (fieldId, label) => (
-    <th key={fieldId} data-column={fieldId}>
-      {label}
-    </th>
-  );
+  const contactsList = Array.isArray(filteredContacts) ? filteredContacts : [];
 
   if (loading) {
     return <div className={styles.loading}>Loading...</div>;
@@ -494,7 +916,7 @@ export default function ContactsTable({ initialContacts }) {
             >
               Fields
               <span className={styles.badge}>
-                {visibleFields.length === 11 ? 'All' : visibleFields.length}
+                {visibleFields.length}
               </span>
               <ChevronDownIcon className={styles.chevron} />
             </button>
@@ -516,14 +938,38 @@ export default function ContactsTable({ initialContacts }) {
               onClose={() => setShowFieldsMenu(false)}
               visibleFields={visibleFields}
               setVisibleFields={setVisibleFields}
+              columnOrder={columnOrder}
+              setColumnOrder={setColumnOrder}
             />
           </div>
-          <button 
-            className={styles.addRecord}
-            onClick={() => setShowAddModal(true)}
-          >
-            Add Contact
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            {selectedContacts.length > 0 && (
+              <>
+                <span className={styles.selectedCount}>
+                  {selectedContacts.length} selected
+                </span>
+                <button 
+                  className={styles.bulkEditButton}
+                  onClick={() => setShowBulkEdit(true)}
+                >
+                  ✏️ Bulk Edit
+                </button>
+              </>
+            )}
+            <button 
+              className={styles.addRecord}
+              onClick={() => setShowCsvModal(true)}
+              style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)' }}
+            >
+              📄 Upload CSV
+            </button>
+            <button 
+              className={styles.addRecord}
+              onClick={() => setShowAddModal(true)}
+            >
+              Add Contact
+            </button>
+          </div>
         </div>
       </div>
 
@@ -534,17 +980,13 @@ export default function ContactsTable({ initialContacts }) {
               <th className={styles.checkboxCell}>
                 <input type="checkbox" />
               </th>
-              {visibleFields.includes('id') && renderHeader('id', 'ID #')}
-              {visibleFields.includes('firstName') && renderHeader('firstName', 'First Name ▲')}
-              {visibleFields.includes('lastName') && renderHeader('lastName', 'Last Name ▲')}
-              {visibleFields.includes('phone') && renderHeader('phone', 'Phone ▲')}
-              {visibleFields.includes('email') && renderHeader('email', 'Email ▲?')}
-              {visibleFields.includes('clickid') && renderHeader('clickid', 'Click ID ▲?')}
-              {visibleFields.includes('subscribed') && renderHeader('subscribed', 'Subscribed ?')}
-              {visibleFields.includes('tags') && renderHeader('tags', 'Tags')}
-              {visibleFields.includes('lastMessageSent') && renderHeader('lastMessageSent', 'Last Message ?')}
-              {visibleFields.includes('createdAt') && renderHeader('createdAt', 'Created At ▼')}
-              {visibleFields.includes('updatedAt') && renderHeader('updatedAt', 'Updated At ▼')}
+              {table.getHeaderGroups().map(headerGroup => (
+                headerGroup.headers.map(header => (
+                  <th key={header.id} className={styles.draggableHeader}>
+                    {flexRender(header.column.columnDef.header, header.getContext())}
+                  </th>
+                ))
+              ))}
               <th>Actions</th>
             </tr>
           </thead>
@@ -554,36 +996,38 @@ export default function ContactsTable({ initialContacts }) {
                 <td className={styles.checkboxCell}>
                   <input type="checkbox" />
                 </td>
-                {visibleFields.includes('id') && <td>{contact.id}</td>}
-                {visibleFields.includes('firstName') && <td>{contact.firstName}</td>}
-                {visibleFields.includes('lastName') && <td>{contact.lastName}</td>}
-                {visibleFields.includes('phone') && <td data-column="phone">{contact.phone}</td>}
-                {visibleFields.includes('email') && <td>{contact.email || 'null'}</td>}
-                {visibleFields.includes('clickid') && <td>{contact.clickid || 'null'}</td>}
-                {visibleFields.includes('subscribed') && <td>{contact.subscribed?.toString() || 'null'}</td>}
-                {visibleFields.includes('tags') && (
-                  <td>
-                    <div className={styles.tagContainer}>
-                      {(contact.tags && contact.tags.length > 0) ? 
-                        contact.tags.map((tag) => (
+                {visibleColumns.map(column => {
+                  const cellValue = contact[column.id];
+                  let displayValue = cellValue;
+                  
+                  if (column.id === 'clickid') {
+                    displayValue = Array.isArray(cellValue) ? cellValue.join(', ') : (cellValue || 'null');
+                  } else if (column.id === 'useragent') {
+                    displayValue = cellValue ? (cellValue.length > 50 ? cellValue.substring(0, 50) + '...' : cellValue) : 'null';
+                  } else if (column.id === 'tags') {
+                    displayValue = contact.tags && contact.tags.length > 0 ? (
+                      <div className={styles.tagContainer}>
+                        {contact.tags.map((tag) => (
                           <span key={tag.id} className={styles.tag}>
                             {tag.name}
                           </span>
-                        )) 
-                        : 'No tags'
-                      }
-                    </div>
-                  </td>
-                )}
-                {visibleFields.includes('lastMessageSent') && (
-                  <td>{contact.lastMessageSent ? new Date(contact.lastMessageSent).toISOString() : 'Never'}</td>
-                )}
-                {visibleFields.includes('createdAt') && (
-                  <td>{new Date(contact.createdAt).toISOString()}</td>
-                )}
-                {visibleFields.includes('updatedAt') && (
-                  <td>{new Date(contact.updatedAt).toISOString()}</td>
-                )}
+                        ))}
+                      </div>
+                    ) : 'No tags';
+                  } else if (column.id === 'lastMessageSent') {
+                    displayValue = cellValue ? format(new Date(cellValue), 'yyyy-MM-dd HH:mm') : 'Never';
+                  } else if (column.id === 'createdAt' || column.id === 'updatedAt') {
+                    displayValue = cellValue ? format(new Date(cellValue), 'yyyy-MM-dd HH:mm') : 'null';
+                  } else {
+                    displayValue = cellValue || 'null';
+                  }
+                  
+                  return (
+                    <td key={column.id} data-column={column.id}>
+                      {displayValue}
+                    </td>
+                  );
+                })}
                 <td className={styles.actions}>
                   <button 
                     onClick={() => handleEdit(contact)}
@@ -618,6 +1062,32 @@ export default function ContactsTable({ initialContacts }) {
           onAdd={handleAdd}
         />
       )}
+
+      {showCsvModal && (
+        <CsvUploadModal
+          onClose={() => setShowCsvModal(false)}
+          onUploadComplete={async () => {
+            // Refresh contacts after CSV upload
+            const freshContacts = await getContacts();
+            setContacts(freshContacts);
+            setFilteredContacts(freshContacts);
+          }}
+        />
+      )}
+
+      {showBulkEdit && selectedContacts.length > 0 && (
+        <BulkEditModal
+          selectedContacts={selectedContacts}
+          onClose={() => {
+            setShowBulkEdit(false);
+            setRowSelection({});
+          }}
+          onUpdate={async () => {
+            await handleSync();
+            setRowSelection({});
+          }}
+        />
+      )}
     </div>
   );
-} 
+}

@@ -5,7 +5,7 @@
 .modalOverlay {
   position: fixed;
   top: 0;
-  left: 0;
+  left: var(--sidebar-width);
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.8);
@@ -15,6 +15,11 @@
   align-items: center;
   z-index: 1000;
   animation: fadeIn 0.15s ease-out;
+  transition: left var(--transition-normal);
+}
+
+body:has(.sidebar.collapsed) .modalOverlay {
+  left: var(--sidebar-width-collapsed);
 }
 
 @keyframes fadeIn {

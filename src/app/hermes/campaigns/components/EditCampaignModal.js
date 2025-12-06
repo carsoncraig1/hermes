@@ -5,7 +5,7 @@ import { updateCampaign } from '@/lib/actions/campaigns'
 import { getTags } from '@/lib/actions/tags'
 import styles from './AddCampaignModal.module.css' // We can reuse the same styles
 
-export default function EditCampaignModal({ campaign, onClose, onUpdate, numbers = [] }) {
+export default function EditCampaignModal({ campaign, onClose, onUpdate }) {
   const [name, setName] = useState(campaign.name)
   const [message, setMessage] = useState(campaign.message)
   const [targetAllSubscribed, setTargetAllSubscribed] = useState(
@@ -17,7 +17,6 @@ export default function EditCampaignModal({ campaign, onClose, onUpdate, numbers
       .map(target => target.tagId)
   )
   const [availableTags, setAvailableTags] = useState([])
-  const [selectedNumbers, setSelectedNumbers] = useState(campaign.numbers ? campaign.numbers.map(n => n.id) : [])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -42,8 +41,7 @@ export default function EditCampaignModal({ campaign, onClose, onUpdate, numbers
         name,
         message,
         targetAllSubscribed,
-        selectedTags: targetAllSubscribed ? [] : selectedTags,
-        numbers: selectedNumbers
+        selectedTags: targetAllSubscribed ? [] : selectedTags
       })
       onUpdate(updatedCampaign)
       onClose()
@@ -134,27 +132,6 @@ export default function EditCampaignModal({ campaign, onClose, onUpdate, numbers
                 )}
               </div>
             )}
-          </div>
-
-          <div className={styles.formGroup}>
-            <label>Attach Numbers</label>
-            <div className={styles.tagsGrid}>
-              {numbers.map(num => (
-                <label key={num.id} className={styles.tagLabel}>
-                  <input
-                    type="checkbox"
-                    checked={selectedNumbers.includes(num.id)}
-                    onChange={() => setSelectedNumbers(prev =>
-                      prev.includes(num.id)
-                        ? prev.filter(id => id !== num.id)
-                        : [...prev, num.id]
-                    )}
-                    className={styles.checkbox}
-                  />
-                  {num.phoneNumber}
-                </label>
-              ))}
-            </div>
           </div>
 
           <div className={styles.actions}>

@@ -39,6 +39,7 @@
   
   /* Layout */
   --sidebar-width: 260px;
+  --sidebar-width-collapsed: 80px;
   --header-height: 64px;
   --border-radius-sm: 8px;
   --border-radius-md: 10px;
@@ -121,6 +122,55 @@ a {
   flex-direction: column;
   border-right: 1px solid var(--border-primary);
   z-index: 100;
+  transition: width var(--transition-normal);
+}
+
+.sidebar.collapsed {
+  width: var(--sidebar-width-collapsed);
+}
+
+.sidebar.collapsed .nav-item span:not(:first-child) {
+  display: none;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 0.75rem;
+}
+
+.sidebar.collapsed .logo h2 {
+  display: none;
+}
+
+.sidebar.collapsed .logo {
+  justify-content: center;
+}
+
+.sidebar-toggle {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2.5rem;
+  height: 2.5rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-md);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.sidebar-toggle:hover {
+  background: var(--bg-elevated);
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
 }
 
 .logo {
@@ -160,6 +210,7 @@ a {
 .nav-item {
   display: flex;
   align-items: center;
+  gap: 0.75rem;
   padding: 0.75rem 1rem;
   color: var(--text-secondary);
   text-decoration: none;
@@ -169,6 +220,11 @@ a {
   letter-spacing: -0.01em;
   font-size: 0.9375rem;
   border: 1px solid transparent;
+}
+
+.nav-item span:first-child {
+  font-size: 1.125rem;
+  flex-shrink: 0;
 }
 
 .nav-item:hover {
@@ -190,6 +246,12 @@ a {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  position: relative;
+  padding-bottom: 4rem;
+}
+
+.sidebar.collapsed .user-section {
+  display: none;
 }
 
 .user-info {
@@ -234,8 +296,19 @@ a {
    MAIN CONTENT AREA
    ============================================================================= */
 
-.dashboard-container {
+.main-content-wrapper {
   margin-left: var(--sidebar-width);
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+  transition: margin-left var(--transition-normal);
+}
+
+body:has(.sidebar.collapsed) .main-content-wrapper {
+  margin-left: var(--sidebar-width-collapsed);
+}
+
+.dashboard-container {
   min-height: 100vh;
   position: relative;
   z-index: 1;

@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react'
 import styles from './CampaignsTable.module.css'
 import { getCampaigns, deleteCampaign } from '@/lib/actions/campaigns'
-import { getNumbers } from '@/lib/actions/numbers'
 import AddCampaignModal from './AddCampaignModal'
 import EditCampaignModal from './EditCampaignModal'
+import CreateWorkflowCampaign from './CreateWorkflowCampaign'
+import EditWorkflowCampaign from './EditWorkflowCampaign'
 
 export default function CampaignsTable({ initialCampaigns }) {
   const [campaigns, setCampaigns] = useState(initialCampaigns)
@@ -13,8 +14,9 @@ export default function CampaignsTable({ initialCampaigns }) {
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showWorkflowModal, setShowWorkflowModal] = useState(false)
   const [editingCampaign, setEditingCampaign] = useState(null)
-  const [numbers, setNumbers] = useState([])
+  const [editingWorkflowCampaign, setEditingWorkflowCampaign] = useState(null)
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -28,14 +30,6 @@ export default function CampaignsTable({ initialCampaigns }) {
     )
     setFilteredCampaigns(filtered)
   }, [searchQuery, campaigns])
-
-  useEffect(() => {
-    async function fetchNumbers() {
-      const nums = await getNumbers();
-      setNumbers(nums);
-    }
-    fetchNumbers();
-  }, []);
 
   const handleSync = async () => {
     setLoading(true)
@@ -116,12 +110,21 @@ export default function CampaignsTable({ initialCampaigns }) {
               Showing {filteredCampaigns.length} of {campaigns.length}
             </div>
           </div>
-          <button 
-            className={styles.addRecord}
-            onClick={() => setShowAddModal(true)}
-          >
-            Add Campaign
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button 
+              className={styles.addRecord}
+              onClick={() => setShowWorkflowModal(true)}
+              style={{ background: 'var(--accent-orange)' }}
+            >
+              🚀 Create Sequence
+            </button>
+            <button 
+              className={styles.addRecord}
+              onClick={() => setShowAddModal(true)}
+            >
+              Dedicated Send
+            </button>
+          </div>
         </div>
       </div>
 
@@ -130,33 +133,65 @@ export default function CampaignsTable({ initialCampaigns }) {
           <thead>
             <tr>
               <th>Name</th>
-              <th>Message</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Message/Workflow</th>
               <th>Target Type</th>
               <th>Shortlinks</th>
-              <th>Numbers</th>
+              <th>Messages Sent</th>
               <th>Last Message Sent</th>
               <th>Created</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {filteredCampaigns.map((campaign) => (
+            {filteredCampaigns.map((campaign) => {
+              const isWorkflow = !!campaign.workflow;
+              return (
               <tr key={campaign.id}>
                 <td>{campaign.name}</td>
                 <td>
-                  <div className={styles.messageCell}>
-                    {campaign.message || <span className={styles.noCampaign}>No message</span>}
-                  </div>
+                  {isWorkflow ? (
+                    <span className={styles.workflowBadge}>🔀 Workflow</span>
+                  ) : (
+                    <span className={styles.legacyBadge}>📝 Legacy</span>
+                  )}
                 </td>
                 <td>
-                  {campaign.targets?.map(target => (
-                    <span key={target.id} className={styles.campaign}>
-                      {target.targetType === 'ALL_SUBSCRIBED' ? 'All Subscribed' : target.tag?.name}
+                  <span className={`${styles.status} ${campaign.enabled ? styles.enabled : styles.disabled}`}>
+                    {campaign.enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </td>
+                <td>
+                  {isWorkflow ? (
+                    <span className={styles.workflowInfo}>
+                      {campaign.workflow?.nodes?.length || 0} nodes
                     </span>
-                  )) || <span className={styles.noCampaign}>No targets</span>}
+                  ) : (
+                    <div className={styles.messageCell}>
+                      {campaign.message || <span className={styles.noCampaign}>No message</span>}
+                    </div>
+                  )}
+                </td>
+                <td>
+                  {isWorkflow ? (
+                    <span className={styles.noCampaign}>N/A</span>
+                  ) : (
+                    <>
+                      {campaign.targets?.map(target => (
+                        <span key={target.id} className={styles.campaign}>
+                          {target.targetType === 'ALL_SUBSCRIBED' ? 'All Subscribed' : target.tag?.name}
+                        </span>
+                      )) || <span className={styles.noCampaign}>No targets</span>}
+                    </>
+                  )}
                 </td>
                 <td>{campaign.shortlinks.length}</td>
-                <td>{campaign.numbers ? campaign.numbers.length : 0}</td>
+                <td>
+                  <span className={styles.messagesSent}>
+                    {campaign.messagesSent || 0}
+                  </span>
+                </td>
                 <td>
                   {campaign.lastMessageSent 
                     ? new Date(campaign.lastMessageSent).toLocaleDateString()
@@ -165,12 +200,21 @@ export default function CampaignsTable({ initialCampaigns }) {
                 </td>
                 <td>{new Date(campaign.createdAt).toLocaleDateString()}</td>
                 <td className={styles.actions}>
-                  <button 
-                    onClick={() => handleEdit(campaign)}
-                    className={styles.actionButton}
-                  >
-                    Edit
-                  </button>
+                  {isWorkflow ? (
+                    <button 
+                      onClick={() => setEditingWorkflowCampaign(campaign)}
+                      className={styles.actionButton}
+                    >
+                      Edit Workflow
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => handleEdit(campaign)}
+                      className={styles.actionButton}
+                    >
+                      Edit
+                    </button>
+                  )}
                   <button 
                     onClick={() => handleDelete(campaign.id)}
                     className={styles.actionButton}
@@ -179,7 +223,8 @@ export default function CampaignsTable({ initialCampaigns }) {
                   </button>
                 </td>
               </tr>
-            ))}
+            );
+            })}
           </tbody>
         </table>
       </div>
@@ -189,7 +234,6 @@ export default function CampaignsTable({ initialCampaigns }) {
           campaign={editingCampaign}
           onClose={() => setEditingCampaign(null)}
           onUpdate={handleUpdate}
-          numbers={numbers}
         />
       )}
       
@@ -197,7 +241,25 @@ export default function CampaignsTable({ initialCampaigns }) {
         <AddCampaignModal
           onClose={() => setShowAddModal(false)}
           onAdd={handleAdd}
-          numbers={numbers}
+        />
+      )}
+
+      {showWorkflowModal && (
+        <CreateWorkflowCampaign
+          onClose={() => {
+            setShowWorkflowModal(false);
+            handleSync();
+          }}
+        />
+      )}
+
+      {editingWorkflowCampaign && (
+        <EditWorkflowCampaign
+          campaign={editingWorkflowCampaign}
+          onClose={() => {
+            setEditingWorkflowCampaign(null);
+            handleSync();
+          }}
         />
       )}
     </div>

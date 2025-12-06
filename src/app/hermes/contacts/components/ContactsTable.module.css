@@ -68,6 +68,40 @@
   margin-left: 0.75rem;
 }
 
+.selectCheckbox {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent-orange);
+  cursor: pointer;
+}
+
+.selectedCount {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  padding: 0 0.5rem;
+}
+
+.bulkEditButton {
+  background: var(--accent-orange);
+  color: var(--bg-primary);
+  border: none;
+  padding: 0.625rem 1.25rem;
+  border-radius: var(--border-radius-md);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bulkEditButton:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
+}
+
 .addRecord {
   background: var(--accent-orange);
   color: white;
@@ -361,6 +395,29 @@
   box-shadow: 0 0 0 3px var(--accent-orange-muted);
 }
 
+.filterLevel {
+  margin-left: 1rem;
+  padding-left: 1rem;
+  border-left: 2px solid var(--border-primary);
+  position: relative;
+}
+
+.filterLevel::before {
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent-orange);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.filterLevel:has(select[value]:not([value=""]))::before {
+  opacity: 0.5;
+}
+
 .fieldItem {
   display: flex;
   align-items: center;
@@ -500,4 +557,66 @@
 .table td[data-column="phone"],
 .table th[data-column="phone"] {
   min-width: 150px;
+}
+
+/* Draggable column headers */
+.draggableHeader {
+  position: relative;
+  cursor: grab;
+  user-select: none;
+}
+
+.draggableHeader:active {
+  cursor: grabbing;
+}
+
+.headerContent {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dragHandle {
+  opacity: 0.3;
+  font-size: 0.875rem;
+  cursor: grab;
+}
+
+.dragHandle:hover {
+  opacity: 0.6;
+}
+
+/* Field order controls */
+.fieldItemRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.fieldOrderControls {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.orderButton {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all var(--transition-fast);
+}
+
+.orderButton:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  border-color: var(--border-secondary);
+  color: var(--text-primary);
+}
+
+.orderButton:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }

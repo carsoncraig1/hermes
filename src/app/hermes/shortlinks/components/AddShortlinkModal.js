@@ -11,6 +11,7 @@ function generateRandomSlug(length = 3) {
 }
 
 export default function AddShortlinkModal({ onClose, onAdd }) {
+  const [nickname, setNickname] = useState('')
   const [slug, setSlug] = useState('')
   const [destination, setDestination] = useState('')
   const [campaignId, setCampaignId] = useState('')
@@ -74,6 +75,7 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
     
     try {
       const shortlink = await addShortlink({
+        nickname: nickname || null,
         slug,
         destination,
         campaignId: campaignId || null,
@@ -99,6 +101,18 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
           <button onClick={onClose} className={styles.closeButton}>&times;</button>
         </div>
         <form onSubmit={handleSubmit}>
+          <div className={styles.formGroup}>
+            <label htmlFor="nickname">Nickname (Optional)</label>
+            <input
+              id="nickname"
+              type="text"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              placeholder="Enter a friendly name for this shortlink"
+              className={styles.input}
+            />
+          </div>
+
           <div className={styles.formGroup}>
             <label htmlFor="slug">Slug</label>
             <div className={styles.inputWithButton}>

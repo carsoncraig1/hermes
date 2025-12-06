@@ -5,7 +5,7 @@
 .modalOverlay {
   position: fixed;
   top: 0;
-  left: 0;
+  left: var(--sidebar-width);
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.8);
@@ -15,6 +15,11 @@
   align-items: center;
   z-index: 1000;
   animation: fadeIn 0.15s ease-out;
+  transition: left var(--transition-normal);
+}
+
+body:has(.sidebar.collapsed) .modalOverlay {
+  left: var(--sidebar-width-collapsed);
 }
 
 @keyframes fadeIn {
@@ -96,12 +101,16 @@
   color: var(--text-muted);
 }
 
+.messagePreview {
+  position: relative;
+}
+
 .textarea {
   width: 100%;
   padding: 0.75rem 1rem;
   border: 1px solid var(--border-primary);
   background: var(--bg-tertiary);
-  color: var(--text-primary);
+  color: transparent;
   border-radius: var(--border-radius-md);
   resize: vertical;
   font-family: var(--font-family);
@@ -109,6 +118,61 @@
   min-height: 120px;
   transition: all var(--transition-normal);
   outline: none;
+  caret-color: var(--text-primary);
+}
+
+.textarea::selection {
+  background: rgba(255, 107, 53, 0.3);
+}
+
+.messageDisplay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-primary);
+  border-radius: var(--border-radius-md);
+  font-family: var(--font-family);
+  font-size: 0.9375rem;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  pointer-events: none;
+  z-index: 1;
+  line-height: 1.5;
+}
+
+.shortlinkUrl {
+  color: var(--accent-orange) !important;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.shortlinkSelect {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-sm);
+  padding: 0.5rem 0.75rem;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  max-width: 200px;
+  flex-shrink: 0;
+}
+
+.shortlinkSelect:hover {
+  border-color: var(--accent-orange);
+}
+
+.shortlinkSelect:focus {
+  outline: none;
+  border-color: var(--accent-orange);
+  box-shadow: 0 0 0 3px var(--accent-orange-muted);
 }
 
 .textarea:hover {
@@ -131,21 +195,36 @@
   text-align: right;
 }
 
-/* Tags Section */
-.tagsSection {
+/* Targeting Section */
+.targetingSection {
   margin-top: 1.5rem;
   padding-top: 1.5rem;
   border-top: 1px solid var(--border-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
-.tagsSection > label {
+.targetingGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.targetingLabel {
   display: block;
-  margin-bottom: 0.75rem;
   color: var(--text-muted);
   font-size: 0.8125rem;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.emptyState {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-style: italic;
+  padding: 0.5rem;
 }
 
 .tagsGrid {
@@ -180,18 +259,60 @@
   height: 1rem;
 }
 
-.checkboxLabel {
+.messageHeader {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 0.9375rem;
+  margin-bottom: 0.5rem;
+  gap: 1rem;
 }
 
-.checkboxLabel:hover {
+.messageHeader label {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.targetAllContainer {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-md);
+  transition: all var(--transition-fast);
+}
+
+.targetAllContainer:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-secondary);
+}
+
+.targetAllLabel {
+  flex: 1;
+  margin: 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: color var(--transition-fast);
+  user-select: none;
+}
+
+.targetAllContainer:hover .targetAllLabel {
   color: var(--text-primary);
+}
+
+.targetAllContainer input[type="checkbox"] {
+  margin: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  accent-color: var(--accent-orange);
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .warning {

@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
 import Image from 'next/image'
@@ -6,6 +7,7 @@ import Image from 'next/image'
 export default function Sidebar() {
   const pathname = usePathname()
   const { data: session } = useSession()
+  const [isCollapsed, setIsCollapsed] = useState(false)
 
   const handleSignOut = () => {
     // Use window.location.origin to get the current domain dynamically
@@ -14,59 +16,83 @@ export default function Sidebar() {
   }
 
   return (
-    <div className="sidebar">
+    <div className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
       <div className="logo">
-        <h2>
-          Hermes 
+        {!isCollapsed ? (
+          <h2>
+            Hermes 
+            <Image 
+              src="/hermes.png" 
+              alt="Hermes Logo" 
+              width={28} 
+              height={28}
+              priority
+            />
+          </h2>
+        ) : (
           <Image 
             src="/hermes.png" 
             alt="Hermes Logo" 
-            width={28} 
-            height={28}
+            width={32} 
+            height={32}
             priority
           />
-        </h2>
+        )}
       </div>
       
       <nav className="nav-menu">
-        <a href="/hermes/dashboard" className={`nav-item ${pathname === '/hermes/dashboard' ? 'active' : ''}`}>
-          <span>📊 Dashboard</span>
+        <a href="/hermes/dashboard" className={`nav-item ${pathname === '/hermes/dashboard' ? 'active' : ''}`} title="Dashboard">
+          <span>📊</span>
+          <span>Dashboard</span>
         </a>
-        <a href="/hermes/campaigns" className={`nav-item ${pathname === '/hermes/campaigns' ? 'active' : ''}`}>
-          <span>📈 Campaigns</span>
+        <a href="/hermes/campaigns" className={`nav-item ${pathname === '/hermes/campaigns' ? 'active' : ''}`} title="Campaigns">
+          <span>📈</span>
+          <span>Campaigns</span>
         </a>
-        <a href="/hermes/shortlinks" className={`nav-item ${pathname === '/hermes/shortlinks' ? 'active' : ''}`}>
-          <span>🔗 Shortlinks</span>
+        <a href="/hermes/shortlinks" className={`nav-item ${pathname === '/hermes/shortlinks' ? 'active' : ''}`} title="Shortlinks">
+          <span>🔗</span>
+          <span>Shortlinks</span>
         </a>
-        <a href="/hermes/numbers" className={`nav-item ${pathname === '/hermes/numbers' ? 'active' : ''}`}>
-          <span>📱 Numbers</span>
+        <a href="/hermes/messages" className={`nav-item ${pathname === '/hermes/messages' ? 'active' : ''}`} title="Messages">
+          <span>💬</span>
+          <span>Messages</span>
         </a>
-        <a href="/hermes/messages" className={`nav-item ${pathname === '/hermes/messages' ? 'active' : ''}`}>
-          <span>💬 Messages</span>
+        <a href="/hermes/contacts" className={`nav-item ${pathname === '/hermes/contacts' ? 'active' : ''}`} title="Contacts">
+          <span>👥</span>
+          <span>Contacts</span>
         </a>
-        <a href="/hermes/contacts" className={`nav-item ${pathname === '/hermes/contacts' ? 'active' : ''}`}>
-          <span>👥 Contacts</span>
+        <a href="/hermes/settings" className={`nav-item ${pathname === '/hermes/settings' ? 'active' : ''}`} title="Settings">
+          <span>⚙️</span>
+          <span>Settings</span>
         </a>
-        <a href="/hermes/settings" className={`nav-item ${pathname === '/hermes/settings' ? 'active' : ''}`}>
-          <span>⚙️ Settings</span>
-        </a>
-        <a href="/hermes/console" className={`nav-item ${pathname === '/hermes/console' ? 'active' : ''}`}>
-          <span>🖥️ Console</span>
+        <a href="/hermes/console" className={`nav-item ${pathname === '/hermes/console' ? 'active' : ''}`} title="Console">
+          <span>🖥️</span>
+          <span>Console</span>
         </a>
       </nav>
 
-      <div className="user-section">
-        <div className="user-info">
-          <span className="user-name">{session?.user?.name || 'User'}</span>
-          <span className="user-email">{session?.user?.email || ''}</span>
+      {!isCollapsed && (
+        <div className="user-section">
+          <div className="user-info">
+            <span className="user-name">{session?.user?.name || 'User'}</span>
+            <span className="user-email">{session?.user?.email || ''}</span>
+          </div>
+          <button 
+            onClick={handleSignOut}
+            className="logout-button"
+          >
+            Sign out
+          </button>
         </div>
-        <button 
-          onClick={handleSignOut}
-          className="logout-button"
-        >
-          Sign out
-        </button>
-      </div>
+      )}
+
+      <button 
+        className="sidebar-toggle"
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        {isCollapsed ? '▶' : '◀'}
+      </button>
     </div>
   )
 }

@@ -6,6 +6,7 @@ import { getCampaigns } from '@/lib/actions/campaigns'
 import styles from './AddShortlinkModal.module.css' // Reuse existing styles
 
 export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
+  const [nickname, setNickname] = useState(shortlink.nickname || '')
   const [slug, setSlug] = useState(shortlink.slug)
   const [destination, setDestination] = useState(shortlink.destination)
   const [campaignId, setCampaignId] = useState(shortlink.campaignId || '')
@@ -66,6 +67,7 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
     try {
       const updatedShortlink = await updateShortlink({
         id: shortlink.id,
+        nickname: nickname || null,
         slug,
         destination,
         campaignId: campaignId || null,
@@ -88,6 +90,17 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
       <div className={styles.modal}>
         <h2>Edit Shortlink</h2>
         <form onSubmit={handleSubmit}>
+          <div className={styles.formGroup}>
+            <label>Nickname (Optional)</label>
+            <input
+              type="text"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              placeholder="Enter a friendly name for this shortlink"
+              className={styles.input}
+            />
+          </div>
+
           <div className={styles.formGroup}>
             <label>Slug</label>
             <input
