@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { serverLog } from '@/lib/serverLogger';
-import { updateMessageRecord } from '@/lib/messageUtils';
+import { updateMessageRecord } from '@/lib/actions/messages';
 
 /**
  * Telnyx Webhook Handler for Message Status Updates

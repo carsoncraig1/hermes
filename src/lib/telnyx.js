@@ -3,7 +3,8 @@
 import { Telnyx } from 'telnyx';
 import prisma from '@/lib/prisma';
 import { auth } from '@/lib/auth';
-import { validateMessage, checkRateLimit, createMessageRecord } from '@/lib/messageUtils';
+import { validateMessage } from '@/lib/messageUtils';
+import { checkRateLimit, createMessageRecord } from '@/lib/actions/messages';
 
 /**
  * Get Telnyx client for a specific user

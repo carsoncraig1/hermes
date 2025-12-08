@@ -1,7 +1,7 @@
 'use server';
 
 import { auth } from '@/lib/auth';
-import { getMessageAnalytics, getCampaignPerformance } from '@/lib/messageUtils';
+import { getMessageAnalytics, getCampaignPerformance } from '@/lib/actions/messages';
 import prisma from '@/lib/prisma';
 
 async function getUserId() {
