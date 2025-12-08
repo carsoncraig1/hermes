@@ -5,7 +5,7 @@
 
 :root {
   /* Core Colors - Matching Auth Pages */
-  --bg-primary: #0a0a0b;
+  --bg-primary: #1a1a1d;
   --bg-secondary: #141416;
   --bg-tertiary: #1c1c1f;
   --bg-elevated: #1f1f23;
@@ -80,11 +80,16 @@ body {
 body {
   color: var(--text-primary);
   background: var(--bg-primary);
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
   font-family: var(--font-family);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: -0.01em;
   line-height: 1.5;
+  position: relative;
 }
 
 /* Subtle gradient overlay for depth */
@@ -96,8 +101,8 @@ body::before {
   right: 0;
   bottom: 0;
   background: 
-    radial-gradient(ellipse at 0% 0%, rgba(255, 95, 31, 0.03) 0%, transparent 50%),
-    radial-gradient(ellipse at 100% 100%, rgba(255, 95, 31, 0.02) 0%, transparent 50%);
+    radial-gradient(ellipse at 0% 0%, rgba(255, 95, 31, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 100% 100%, rgba(255, 95, 31, 0.03) 0%, transparent 50%);
   pointer-events: none;
   z-index: 0;
 }
@@ -312,6 +317,11 @@ body:has(.sidebar.collapsed) .main-content-wrapper {
   min-height: 100vh;
   position: relative;
   z-index: 1;
+  background: var(--bg-primary);
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
 }
 
 .dashboard-header {

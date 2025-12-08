@@ -1,5 +1,5 @@
 :root {
-  --auth-bg: #0a0a0b;
+  --auth-bg: #1a1a1d;
   --auth-card: #141416;
   --auth-border: #27272a;
   --auth-text: #fafafa;
@@ -22,7 +22,6 @@
  * This prevents CSS from persisting during navigation to dashboard
  */
 .auth-container {
-  background: var(--auth-bg);
   color: var(--auth-text);
   min-height: 100vh;
   display: flex;
@@ -33,9 +32,20 @@
   -moz-osx-font-smoothing: grayscale;
   width: 100%;
   position: relative;
+  z-index: 1;
 }
 
-/* Animated gradient background */
+/* Modern grid pattern background */
+.auth-container {
+  background: var(--auth-bg);
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  position: relative;
+}
+
+/* Animated gradient overlay */
 .auth-container::before {
   content: '';
   position: fixed;
@@ -44,11 +54,10 @@
   right: 0;
   bottom: 0;
   background: 
-    radial-gradient(ellipse at 20% 20%, rgba(255, 95, 31, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 80%, rgba(255, 95, 31, 0.05) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 50%, rgba(30, 30, 35, 1) 0%, var(--auth-bg) 100%);
+    radial-gradient(ellipse at 20% 20%, rgba(255, 95, 31, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, rgba(255, 95, 31, 0.04) 0%, transparent 50%);
   pointer-events: none;
-  z-index: -1;
+  z-index: 0;
 }
 
 .auth-card {
@@ -62,6 +71,8 @@
   box-shadow: 
     0 0 0 1px rgba(255, 255, 255, 0.03),
     0 20px 50px -12px rgba(0, 0, 0, 0.5);
+  position: relative;
+  z-index: 2;
 }
 
 .auth-logo {
