@@ -1,17 +1,24 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createCampaign } from '@/lib/actions/campaigns'
+import { createCampaign, updateCampaign } from '@/lib/actions/campaigns'
 import { getTags } from '@/lib/actions/tags'
 import { getShortlinks } from '@/lib/actions/shortlinks'
 import styles from './AddCampaignModal.module.css'
 
-export default function AddCampaignModal({ onClose, onAdd }) {
-  const [name, setName] = useState('')
-  const [message, setMessage] = useState('')
-  const [targetAllSubscribed, setTargetAllSubscribed] = useState(false)
-  const [selectedTags, setSelectedTags] = useState([])
-  const [selectedSources, setSelectedSources] = useState([])
+export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate }) {
+  const isEditMode = !!campaign
+  const [name, setName] = useState(campaign?.name || '')
+  const [message, setMessage] = useState(campaign?.message || '')
+  const [targetAllSubscribed, setTargetAllSubscribed] = useState(
+    campaign?.targets?.some(target => target.targetType === 'ALL_SUBSCRIBED') || false
+  )
+  const [selectedTags, setSelectedTags] = useState(
+    campaign?.targets?.filter(target => target.targetType === 'TAG').map(target => target.tagId) || []
+  )
+  const [selectedSources, setSelectedSources] = useState(
+    campaign?.targets?.filter(target => target.targetType === 'SOURCE').map(target => target.sourceValue) || []
+  )
   const [availableTags, setAvailableTags] = useState([])
   const [availableSources, setAvailableSources] = useState([])
   const [availableShortlinks, setAvailableShortlinks] = useState([])
@@ -43,17 +50,29 @@ export default function AddCampaignModal({ onClose, onAdd }) {
     setLoading(true)
     
     try {
-      const campaign = await createCampaign({
-        name,
-        message,
-        targetAllSubscribed,
-        selectedTags: targetAllSubscribed ? [] : selectedTags,
-        selectedSources: targetAllSubscribed ? [] : selectedSources
-      })
-      onAdd(campaign)
+      if (isEditMode) {
+        const updatedCampaign = await updateCampaign({
+          id: campaign.id,
+          name,
+          message,
+          targetAllSubscribed,
+          selectedTags: targetAllSubscribed ? [] : selectedTags,
+          selectedSources: targetAllSubscribed ? [] : selectedSources
+        })
+        onUpdate?.(updatedCampaign)
+      } else {
+        const newCampaign = await createCampaign({
+          name,
+          message,
+          targetAllSubscribed,
+          selectedTags: targetAllSubscribed ? [] : selectedTags,
+          selectedSources: targetAllSubscribed ? [] : selectedSources
+        })
+        onAdd?.(newCampaign)
+      }
       onClose()
     } catch (error) {
-      console.error('Error creating campaign:', error)
+      console.error(`Error ${isEditMode ? 'updating' : 'creating'} campaign:`, error)
     } finally {
       setLoading(false)
     }
@@ -78,7 +97,7 @@ export default function AddCampaignModal({ onClose, onAdd }) {
   return (
     <div className={styles.modalOverlay}>
       <div className={styles.modal}>
-        <h2>Create New Campaign</h2>
+        <h2>{isEditMode ? 'Edit Campaign' : 'Create New Campaign'}</h2>
         <form onSubmit={handleSubmit}>
           <div className={styles.formGroup}>
             <label>Campaign Name</label>
@@ -229,7 +248,7 @@ export default function AddCampaignModal({ onClose, onAdd }) {
               disabled={loading || (!targetAllSubscribed && selectedTags.length === 0 && selectedSources.length === 0)}
               className={styles.submitButton}
             >
-              {loading ? 'Creating...' : 'Create Campaign'}
+              {loading ? (isEditMode ? 'Saving...' : 'Creating...') : (isEditMode ? 'Save Changes' : 'Create Campaign')}
             </button>
           </div>
         </form>

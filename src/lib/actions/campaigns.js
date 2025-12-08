@@ -11,24 +11,84 @@ async function getUserId() {
   return session.user.id
 }
 
+// Helper function to extract shortlink slugs from message text
+function extractShortlinkSlugs(message) {
+  if (!message) return []
+  const regex = /https:\/\/txt\.cx\/([a-zA-Z0-9_-]+)/g
+  const slugs = []
+  let match
+  while ((match = regex.exec(message)) !== null) {
+    slugs.push(match[1])
+  }
+  return [...new Set(slugs)] // Remove duplicates
+}
+
+// Helper function to associate shortlinks with a campaign
+async function associateShortlinksWithCampaign(campaignId, message, userId, tx) {
+  const slugs = extractShortlinkSlugs(message)
+  if (slugs.length === 0) return
+
+  // Find all shortlinks by slug for this user
+  const shortlinks = await tx.shortlink.findMany({
+    where: {
+      userId,
+      slug: { in: slugs }
+    }
+  })
+
+  // Associate them with the campaign
+  if (shortlinks.length > 0) {
+    await tx.shortlink.updateMany({
+      where: {
+        id: { in: shortlinks.map(s => s.id) }
+      },
+      data: {
+        campaignId: campaignId
+      }
+    })
+  }
+}
+
 export async function createCampaign({ name, message, targetAllSubscribed, selectedTags, selectedSources, workflow }) {
   try {
     const userId = await getUserId()
     
     // If workflow is provided, create workflow-based campaign
     if (workflow) {
-      const campaign = await prisma.campaign.create({
-        data: {
-          userId,
-          name,
-          workflow: workflow,
-          enabled: true,
-        },
-        include: {
-          shortlinks: true
+      return await prisma.$transaction(async (tx) => {
+        const campaign = await tx.campaign.create({
+          data: {
+            userId,
+            name,
+            workflow: workflow,
+            enabled: true,
+          },
+          include: {
+            shortlinks: true
+          }
+        })
+        
+        // Extract shortlinks from all action nodes in the workflow
+        let allMessages = ''
+        if (workflow?.nodes) {
+          workflow.nodes.forEach(node => {
+            if (node.type === 'action' && node.data?.message) {
+              allMessages += ' ' + node.data.message
+            }
+          })
         }
+        
+        // Associate shortlinks with campaign
+        await associateShortlinksWithCampaign(campaign.id, allMessages, userId, tx)
+        
+        // Return campaign with shortlinks
+        return await tx.campaign.findUnique({
+          where: { id: campaign.id },
+          include: {
+            shortlinks: true
+          }
+        })
       })
-      return campaign
     }
     
     // Legacy campaign creation (for backward compatibility)
@@ -60,15 +120,30 @@ export async function createCampaign({ name, message, targetAllSubscribed, selec
           }
         })
       } else {
-        // Create a target for each selected tag
-        await tx.campaignTarget.createMany({
-          data: selectedTags.map(tagId => ({
-            campaignId: campaign.id,
-            targetType: 'TAG',
-            tagId
-          }))
-        })
+        // Create targets for tags
+        if (selectedTags && selectedTags.length > 0) {
+          await tx.campaignTarget.createMany({
+            data: selectedTags.map(tagId => ({
+              campaignId: campaign.id,
+              targetType: 'TAG',
+              tagId
+            }))
+          })
+        }
+        // Create targets for sources
+        if (selectedSources && selectedSources.length > 0) {
+          await tx.campaignTarget.createMany({
+            data: selectedSources.map(sourceValue => ({
+              campaignId: campaign.id,
+              targetType: 'SOURCE',
+              sourceValue
+            }))
+          })
+        }
       }
+
+      // Associate shortlinks with campaign
+      await associateShortlinksWithCampaign(campaign.id, message, userId, tx)
 
       // Fetch the campaign again with all relations
       return await tx.campaign.findUnique({
@@ -178,13 +253,47 @@ export async function getCampaigns() {
             tag: true
           }
         },
-        shortlinks: true
+        shortlinks: true,
+        messages: {
+          select: {
+            status: true,
+            costAmount: true
+          }
+        }
       },
       orderBy: {
         createdAt: 'desc'
       }
     })
-    return campaigns
+    
+    // Calculate delivery stats for each campaign
+    return campaigns.map(campaign => {
+      const messages = campaign.messages || []
+      const total = messages.length
+      const delivered = messages.filter(m => m.status === 'delivered').length
+      const failed = messages.filter(m => 
+        m.status === 'sending_failed' || m.status === 'delivery_failed'
+      ).length
+      const sent = messages.filter(m => m.status === 'sent').length
+      const queued = messages.filter(m => m.status === 'queued' || m.status === 'sending').length
+      
+      const totalCost = messages.reduce((sum, m) => {
+        return sum + (m.costAmount ? parseFloat(m.costAmount) : 0)
+      }, 0)
+      
+      return {
+        ...campaign,
+        deliveryStats: {
+          total,
+          delivered,
+          failed,
+          sent,
+          queued,
+          deliveryRate: total > 0 ? (delivered / total) * 100 : 0,
+          totalCost: parseFloat(totalCost.toFixed(4))
+        }
+      }
+    })
   } catch (error) {
     console.error('Error fetching campaigns:', error)
     throw new Error('Failed to fetch campaigns')
@@ -213,7 +322,7 @@ export async function deleteCampaign(id) {
   }
 }
 
-export async function updateCampaign({ id, name, message, targetAllSubscribed, selectedTags }) {
+export async function updateCampaign({ id, name, message, targetAllSubscribed, selectedTags, selectedSources }) {
   try {
     const userId = await getUserId()
     
@@ -249,14 +358,36 @@ export async function updateCampaign({ id, name, message, targetAllSubscribed, s
           }
         })
       } else {
-        await tx.campaignTarget.createMany({
-          data: selectedTags.map(tagId => ({
-            campaignId: id,
-            targetType: 'TAG',
-            tagId
-          }))
-        })
+        // Create targets for tags
+        if (selectedTags && selectedTags.length > 0) {
+          await tx.campaignTarget.createMany({
+            data: selectedTags.map(tagId => ({
+              campaignId: id,
+              targetType: 'TAG',
+              tagId
+            }))
+          })
+        }
+        // Create targets for sources
+        if (selectedSources && selectedSources.length > 0) {
+          await tx.campaignTarget.createMany({
+            data: selectedSources.map(sourceValue => ({
+              campaignId: id,
+              targetType: 'SOURCE',
+              sourceValue
+            }))
+          })
+        }
       }
+
+      // Disassociate old shortlinks from this campaign
+      await tx.shortlink.updateMany({
+        where: { campaignId: id },
+        data: { campaignId: null }
+      })
+
+      // Associate new shortlinks with campaign
+      await associateShortlinksWithCampaign(id, message, userId, tx)
 
       // Return updated campaign with relations
       return await tx.campaign.findUnique({
@@ -289,19 +420,45 @@ export async function updateWorkflowCampaign({ id, name, workflow }) {
       throw new Error('Campaign not found')
     }
     
-    // Update the workflow campaign
-    const campaign = await prisma.campaign.update({
-      where: { id },
-      data: {
-        name,
-        workflow: workflow,
-      },
-      include: {
-        shortlinks: true
+    return await prisma.$transaction(async (tx) => {
+      const campaign = await tx.campaign.update({
+        where: { id },
+        data: {
+          name,
+          workflow: workflow,
+        },
+        include: {
+          shortlinks: true
+        }
+      })
+      
+      // Extract shortlinks from all action nodes in the workflow
+      let allMessages = ''
+      if (workflow?.nodes) {
+        workflow.nodes.forEach(node => {
+          if (node.type === 'action' && node.data?.message) {
+            allMessages += ' ' + node.data.message
+          }
+        })
       }
+      
+      // Disassociate old shortlinks from this campaign
+      await tx.shortlink.updateMany({
+        where: { campaignId: id },
+        data: { campaignId: null }
+      })
+      
+      // Associate new shortlinks with campaign
+      await associateShortlinksWithCampaign(id, allMessages, userId, tx)
+      
+      // Return updated campaign
+      return await tx.campaign.findUnique({
+        where: { id },
+        include: {
+          shortlinks: true
+        }
+      })
     })
-    
-    return campaign
   } catch (error) {
     console.error('Error updating workflow campaign:', error)
     throw error
@@ -396,10 +553,6 @@ export async function executeDedicatedSend(campaignId) {
     // Import sendMessage from telnyx
     const { sendMessage } = await import('@/lib/telnyx')
     
-    // Get the sender phone number from environment variable
-    // Default to a placeholder if not set (you may want to add this to user settings)
-    const fromNumber = process.env.TELNYX_PHONE_NUMBER || process.env.TELNYX_FROM_NUMBER || '+15551234567'
-    
     // Get user's standard opt-out text if set
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -424,9 +577,11 @@ export async function executeDedicatedSend(campaignId) {
       
       try {
         const result = await sendMessage({
-          from: fromNumber,
           to: contact.phone,
-          text: messageText
+          text: messageText,
+          userId: userId, // Pass userId so it uses user's Telnyx settings
+          contactId: contact.id,
+          campaignId: campaignIdInt
         })
         
         if (result.success) {

@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 import styles from './CampaignsTable.module.css'
 import { getCampaigns, deleteCampaign } from '@/lib/actions/campaigns'
 import AddCampaignModal from './AddCampaignModal'
-import EditCampaignModal from './EditCampaignModal'
 import CreateWorkflowCampaign from './CreateWorkflowCampaign'
 import EditWorkflowCampaign from './EditWorkflowCampaign'
 
@@ -139,6 +138,8 @@ export default function CampaignsTable({ initialCampaigns }) {
               <th>Target Type</th>
               <th>Shortlinks</th>
               <th>Messages Sent</th>
+              <th>Delivery Status</th>
+              <th>Cost</th>
               <th>Last Message Sent</th>
               <th>Created</th>
               <th>Actions</th>
@@ -193,6 +194,33 @@ export default function CampaignsTable({ initialCampaigns }) {
                   </span>
                 </td>
                 <td>
+                  {campaign.deliveryStats && campaign.deliveryStats.total > 0 ? (
+                    <div className={styles.deliveryStats}>
+                      <span className={styles.deliveryRate}>
+                        {campaign.deliveryStats.deliveryRate.toFixed(1)}% delivered
+                      </span>
+                      <div className={styles.deliveryBreakdown}>
+                        <span className={styles.delivered}>✓ {campaign.deliveryStats.delivered}</span>
+                        <span className={styles.failed}>✗ {campaign.deliveryStats.failed}</span>
+                        {campaign.deliveryStats.queued > 0 && (
+                          <span className={styles.queued}>⏳ {campaign.deliveryStats.queued}</span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <span className={styles.noCampaign}>No messages</span>
+                  )}
+                </td>
+                <td>
+                  {campaign.deliveryStats && campaign.deliveryStats.totalCost > 0 ? (
+                    <span className={styles.cost}>
+                      ${campaign.deliveryStats.totalCost.toFixed(2)}
+                    </span>
+                  ) : (
+                    <span className={styles.noCampaign}>$0.00</span>
+                  )}
+                </td>
+                <td>
                   {campaign.lastMessageSent 
                     ? new Date(campaign.lastMessageSent).toLocaleDateString()
                     : <span className={styles.noCampaign}>Never</span>
@@ -230,7 +258,7 @@ export default function CampaignsTable({ initialCampaigns }) {
       </div>
 
       {editingCampaign && (
-        <EditCampaignModal
+        <AddCampaignModal
           campaign={editingCampaign}
           onClose={() => setEditingCampaign(null)}
           onUpdate={handleUpdate}

@@ -2,6 +2,7 @@ import { getSubscribedContactsCount } from '@/lib/actions/contacts';
 import DashboardHeader from './components/DashboardHeader';
 import ConsoleWindow from '../console/components/ConsoleWindow';
 import DedicatedSendCard from './components/DedicatedSendCard';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
 import './dashboard.css';
 
 // Force dynamic rendering to avoid build-time database calls
@@ -22,6 +23,7 @@ export default async function Dashboard() {
             </div>
           </div>
           <DedicatedSendCard />
+          <AnalyticsDashboard />
         </div>
         <div className="side-content">
           <ConsoleWindow compact={true} />

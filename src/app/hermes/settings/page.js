@@ -13,13 +13,21 @@ export default function Settings() {
   const [optOutText, setOptOutText] = useState('');
   const [optOutLoading, setOptOutLoading] = useState(true);
   const [optOutSaving, setOptOutSaving] = useState(false);
+  const [telnyxSettings, setTelnyxSettings] = useState({
+    telnyxApiKey: '',
+    telnyxPhoneNumber: '',
+    telnyxMessagingProfileId: '',
+  });
+  const [telnyxLoading, setTelnyxLoading] = useState(true);
+  const [telnyxSaving, setTelnyxSaving] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [apiKeyResponse, optOutResponse] = await Promise.all([
+        const [apiKeyResponse, optOutResponse, telnyxResponse] = await Promise.all([
           fetch('/api/user/api-key'),
           fetch('/api/user/opt-out-text'),
+          fetch('/api/user/telnyx-settings'),
         ]);
         
         if (apiKeyResponse.ok) {
@@ -31,11 +39,17 @@ export default function Settings() {
           const optOutData = await optOutResponse.json();
           setOptOutText(optOutData.optOutText || '');
         }
+        
+        if (telnyxResponse.ok) {
+          const telnyxData = await telnyxResponse.json();
+          setTelnyxSettings(telnyxData);
+        }
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
         setLoading(false);
         setOptOutLoading(false);
+        setTelnyxLoading(false);
       }
     };
     fetchData();
@@ -70,6 +84,31 @@ export default function Settings() {
       alert('Failed to save opt-out text');
     } finally {
       setOptOutSaving(false);
+    }
+  };
+
+  const handleSaveTelnyx = async () => {
+    setTelnyxSaving(true);
+    try {
+      const response = await fetch('/api/user/telnyx-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(telnyxSettings),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setTelnyxSettings(data);
+        alert('Telnyx settings saved successfully!');
+      } else {
+        const errorData = await response.json();
+        alert(errorData.error || 'Failed to save Telnyx settings');
+      }
+    } catch (error) {
+      console.error('Error saving Telnyx settings:', error);
+      alert('Failed to save Telnyx settings');
+    } finally {
+      setTelnyxSaving(false);
     }
   };
 
@@ -292,6 +331,79 @@ export default function Settings() {
                     </div>
                   </div>
                 )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Provider Settings Card */}
+        <div className={styles.settingsCard}>
+          <div className={styles.cardHeader}>
+            <h2>Provider Settings</h2>
+            <span className={styles.cardBadge}>Telnyx</span>
+          </div>
+          <div className={styles.cardContent}>
+            <p className={styles.cardDescription}>
+              Configure your Telnyx SMS provider settings. These credentials will be used to send messages through campaigns and workflows.
+            </p>
+            {telnyxLoading ? (
+              <div className={styles.loading}>Loading...</div>
+            ) : (
+              <>
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-primary)', fontSize: '0.875rem', fontWeight: 500 }}>
+                    Telnyx API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={telnyxSettings.telnyxApiKey}
+                    onChange={(e) => setTelnyxSettings({ ...telnyxSettings, telnyxApiKey: e.target.value })}
+                    placeholder="KEYxxxxxxxxxxxxxxxxxxxx"
+                    className={styles.optOutTextarea}
+                    style={{ marginTop: 0 }}
+                  />
+                </div>
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-primary)', fontSize: '0.875rem', fontWeight: 500 }}>
+                    Phone Number (E.164 format)
+                  </label>
+                  <input
+                    type="text"
+                    value={telnyxSettings.telnyxPhoneNumber}
+                    onChange={(e) => setTelnyxSettings({ ...telnyxSettings, telnyxPhoneNumber: e.target.value })}
+                    placeholder="+15551234567"
+                    className={styles.optOutTextarea}
+                    style={{ marginTop: 0 }}
+                  />
+                  <small style={{ display: 'block', marginTop: '0.25rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                    The phone number that will appear as the sender. Must be in E.164 format (+1XXXXXXXXXX).
+                  </small>
+                </div>
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-primary)', fontSize: '0.875rem', fontWeight: 500 }}>
+                    Messaging Profile ID (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={telnyxSettings.telnyxMessagingProfileId}
+                    onChange={(e) => setTelnyxSettings({ ...telnyxSettings, telnyxMessagingProfileId: e.target.value })}
+                    placeholder="400196b2-9253-4a8b-8936-6ac04b4e6bbd"
+                    className={styles.optOutTextarea}
+                    style={{ marginTop: 0 }}
+                  />
+                  <small style={{ display: 'block', marginTop: '0.25rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                    Your Telnyx messaging profile ID. If not provided, a default will be used.
+                  </small>
+                </div>
+                <div className={styles.optOutActions}>
+                  <button
+                    onClick={handleSaveTelnyx}
+                    disabled={telnyxSaving}
+                    className={styles.saveButton}
+                  >
+                    {telnyxSaving ? 'Saving...' : 'Save Telnyx Settings'}
+                  </button>
+                </div>
               </>
             )}
           </div>

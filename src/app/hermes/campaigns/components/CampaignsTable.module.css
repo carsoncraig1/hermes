@@ -319,3 +319,38 @@
   font-weight: 600;
   font-size: 0.875rem;
 }
+
+.deliveryStats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.deliveryRate {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.deliveryBreakdown {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.delivered {
+  color: #10b981;
+}
+
+.failed {
+  color: #ef4444;
+}
+
+.queued {
+  color: #f59e0b;
+}
+
+.cost {
+  font-weight: 600;
+  color: var(--accent-orange);
+}
