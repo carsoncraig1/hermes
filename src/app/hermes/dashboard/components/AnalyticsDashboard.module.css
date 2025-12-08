@@ -1,194 +1,233 @@
-.analyticsDashboard {
+.analyticsCard {
   background: var(--bg-secondary);
-  border-radius: 12px;
-  padding: 2rem;
-  margin-top: 2rem;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-lg);
+  padding: 1.5rem;
+  margin-top: 1.5rem;
+  position: relative;
+  overflow: hidden;
+  transition: all var(--transition-normal);
 }
 
-.header {
+.analyticsCard::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent-orange), var(--accent-orange-hover));
+}
+
+.analyticsCard:hover {
+  border-color: var(--border-secondary);
+  box-shadow: var(--shadow-lg);
+}
+
+.cardHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
 }
 
-.header h2 {
+.cardHeader h2 {
   margin: 0;
   color: var(--text-primary);
   font-size: 1.5rem;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent-orange) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.dateControls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .dateRangeSelect {
-  padding: 0.5rem 1rem;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
+  padding: 0.625rem 1rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-md);
   color: var(--text-primary);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
+  font-family: var(--font-family);
   cursor: pointer;
+  transition: all var(--transition-fast);
+  outline: none;
+}
+
+.dateRangeSelect:hover {
+  border-color: var(--border-secondary);
 }
 
 .dateRangeSelect:focus {
-  outline: none;
   border-color: var(--accent-orange);
+  box-shadow: 0 0 0 3px var(--accent-orange-muted);
+}
+
+.customDateInputs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.customDateInputs span {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.dateInput {
+  padding: 0.625rem 0.875rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-md);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-family: var(--font-family);
+  transition: all var(--transition-fast);
+  outline: none;
+}
+
+.dateInput:hover {
+  border-color: var(--border-secondary);
+}
+
+.dateInput:focus {
+  border-color: var(--accent-orange);
+  box-shadow: 0 0 0 3px var(--accent-orange-muted);
+}
+
+.customDateButton {
+  padding: 0.625rem 1rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-md);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  outline: none;
+}
+
+.customDateButton:hover {
+  background: var(--bg-primary);
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
 }
 
 .statsGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
+  gap: 1rem;
 }
 
 .statCard {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 1.5rem;
-  text-align: center;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-md);
+  padding: 1.25rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  transition: all var(--transition-normal);
+  position: relative;
+  overflow: hidden;
+}
+
+.statCard::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 100%;
+  background: linear-gradient(180deg, var(--accent-orange), var(--accent-orange-hover));
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+}
+
+.statCard:hover {
+  border-color: var(--border-secondary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.statCard:hover::before {
+  opacity: 1;
+}
+
+.statIcon {
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.statContent {
+  flex: 1;
+  min-width: 0;
 }
 
 .statLabel {
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-  margin-bottom: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
 }
 
 .statValue {
-  font-size: 2rem;
-  font-weight: bold;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
   margin-bottom: 0.25rem;
+  line-height: 1.2;
+}
+
+.statValue.revenue {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.statValue.positive {
+  color: #10b981;
+}
+
+.statValue.negative {
+  color: #ef4444;
 }
 
 .statValue.success {
   color: #10b981;
 }
 
-.statValue.error {
-  color: #ef4444;
-}
-
 .statSubtext {
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-}
-
-.section {
-  margin-top: 2rem;
-}
-
-.section h3 {
-  color: var(--text-primary);
-  margin-bottom: 1rem;
-  font-size: 1.2rem;
-}
-
-.campaignTable {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.campaignTable table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.campaignTable thead {
-  background: var(--bg-secondary);
-}
-
-.campaignTable th {
-  padding: 1rem;
-  text-align: left;
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.campaignTable td {
-  padding: 1rem;
-  color: var(--text-primary);
-  border-top: 1px solid var(--border-color);
-}
-
-.campaignTable tbody tr:hover {
-  background: var(--bg-secondary);
-}
-
-.campaignTable .success {
-  color: #10b981;
-  font-weight: 600;
-}
-
-.campaignTable .error {
-  color: #ef4444;
-  font-weight: 600;
-}
-
-.campaignTable .noData {
-  text-align: center;
-  color: var(--text-secondary);
-  padding: 2rem;
-}
-
-.chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.5rem;
-  height: 200px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 1rem;
-  overflow-x: auto;
-}
-
-.chartBar {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  flex: 1;
-  min-width: 40px;
-  height: 100%;
-  gap: 2px;
-}
-
-.barSegment {
-  width: 100%;
-  min-height: 2px;
-  border-radius: 2px 2px 0 0;
-  transition: opacity 0.2s;
-}
-
-.barSegment:hover {
-  opacity: 0.8;
-}
-
-.chartLabel {
-  margin-top: 0.5rem;
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  text-align: center;
-  transform: rotate(-45deg);
-  transform-origin: center;
-  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
 }
 
 .loading,
 .error {
   text-align: center;
-  padding: 2rem;
-  color: var(--text-secondary);
+  padding: 3rem;
+  color: var(--text-muted);
+  font-size: 1rem;
 }
 
 .error {
   color: #ef4444;
 }
-

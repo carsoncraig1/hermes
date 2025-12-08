@@ -288,6 +288,125 @@ export default function Settings() {
                   <li>Array: <code>"clickid": ["click1", "click2", "click3"]</code></li>
                   <li>When updating, new click IDs are appended to existing ones</li>
                 </ul>
+
+                <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid var(--border-primary)' }} />
+
+                <h2>Revenue Tracking API</h2>
+                <p>Report revenue events from your tracking system to calculate ROAS (Return on Ad Spend) for campaigns.</p>
+
+                <h3>Endpoint</h3>
+                <pre className={styles.codeBlock}>
+                  <code>POST /api/revenue</code>
+                </pre>
+
+                <h3>Request Body</h3>
+                <pre className={styles.codeBlock}>
+                  <code>{`{
+  "hrms": "hrms_userId_shortlinkId_timestamp_random",  // Required - Tracking parameter from shortlink URL
+  "payout": 29.99,                                     // Required - Revenue amount (positive number)
+  "currency": "USD",                                   // Optional - Default: "USD"
+  "metadata": {                                        // Optional - Additional tracking data
+    "orderId": "12345",
+    "product": "Subscription"
+  }
+}`}</code>
+                </pre>
+
+                <h3>How It Works</h3>
+                <ol>
+                  <li>When a user clicks a shortlink, the system automatically appends an <code>hrms</code> parameter to the destination URL</li>
+                  <li>The <code>hrms</code> parameter is a unique tracking identifier tied to the shortlink, campaign, and user</li>
+                  <li>When a conversion occurs, send a POST request to <code>/api/revenue</code> with the <code>hrms</code> value and payout amount</li>
+                  <li>The revenue will be automatically attributed to the associated campaign and shortlink</li>
+                </ol>
+
+                <h3>Example Request</h3>
+                <p>Using cURL:</p>
+                <pre className={styles.codeBlock}>
+                  <code>{`curl -X POST https://your-domain.com/api/revenue \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "hrms": "hrms_cmirzyw6_123_1704067200000_a1b2c3d4",
+    "payout": 29.99,
+    "currency": "USD",
+    "metadata": {
+      "orderId": "12345",
+      "product": "Premium Subscription"
+    }
+  }'`}</code>
+                </pre>
+
+                <p>Using JavaScript (fetch):</p>
+                <pre className={styles.codeBlock}>
+                  <code>{`fetch('https://your-domain.com/api/revenue', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    hrms: 'hrms_cmirzyw6_123_1704067200000_a1b2c3d4',  // From URL parameter
+    payout: 29.99,
+    currency: 'USD',
+    metadata: {
+      orderId: '12345',
+      product: 'Premium Subscription'
+    }
+  })
+})
+.then(response => response.json())
+.then(data => console.log(data))
+.catch(error => console.error('Error:', error));`}</code>
+                </pre>
+
+                <h3>Response</h3>
+                <p><strong>Success (201 Created):</strong></p>
+                <pre className={styles.codeBlock}>
+                  <code>{`{
+  "success": true,
+  "revenueEvent": {
+    "id": 456,
+    "hrms": "hrms_cmirzyw6_123_1704067200000_a1b2c3d4",
+    "payout": 29.99,
+    "currency": "USD",
+    "createdAt": "2024-01-01T12:00:00.000Z"
+  }
+}`}</code>
+                </pre>
+
+                <p><strong>Error (400/404/500):</strong></p>
+                <pre className={styles.codeBlock}>
+                  <code>{`{
+  "error": "Error message here"
+}`}</code>
+                </pre>
+                <p>Common error messages:</p>
+                <ul>
+                  <li><code>"hrms parameter is required"</code> - hrms field is missing</li>
+                  <li><code>"payout amount is required"</code> - payout field is missing</li>
+                  <li><code>"payout must be a valid positive number"</code> - Invalid payout value</li>
+                  <li><code>"Invalid hrms parameter. Shortlink not found."</code> - hrms doesn't match any shortlink</li>
+                </ul>
+
+                <h3>Extracting hrms from URL</h3>
+                <p>In your tracking script, extract the <code>hrms</code> parameter from the URL:</p>
+                <pre className={styles.codeBlock}>
+                  <code>{`// JavaScript example
+const urlParams = new URLSearchParams(window.location.search);
+const hrms = urlParams.get('hrms');
+
+// Then send to revenue API when conversion occurs
+if (hrms && conversionOccurred) {
+  fetch('/api/revenue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      hrms: hrms,
+      payout: orderTotal,
+      metadata: { orderId: orderId }
+    })
+  });
+}`}</code>
+                </pre>
               </div>
             </div>
           )}

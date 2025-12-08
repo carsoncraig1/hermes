@@ -1,5 +1,35 @@
 import prisma from '@/lib/prisma'
 
+// Helper function to normalize phone numbers (same as in contact route)
+function normalizePhoneNumber(phone) {
+  if (!phone) return null
+  
+  const cleaned = phone.trim()
+  const digits = cleaned.replace(/\D/g, '')
+  
+  if (cleaned.startsWith('+')) {
+    if (digits.startsWith('1') && digits.length === 11) {
+      return `+${digits}`
+    }
+    if (digits.length > 0 && !digits.startsWith('1')) {
+      return null
+    }
+    if (digits.startsWith('1') && digits.length !== 11) {
+      return null
+    }
+  }
+  
+  if (digits.length === 11 && digits[0] === '1') {
+    return `+${digits}`
+  }
+  
+  if (digits.length === 10) {
+    return `+1${digits}`
+  }
+  
+  return null
+}
+
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -21,16 +51,46 @@ export async function POST(request) {
     }
     */
 
-    if (body.data?.direction === "inbound") {
-      const { from, to, text } = body.data;
+    // Telnyx inbound webhook structure:
+    // body.data.event_type = "message.received"
+    // body.data.payload.direction = "inbound"
+    // body.data.payload.from.phone_number = "+1234567890"
+    // body.data.payload.to[0].phone_number = "+0987654321"
+    // body.data.payload.text = "message text"
+    
+    const payload = body.data?.payload || body.data;
+    const eventType = body.data?.event_type;
+    
+    if (payload?.direction === "inbound" || eventType === "message.received") {
+      // Extract phone numbers and text from Telnyx webhook format
+      const from = payload.from?.phone_number || payload.from;
+      const to = Array.isArray(payload.to) 
+        ? payload.to[0]?.phone_number || payload.to[0]
+        : payload.to?.phone_number || payload.to;
+      const text = payload.text || '';
       
       // Check for STOP message anywhere in the text
-      if (text.trim().toUpperCase().includes("STOP")) {
+      if (text && text.trim().toUpperCase().includes("STOP")) {
+        // Normalize phone numbers before matching
+        const normalizedFrom = normalizePhoneNumber(from);
+        const normalizedTo = normalizePhoneNumber(to);
+        
+        if (!normalizedFrom || !normalizedTo) {
+          console.warn(`STOP message: Invalid phone number format. From: ${from}, To: ${to}`);
+          return new Response(JSON.stringify({ 
+            success: true,
+            message: 'Invalid phone number format',
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        
         // Find which user this message belongs to based on the 'to' phone number
-        // The 'to' number should match a user's telnyxPhoneNumber
+        // The 'to' number should match a user's telnyxPhoneNumber (normalized)
         const user = await prisma.user.findFirst({
           where: {
-            telnyxPhoneNumber: to
+            telnyxPhoneNumber: normalizedTo
           },
           select: {
             id: true
@@ -51,16 +111,19 @@ export async function POST(request) {
           });
         }
 
-        // Update only contacts belonging to this user with the matching phone number
+        // Update only contacts belonging to this user with the matching phone number (normalized)
         const result = await prisma.contact.updateMany({
           where: {
             userId: user.id,
-            phone: from
+            phone: normalizedFrom
           },
           data: {
             subscribed: false
           }
         });
+
+        // Log the unsubscribe action for debugging
+        console.log(`[STOP Message] User ${user.id}: Unsubscribed ${result.count} contact(s) with phone ${normalizedFrom} (original: ${from})`);
 
         return new Response(JSON.stringify({ 
           success: true,

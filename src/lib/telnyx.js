@@ -61,9 +61,13 @@ export async function sendMessage({
   contactId = null,
   campaignId = null,
 }) {
+  // Declare variables in outer scope for error handling
+  let finalUserId = userId;
+  let validation = null;
+  
   try {
     // Get userId from session if not provided
-    if (!userId) {
+    if (!finalUserId) {
       const session = await auth();
       if (!session?.user?.id) {
         return {
@@ -71,11 +75,11 @@ export async function sendMessage({
           error: 'User not authenticated',
         };
       }
-      userId = session.user.id;
+      finalUserId = session.user.id;
     }
 
     // Validate message text
-    const validation = validateMessage(text);
+    validation = validateMessage(text);
     if (!validation.valid) {
       return {
         success: false,
@@ -84,8 +88,23 @@ export async function sendMessage({
       };
     }
 
+    // Enforce subscription check if contactId is provided
+    if (contactId) {
+      const contact = await prisma.contact.findUnique({
+        where: { id: contactId },
+        select: { subscribed: true }
+      });
+      
+      if (!contact || !contact.subscribed) {
+        return {
+          success: false,
+          error: 'Contact is not subscribed',
+        };
+      }
+    }
+
     // Check rate limits
-    const rateLimit = await checkRateLimit(userId);
+    const rateLimit = await checkRateLimit(finalUserId);
     if (!rateLimit.allowed) {
       return {
         success: false,
@@ -96,7 +115,7 @@ export async function sendMessage({
     }
 
     // Get Telnyx client for user
-    const telnyx = await getTelnyxClient(userId);
+    const telnyx = await getTelnyxClient(finalUserId);
     if (!telnyx) {
       return {
         success: false,
@@ -105,7 +124,7 @@ export async function sendMessage({
     }
 
     // Get user's Telnyx settings
-    const settings = await getUserTelnyxSettings(userId);
+    const settings = await getUserTelnyxSettings(finalUserId);
 
     // Use provided from number, or user's default, or fallback
     const fromNumber = from || settings.phoneNumber || process.env.TELNYX_PHONE_NUMBER || process.env.TELNYX_FROM_NUMBER;
@@ -160,7 +179,7 @@ export async function sendMessage({
     let messageRecord = null;
     try {
       messageRecord = await createMessageRecord({
-        userId,
+        userId: finalUserId,
         telnyxMessageId,
         contactId,
         campaignId,
@@ -204,6 +223,34 @@ export async function sendMessage({
                      error.message || errorMessage;
     } else if (error.message) {
       errorMessage = error.message;
+    }
+    
+    // Create failed message record for tracking (only if we have userId)
+    if (finalUserId) {
+      try {
+        const settings = await getUserTelnyxSettings(finalUserId);
+        const fromNumber = from || settings.phoneNumber || process.env.TELNYX_PHONE_NUMBER || process.env.TELNYX_FROM_NUMBER;
+        
+        await createMessageRecord({
+          userId: finalUserId,
+          telnyxMessageId: null,
+          contactId,
+          campaignId,
+          from: fromNumber || 'unknown',
+          to,
+          text,
+          type: 'SMS',
+          parts: validation?.parts || 1,
+          status: 'sending_failed',
+          direction: 'outbound',
+          costAmount: null,
+          costCurrency: 'USD',
+          telnyxMetadata: errorDetails || { error: errorMessage }
+        });
+      } catch (dbError) {
+        console.error('Error creating failed message record:', dbError);
+        // Continue even if DB record creation fails
+      }
     }
     
     return {

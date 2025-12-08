@@ -46,7 +46,7 @@ export default function Sidebar() {
           <span>Dashboard</span>
         </a>
         <a href="/hermes/campaigns" className={`nav-item ${pathname === '/hermes/campaigns' ? 'active' : ''}`} title="Campaigns">
-          <span>📈</span>
+          <span>🎯</span>
           <span>Campaigns</span>
         </a>
         <a href="/hermes/shortlinks" className={`nav-item ${pathname === '/hermes/shortlinks' ? 'active' : ''}`} title="Shortlinks">
@@ -56,6 +56,10 @@ export default function Sidebar() {
         <a href="/hermes/messages" className={`nav-item ${pathname === '/hermes/messages' ? 'active' : ''}`} title="Messages">
           <span>💬</span>
           <span>Messages</span>
+        </a>
+        <a href="/hermes/analytics" className={`nav-item ${pathname === '/hermes/analytics' ? 'active' : ''}`} title="Analytics">
+          <span>📈</span>
+          <span>Analytics</span>
         </a>
         <a href="/hermes/contacts" className={`nav-item ${pathname === '/hermes/contacts' ? 'active' : ''}`} title="Contacts">
           <span>👥</span>

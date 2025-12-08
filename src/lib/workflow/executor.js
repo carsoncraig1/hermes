@@ -25,6 +25,12 @@ async function sendMessage(contact, messageText, userId, campaignId = null) {
     return { success: false, error: 'Missing phone or message text' };
   }
 
+  // Enforce subscription check - only send to subscribed contacts
+  if (!contact.subscribed) {
+    console.log(`Skipping message to unsubscribed contact: ${contact.phone}`);
+    return { success: false, error: 'Contact is not subscribed' };
+  }
+
   try {
     // Resolve shortlink URLs (keep them for tracking)
     const resolvedMessage = await resolveShortlinkUrls(messageText, userId);
@@ -250,6 +256,12 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
 // Trigger workflows for a new contact
 export async function triggerWorkflowsForContact(contact, userId) {
   try {
+    // Enforce subscription check - only trigger workflows for subscribed contacts
+    if (!contact.subscribed) {
+      console.log(`Skipping workflow execution for unsubscribed contact: ${contact.phone}`);
+      return;
+    }
+
     // Find all enabled campaigns with workflows for this user
     const campaigns = await prisma.campaign.findMany({
       where: {

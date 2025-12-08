@@ -281,8 +281,23 @@ export async function getCampaigns() {
         return sum + (m.costAmount ? parseFloat(m.costAmount) : 0)
       }, 0)
       
+      // Convert Decimal to number to avoid client component warnings
+      const totalRevenue = campaign.totalRevenue ? parseFloat(campaign.totalRevenue.toString()) : 0;
+      
       return {
-        ...campaign,
+        id: campaign.id,
+        userId: campaign.userId,
+        name: campaign.name,
+        message: campaign.message,
+        workflow: campaign.workflow,
+        enabled: campaign.enabled,
+        messagesSent: campaign.messagesSent,
+        totalRevenue: totalRevenue, // Converted to number
+        lastMessageSent: campaign.lastMessageSent,
+        createdAt: campaign.createdAt,
+        updatedAt: campaign.updatedAt,
+        targets: campaign.targets,
+        shortlinks: campaign.shortlinks,
         deliveryStats: {
           total,
           delivered,
@@ -390,7 +405,7 @@ export async function updateCampaign({ id, name, message, targetAllSubscribed, s
       await associateShortlinksWithCampaign(id, message, userId, tx)
 
       // Return updated campaign with relations
-      return await tx.campaign.findUnique({
+      const updatedCampaign = await tx.campaign.findUnique({
         where: { id },
         include: {
           targets: {
@@ -401,6 +416,28 @@ export async function updateCampaign({ id, name, message, targetAllSubscribed, s
           shortlinks: true
         }
       })
+      
+      // Convert Decimal to number - explicitly construct object to avoid Decimal serialization issues
+      if (updatedCampaign) {
+        const totalRevenue = updatedCampaign.totalRevenue ? parseFloat(updatedCampaign.totalRevenue.toString()) : 0;
+        return {
+          id: updatedCampaign.id,
+          userId: updatedCampaign.userId,
+          name: updatedCampaign.name,
+          message: updatedCampaign.message,
+          workflow: updatedCampaign.workflow,
+          enabled: updatedCampaign.enabled,
+          messagesSent: updatedCampaign.messagesSent,
+          totalRevenue: totalRevenue, // Converted to number
+          lastMessageSent: updatedCampaign.lastMessageSent,
+          createdAt: updatedCampaign.createdAt,
+          updatedAt: updatedCampaign.updatedAt,
+          targets: updatedCampaign.targets,
+          shortlinks: updatedCampaign.shortlinks
+        }
+      }
+      
+      return updatedCampaign
     })
   } catch (error) {
     console.error('Error updating campaign:', error)
@@ -452,12 +489,33 @@ export async function updateWorkflowCampaign({ id, name, workflow }) {
       await associateShortlinksWithCampaign(id, allMessages, userId, tx)
       
       // Return updated campaign
-      return await tx.campaign.findUnique({
+      const updatedCampaign = await tx.campaign.findUnique({
         where: { id },
         include: {
           shortlinks: true
         }
       })
+      
+      // Convert Decimal to number - explicitly construct object to avoid Decimal serialization issues
+      if (updatedCampaign) {
+        const totalRevenue = updatedCampaign.totalRevenue ? parseFloat(updatedCampaign.totalRevenue.toString()) : 0;
+        return {
+          id: updatedCampaign.id,
+          userId: updatedCampaign.userId,
+          name: updatedCampaign.name,
+          message: updatedCampaign.message,
+          workflow: updatedCampaign.workflow,
+          enabled: updatedCampaign.enabled,
+          messagesSent: updatedCampaign.messagesSent,
+          totalRevenue: totalRevenue, // Converted to number
+          lastMessageSent: updatedCampaign.lastMessageSent,
+          createdAt: updatedCampaign.createdAt,
+          updatedAt: updatedCampaign.updatedAt,
+          shortlinks: updatedCampaign.shortlinks
+        }
+      }
+      
+      return updatedCampaign
     })
   } catch (error) {
     console.error('Error updating workflow campaign:', error)
@@ -491,7 +549,12 @@ export async function getDedicatedSendCampaigns() {
     })
     
     // Filter to only campaigns without workflow (legacy/dedicated send)
-    const campaigns = allCampaigns.filter(campaign => campaign.workflow === null)
+    const campaigns = allCampaigns
+      .filter(campaign => campaign.workflow === null)
+      .map(campaign => ({
+        ...campaign,
+        totalRevenue: campaign.totalRevenue ? parseFloat(campaign.totalRevenue.toString()) : 0
+      }))
     
     return campaigns
   } catch (error) {

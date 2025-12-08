@@ -36,6 +36,7 @@ model User {
   shortlinks          Shortlink[]
   consoleLogs         ConsoleLog[]
   messages            Message[]
+  revenueEvents       RevenueEvent[]
   
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -132,8 +133,10 @@ model Campaign {
   workflow        Json?            // Workflow definition (nodes, edges, etc.)
   enabled         Boolean          @default(true)
   messagesSent    Int              @default(0) // Total number of messages sent
+  totalRevenue    Decimal          @default(0) @db.Decimal(10, 2) // Total revenue from this campaign
   shortlinks      Shortlink[]
   messages        Message[]
+  revenueEvents   RevenueEvent[]
   lastMessageSent DateTime?
   targets         CampaignTarget[] // Legacy targeting, kept for backward compatibility
   createdAt       DateTime         @default(now())
@@ -163,7 +166,7 @@ model Shortlink {
   nickname      String?   // Optional nickname for the shortlink
   slug          String    @unique
   destination   String
-  clicks        Int       @default(0)
+  clicks        Int       @default(0) // Counter for total clicks
   opens         Int       @default(0)  // Tracks preview fetches from messaging apps
   enabled       Boolean   @default(true)
   campaign      Campaign? @relation(fields: [campaignId], references: [id])
@@ -173,10 +176,28 @@ model Shortlink {
   ogImage       String?
   ogTitle       String?
   ogDescription String?
+  revenueEvents RevenueEvent[]
+  clickRecords  ShortlinkClick[] // Individual click tracking with unique HRMS
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   @@map("shortlinks")
+}
+
+model ShortlinkClick {
+  id            Int            @id @default(autoincrement())
+  shortlinkId   Int
+  shortlink     Shortlink      @relation(fields: [shortlinkId], references: [id], onDelete: Cascade)
+  hrms          String         @unique // Unique tracking parameter for this specific click
+  userAgent     String?        // User agent string for analytics
+  ipAddress     String?        // IP address for analytics
+  referrer      String?        // Referrer URL
+  revenueEvents RevenueEvent[] // Revenue events attributed to this click
+  createdAt     DateTime       @default(now())
+
+  @@index([shortlinkId, createdAt])
+  @@index([hrms])
+  @@map("shortlink_clicks")
 }
 
 model ConsoleLog {
@@ -234,5 +255,29 @@ model Message {
   @@index([status])
   @@index([telnyxMessageId])
   @@map("messages")
+}
+
+model RevenueEvent {
+  id            Int            @id @default(autoincrement())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hrms          String         // Tracking parameter from shortlink click
+  shortlinkId   Int?
+  shortlink     Shortlink?     @relation(fields: [shortlinkId], references: [id], onDelete: SetNull)
+  shortlinkClickId Int?        // Link to the specific click that generated this revenue
+  shortlinkClick   ShortlinkClick? @relation(fields: [shortlinkClickId], references: [id], onDelete: SetNull)
+  campaignId    Int?
+  campaign      Campaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  payout        Decimal        @db.Decimal(10, 2) // Revenue amount
+  currency      String         @default("USD")
+  metadata      Json?          // Additional tracking data
+  createdAt     DateTime       @default(now())
+
+  @@index([userId, createdAt])
+  @@index([hrms])
+  @@index([campaignId, createdAt])
+  @@index([shortlinkId, createdAt])
+  @@index([shortlinkClickId])
+  @@map("revenue_events")
 }
 

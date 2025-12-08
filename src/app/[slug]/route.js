@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { createClickWithHrms, appendHrmsToUrl } from '@/lib/revenue'
 
 // Bot/crawler User-Agent patterns for link preview fetching
 const BOT_PATTERNS = [
@@ -28,8 +29,8 @@ function isBotRequest(userAgent) {
   )
 }
 
-function generateOgHtml(shortlink) {
-  const { destination, ogImage, ogTitle, ogDescription, slug } = shortlink
+function generateOgHtml(shortlink, destinationWithHrms) {
+  const { ogImage, ogTitle, ogDescription, slug } = shortlink
   const shortUrl = `https://txt.cx/${slug}`
   
   // Convert relative image paths to absolute URLs for OG tags
@@ -58,7 +59,7 @@ function generateOgHtml(shortlink) {
   ${absoluteOgImage ? `<meta name="twitter:image" content="${absoluteOgImage}">` : ''}
   
   <!-- Redirect after a brief delay for crawlers to parse OG tags -->
-  <meta http-equiv="refresh" content="0;url=${destination}">
+  <meta http-equiv="refresh" content="0;url=${destinationWithHrms}">
   
   <style>
     body {
@@ -96,10 +97,10 @@ function generateOgHtml(shortlink) {
   <div class="loader">
     <div class="spinner"></div>
     <p>Redirecting...</p>
-    <p><a href="${destination}">Click here if not redirected</a></p>
+    <p><a href="${destinationWithHrms}">Click here if not redirected</a></p>
   </div>
   <script>
-    window.location.href = "${destination}";
+    window.location.href = "${destinationWithHrms}";
   </script>
 </body>
 </html>`
@@ -124,25 +125,36 @@ export async function GET(request, { params }) {
       }
       
       // Track opens (bot/preview fetches) vs clicks (real users)
+      let hrms = null
+      let destinationWithHrms = shortlink.destination
+      
       if (isBot) {
         // Bot prefetch = "open" (user saw the preview in their messages)
+        // Don't generate HRMS for bot requests
         await prisma.shortlink.update({
           where: { id: shortlink.id },
           data: { opens: { increment: 1 } }
         })
         console.log(`👁️ Open (preview): ${slug} → ${shortlink.destination} (${shortlink.opens + 1} opens) [${userAgent.substring(0, 50)}...]`)
       } else {
-        // Real user click
+        // Real user click - generate unique HRMS for this specific click
+        const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || null
+        const referrer = request.headers.get('referer') || null
+        
+        hrms = await createClickWithHrms(shortlink.id, userAgent, ipAddress, referrer)
+        destinationWithHrms = appendHrmsToUrl(shortlink.destination, hrms)
+        
+        // Increment click counter
         await prisma.shortlink.update({
           where: { id: shortlink.id },
           data: { clicks: { increment: 1 } }
         })
-        console.log(`✅ Click: ${slug} → ${shortlink.destination} (${shortlink.clicks + 1} clicks)`)
+        console.log(`✅ Click: ${slug} → ${destinationWithHrms} (${shortlink.clicks + 1} clicks) [hrms: ${hrms}]`)
       }
       
       // If OG preview is enabled, serve HTML with OG meta tags
       if (shortlink.ogEnabled && shortlink.ogImage) {
-        const html = generateOgHtml(shortlink)
+        const html = generateOgHtml(shortlink, destinationWithHrms)
         return new NextResponse(html, {
           headers: {
             'Content-Type': 'text/html',
@@ -150,8 +162,8 @@ export async function GET(request, { params }) {
         })
       }
       
-      // Otherwise, redirect directly to the destination URL
-      redirect(shortlink.destination)
+      // Otherwise, redirect directly to the destination URL with hrms
+      redirect(destinationWithHrms)
     }
     
     console.log(`❌ Shortlink not found: ${slug}`)

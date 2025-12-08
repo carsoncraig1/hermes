@@ -1,21 +1,144 @@
 'use server';
 
 import prisma from '@/lib/prisma';
+import { auth } from '@/lib/auth';
+
+async function getUserId() {
+  const session = await auth();
+  if (!session?.user?.id) {
+    throw new Error('Unauthorized');
+  }
+  return session.user.id;
+}
+
+/**
+ * Get all messages for the current user
+ * @param {Object} filters - Optional filters (status, campaignId, contactId, dateRange, search)
+ * @returns {Promise<Array>} - Array of messages
+ */
+export async function getMessages(filters = {}) {
+  try {
+    const userId = await getUserId();
+    
+    const where = {
+      userId,
+      ...(filters.status && { status: filters.status }),
+      ...(filters.campaignId && { campaignId: parseInt(filters.campaignId, 10) }),
+      ...(filters.contactId && { contactId: parseInt(filters.contactId, 10) }),
+      ...(filters.direction && { direction: filters.direction }),
+      ...(filters.dateRange && {
+        createdAt: {
+          gte: filters.dateRange.start,
+          lte: filters.dateRange.end
+        }
+      }),
+      ...(filters.search && {
+        OR: [
+          { to: { contains: filters.search, mode: 'insensitive' } },
+          { from: { contains: filters.search, mode: 'insensitive' } },
+          { text: { contains: filters.search, mode: 'insensitive' } }
+        ]
+      })
+    };
+
+    const messages = await prisma.message.findMany({
+      where,
+      include: {
+        contact: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true
+          }
+        },
+        campaign: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      },
+      take: filters.limit || 1000
+    });
+
+    return messages;
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get message statistics
+ * @returns {Promise<Object>} - Message statistics
+ */
+export async function getMessageStats() {
+  try {
+    const userId = await getUserId();
+    
+    const [total, delivered, failed, queued, totalCost] = await Promise.all([
+      prisma.message.count({
+        where: { userId, direction: 'outbound' }
+      }),
+      prisma.message.count({
+        where: { userId, direction: 'outbound', status: 'delivered' }
+      }),
+      prisma.message.count({
+        where: { 
+          userId, 
+          direction: 'outbound',
+          status: { in: ['sending_failed', 'delivery_failed'] }
+        }
+      }),
+      prisma.message.count({
+        where: { 
+          userId, 
+          direction: 'outbound',
+          status: { in: ['queued', 'sending'] }
+        }
+      }),
+      prisma.message.aggregate({
+        where: { userId, direction: 'outbound' },
+        _sum: { costAmount: true }
+      })
+    ]);
+
+    return {
+      total,
+      delivered,
+      failed,
+      queued,
+      totalCost: totalCost._sum.costAmount ? parseFloat(totalCost._sum.costAmount) : 0,
+      deliveryRate: total > 0 ? (delivered / total) * 100 : 0
+    };
+  } catch (error) {
+    console.error('Error fetching message stats:', error);
+    throw error;
+  }
+}
 
 /**
  * Check rate limits for a user
- * Telnyx rate limits vary by number type:
- * - Long code: ~200 messages/day per number (similar content)
- * - Toll-free: Higher limits
- * - Short code: Very high limits
  * 
- * We'll implement a simple per-user rate limit
+ * Rate limits based on Telnyx documentation:
+ * - Long Code: 6 messages/minute/number (recommended: ~200 messages/day for deliverability)
+ * - Toll Free: 1200 messages/minute/number
+ * - Account: 10 messages/second (600/min, 36,000/hour)
+ * 
+ * Defaults configured for Toll-Free numbers:
+ * - 1200 messages/minute (matching toll-free limit)
+ * - 30,000 messages/hour (conservative, well below account limit of 36,000/hour)
+ * 
  * @param {string} userId - User ID
- * @param {number} maxMessagesPerMinute - Maximum messages per minute (default: 60)
- * @param {number} maxMessagesPerHour - Maximum messages per hour (default: 1000)
+ * @param {number} maxMessagesPerMinute - Maximum messages per minute (default: 1200 for toll-free)
+ * @param {number} maxMessagesPerHour - Maximum messages per hour (default: 30000)
  * @returns {Promise<Object>} - Rate limit check result
  */
-export async function checkRateLimit(userId, maxMessagesPerMinute = 60, maxMessagesPerHour = 1000) {
+export async function checkRateLimit(userId, maxMessagesPerMinute = 1200, maxMessagesPerHour = 30000) {
   const now = new Date();
   const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
   const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
@@ -63,7 +186,7 @@ export async function checkRateLimit(userId, maxMessagesPerMinute = 60, maxMessa
 
 /**
  * Create a message record in the database
- * @param {Object} params - Message parameters
+ * @param {Object} messageData - Message data
  * @returns {Promise<Object>} - Created message record
  */
 export async function createMessageRecord({
@@ -106,36 +229,22 @@ export async function createMessageRecord({
 }
 
 /**
- * Update message record with status and cost information
+ * Update a message record
  * @param {string} telnyxMessageId - Telnyx message ID
- * @param {Object} updates - Update data
+ * @param {Object} updates - Fields to update
  * @returns {Promise<Object>} - Updated message record
  */
 export async function updateMessageRecord(telnyxMessageId, updates) {
-  const updateData = {};
-
-  if (updates.status) {
-    updateData.status = updates.status;
-    
-    // Set timestamps based on status
-    if (updates.status === 'sent' && !updates.sentAt) {
-      updateData.sentAt = new Date();
-    } else if (updates.status === 'delivered' && !updates.deliveredAt) {
-      updateData.deliveredAt = new Date();
-    } else if ((updates.status === 'sending_failed' || updates.status === 'delivery_failed') && !updates.failedAt) {
-      updateData.failedAt = new Date();
-    }
-  }
-
-  if (updates.sentAt) updateData.sentAt = new Date(updates.sentAt);
-  if (updates.deliveredAt) updateData.deliveredAt = new Date(updates.deliveredAt);
-  if (updates.failedAt) updateData.failedAt = new Date(updates.failedAt);
-  if (updates.costAmount !== undefined) updateData.costAmount = parseFloat(updates.costAmount);
-  if (updates.costCurrency) updateData.costCurrency = updates.costCurrency;
-  if (updates.errorMessage) updateData.errorMessage = updates.errorMessage;
-  if (updates.telnyxMetadata) {
-    updateData.telnyxMetadata = JSON.parse(JSON.stringify(updates.telnyxMetadata));
-  }
+  const updateData = {
+    ...(updates.status && { status: updates.status }),
+    ...(updates.costAmount !== undefined && { costAmount: parseFloat(updates.costAmount) }),
+    ...(updates.costCurrency && { costCurrency: updates.costCurrency }),
+    ...(updates.errorMessage && { errorMessage: updates.errorMessage }),
+    ...(updates.sentAt && { sentAt: new Date(updates.sentAt) }),
+    ...(updates.deliveredAt && { deliveredAt: new Date(updates.deliveredAt) }),
+    ...(updates.failedAt && { failedAt: new Date(updates.failedAt) }),
+    ...(updates.telnyxMetadata && { telnyxMetadata: JSON.parse(JSON.stringify(updates.telnyxMetadata)) })
+  };
 
   const message = await prisma.message.update({
     where: { telnyxMessageId },
@@ -148,14 +257,14 @@ export async function updateMessageRecord(telnyxMessageId, updates) {
 /**
  * Get message analytics for a user
  * @param {string} userId - User ID
- * @param {Object} filters - Optional filters (campaignId, dateRange, etc.)
+ * @param {Object} filters - Optional filters
  * @returns {Promise<Object>} - Analytics data
  */
 export async function getMessageAnalytics(userId, filters = {}) {
   const where = {
     userId,
     direction: 'outbound',
-    ...(filters.campaignId && { campaignId: filters.campaignId }),
+    ...(filters.campaignId && { campaignId: parseInt(filters.campaignId, 10) }),
     ...(filters.dateRange && {
       createdAt: {
         gte: filters.dateRange.start,
@@ -164,89 +273,36 @@ export async function getMessageAnalytics(userId, filters = {}) {
     })
   };
 
-  // Get all messages matching filters
-  const messages = await prisma.message.findMany({
-    where,
-    select: {
-      id: true,
-      status: true,
-      costAmount: true,
-      createdAt: true,
-      sentAt: true,
-      deliveredAt: true,
-      campaignId: true,
-      contactId: true
-    }
-  });
-
-  // Calculate statistics
-  const total = messages.length;
-  const byStatus = messages.reduce((acc, msg) => {
-    acc[msg.status] = (acc[msg.status] || 0) + 1;
-    return acc;
-  }, {});
-
-  const delivered = byStatus.delivered || 0;
-  const sent = byStatus.sent || 0;
-  const failed = (byStatus.sending_failed || 0) + (byStatus.delivery_failed || 0);
-  const queued = byStatus.queued || 0;
-  const sending = byStatus.sending || 0;
-
-  // Calculate delivery rate
-  const deliveryRate = total > 0 ? (delivered / total) * 100 : 0;
-  const successRate = total > 0 ? ((delivered + sent) / total) * 100 : 0;
-
-  // Calculate total cost
-  const totalCost = messages.reduce((sum, msg) => {
-    return sum + (msg.costAmount ? parseFloat(msg.costAmount) : 0);
-  }, 0);
-
-  // Group by campaign
-  const byCampaign = messages.reduce((acc, msg) => {
-    const campaignId = msg.campaignId || 'no-campaign';
-    if (!acc[campaignId]) {
-      acc[campaignId] = {
-        total: 0,
-        delivered: 0,
-        failed: 0,
-        cost: 0
-      };
-    }
-    acc[campaignId].total++;
-    if (msg.status === 'delivered') acc[campaignId].delivered++;
-    if (msg.status === 'sending_failed' || msg.status === 'delivery_failed') acc[campaignId].failed++;
-    if (msg.costAmount) acc[campaignId].cost += parseFloat(msg.costAmount);
-    return acc;
-  }, {});
-
-  // Time series data (messages per day)
-  const byDate = messages.reduce((acc, msg) => {
-    const date = new Date(msg.createdAt).toISOString().split('T')[0];
-    if (!acc[date]) {
-      acc[date] = { sent: 0, delivered: 0, failed: 0 };
-    }
-    if (msg.status === 'delivered') acc[date].delivered++;
-    else if (msg.status === 'sending_failed' || msg.status === 'delivery_failed') acc[date].failed++;
-    else acc[date].sent++;
-    return acc;
-  }, {});
+  const [total, delivered, failed, sent, queued, totalCost] = await Promise.all([
+    prisma.message.count({ where }),
+    prisma.message.count({ where: { ...where, status: 'delivered' } }),
+    prisma.message.count({ 
+      where: { 
+        ...where, 
+        status: { in: ['sending_failed', 'delivery_failed'] }
+      }
+    }),
+    prisma.message.count({ where: { ...where, status: 'sent' } }),
+    prisma.message.count({ 
+      where: { 
+        ...where, 
+        status: { in: ['queued', 'sending'] }
+      }
+    }),
+    prisma.message.aggregate({
+      where,
+      _sum: { costAmount: true }
+    })
+  ]);
 
   return {
     total,
     delivered,
-    sent,
     failed,
+    sent,
     queued,
-    sending,
-    deliveryRate: parseFloat(deliveryRate.toFixed(2)),
-    successRate: parseFloat(successRate.toFixed(2)),
-    totalCost: parseFloat(totalCost.toFixed(4)),
-    byStatus,
-    byCampaign,
-    byDate: Object.entries(byDate).map(([date, counts]) => ({
-      date,
-      ...counts
-    })).sort((a, b) => a.date.localeCompare(b.date))
+    totalCost: totalCost._sum.costAmount ? parseFloat(totalCost._sum.costAmount) : 0,
+    deliveryRate: total > 0 ? (delivered / total) * 100 : 0
   };
 }
 
@@ -257,15 +313,11 @@ export async function getMessageAnalytics(userId, filters = {}) {
  */
 export async function getCampaignPerformance(campaignId) {
   const messages = await prisma.message.findMany({
-    where: {
-      campaignId,
-      direction: 'outbound'
-    },
+    where: { campaignId: parseInt(campaignId, 10) },
     include: {
       contact: {
         select: {
-          id: true,
-          phone: true
+          id: true
         }
       }
     }
@@ -276,46 +328,23 @@ export async function getCampaignPerformance(campaignId) {
   const failed = messages.filter(m => 
     m.status === 'sending_failed' || m.status === 'delivery_failed'
   ).length;
+  const sent = messages.filter(m => m.status === 'sent').length;
+  const queued = messages.filter(m => 
+    m.status === 'queued' || m.status === 'sending'
+  ).length;
 
-  const totalCost = messages.reduce((sum, msg) => {
-    return sum + (msg.costAmount ? parseFloat(msg.costAmount) : 0);
+  const totalCost = messages.reduce((sum, m) => {
+    return sum + (m.costAmount ? parseFloat(m.costAmount) : 0);
   }, 0);
 
-  // Get unique contacts who received messages
-  const uniqueContacts = new Set(messages.map(m => m.contactId).filter(Boolean));
-  
-  // Get shortlink clicks/opens for this campaign
-  const campaign = await prisma.campaign.findUnique({
-    where: { id: campaignId },
-    include: {
-      shortlinks: {
-        select: {
-          id: true,
-          clicks: true,
-          opens: true
-        }
-      }
-    }
-  });
-
-  const totalClicks = campaign?.shortlinks?.reduce((sum, sl) => sum + sl.clicks, 0) || 0;
-  const totalOpens = campaign?.shortlinks?.reduce((sum, sl) => sum + sl.opens, 0) || 0;
-
-  // Calculate click-through rate (CTR)
-  const ctr = delivered > 0 ? (totalClicks / delivered) * 100 : 0;
-  const openRate = delivered > 0 ? (totalOpens / delivered) * 100 : 0;
-
   return {
+    campaignId,
     total,
     delivered,
     failed,
+    sent,
+    queued,
     deliveryRate: total > 0 ? (delivered / total) * 100 : 0,
-    totalCost: parseFloat(totalCost.toFixed(4)),
-    uniqueContacts: uniqueContacts.size,
-    shortlinkClicks: totalClicks,
-    shortlinkOpens: totalOpens,
-    clickThroughRate: parseFloat(ctr.toFixed(2)),
-    openRate: parseFloat(openRate.toFixed(2))
+    totalCost: parseFloat(totalCost.toFixed(4))
   };
 }
-
