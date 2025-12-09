@@ -120,8 +120,9 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
                     if (e.target.value) {
                       const shortlink = availableShortlinks.find(s => s.id === parseInt(e.target.value))
                       if (shortlink) {
-                        const shortlinkUrl = `https://txt.cx/${shortlink.slug}`
-                        setMessage(prev => prev + (prev ? ' ' : '') + shortlinkUrl)
+                        // Insert marker format that will be replaced with code when sending
+                        const shortlinkMarker = `{{SHORTLINK:${shortlink.id}}}`
+                        setMessage(prev => prev + (prev ? ' ' : '') + shortlinkMarker)
                         e.target.value = ''
                       }
                     }
@@ -132,7 +133,7 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
                   <option value="">Insert Shortlink...</option>
                   {availableShortlinks.map(shortlink => (
                     <option key={shortlink.id} value={shortlink.id}>
-                      {shortlink.nickname || shortlink.slug}
+                      {shortlink.nickname || `Shortlink #${shortlink.id}`}
                     </option>
                   ))}
                 </select>

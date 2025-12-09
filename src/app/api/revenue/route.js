@@ -142,7 +142,6 @@ export async function GET(request) {
         shortlink: {
           select: {
             id: true,
-            slug: true,
             nickname: true
           }
         }

@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { createClickWithHrms, appendHrmsToUrl } from '@/lib/revenue'
+import { lookupMessageClickCode, markCodeAsClicked } from '@/lib/messageClickCodes'
 
 // Bot/crawler User-Agent patterns for link preview fetching
 const BOT_PATTERNS = [
@@ -29,9 +30,9 @@ function isBotRequest(userAgent) {
   )
 }
 
-function generateOgHtml(shortlink, destinationWithHrms) {
-  const { ogImage, ogTitle, ogDescription, slug } = shortlink
-  const shortUrl = `https://txt.cx/${slug}`
+function generateOgHtml(shortlink, destinationWithHrms, code) {
+  const { ogImage, ogTitle, ogDescription } = shortlink
+  const shortUrl = `https://txt.cx/${code}`
   
   // Convert relative image paths to absolute URLs for OG tags
   const absoluteOgImage = ogImage?.startsWith('/') 
@@ -107,69 +108,86 @@ function generateOgHtml(shortlink, destinationWithHrms) {
 }
 
 export async function GET(request, { params }) {
-  const { slug } = params
+  const { slug } = params // This is now a code, not a slug
+  const code = slug // Rename for clarity
   const userAgent = request.headers.get('user-agent') || ''
   const isBot = isBotRequest(userAgent)
   
   try {
-    // Look up the shortlink in the database
-    const shortlink = await prisma.shortlink.findUnique({
-      where: { slug }
-    })
-
-    if (shortlink) {
-      // Check if shortlink is enabled
-      if (!shortlink.enabled) {
-        console.log(`❌ Shortlink disabled: ${slug}`)
-        redirect('https://lp.stockstotrade.com/algo-trader')
-      }
-      
-      // Track opens (bot/preview fetches) vs clicks (real users)
-      let hrms = null
-      let destinationWithHrms = shortlink.destination
-      
-      if (isBot) {
-        // Bot prefetch = "open" (user saw the preview in their messages)
-        // Don't generate HRMS for bot requests
-        await prisma.shortlink.update({
-          where: { id: shortlink.id },
-          data: { opens: { increment: 1 } }
-        })
-        console.log(`👁️ Open (preview): ${slug} → ${shortlink.destination} (${shortlink.opens + 1} opens) [${userAgent.substring(0, 50)}...]`)
-      } else {
-        // Real user click - generate unique HRMS for this specific click
-        const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || null
-        const referrer = request.headers.get('referer') || null
-        
-        hrms = await createClickWithHrms(shortlink.id, userAgent, ipAddress, referrer)
-        destinationWithHrms = appendHrmsToUrl(shortlink.destination, hrms)
-        
-        // Increment click counter
-        await prisma.shortlink.update({
-          where: { id: shortlink.id },
-          data: { clicks: { increment: 1 } }
-        })
-        console.log(`✅ Click: ${slug} → ${destinationWithHrms} (${shortlink.clicks + 1} clicks) [hrms: ${hrms}]`)
-      }
-      
-      // If OG preview is enabled, serve HTML with OG meta tags
-      if (shortlink.ogEnabled && shortlink.ogImage) {
-        const html = generateOgHtml(shortlink, destinationWithHrms)
-        return new NextResponse(html, {
-          headers: {
-            'Content-Type': 'text/html',
-          },
-        })
-      }
-      
-      // Otherwise, redirect directly to the destination URL with hrms
-      redirect(destinationWithHrms)
+    // Lookup MessageClickCode by code (5-6 alphanumeric characters)
+    // Codes are globally unique, so we can lookup directly
+    const messageClickCode = await lookupMessageClickCode(code);
+    
+    if (!messageClickCode) {
+      console.log(`❌ Click code not found: ${code}`)
+      redirect('https://lp.stockstotrade.com/algo-trader')
     }
     
-    console.log(`❌ Shortlink not found: ${slug}`)
+    const shortlink = messageClickCode.shortlink;
     
-    // Redirect to non-existent domain to show browser error
-    redirect('https://lp.stockstotrade.com/algo-trader')
+    // Check if shortlink is enabled
+    if (!shortlink.enabled) {
+      console.log(`❌ Shortlink disabled: ${code}`)
+      redirect('https://lp.stockstotrade.com/algo-trader')
+    }
+    
+    // Track opens (bot/preview fetches) vs clicks (real users)
+    let hrms = null
+    let destinationWithHrms = shortlink.destination
+    const messageId = messageClickCode.messageId;
+    const contactId = messageClickCode.contactId;
+    const messageClickCodeId = messageClickCode.id;
+    
+    if (isBot) {
+      // Bot prefetch = "open" (user saw the preview in their messages)
+      // Don't generate HRMS for bot requests
+      await prisma.shortlink.update({
+        where: { id: shortlink.id },
+        data: { opens: { increment: 1 } }
+      })
+      console.log(`👁️ Open (preview): ${code} → ${shortlink.destination} (${shortlink.opens + 1} opens) [${userAgent.substring(0, 50)}...]`)
+    } else {
+      // Real user click - we have full message-level tracking!
+      const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || null
+      const referrer = request.headers.get('referer') || null
+      
+      // Mark code as clicked (first time only)
+      if (!messageClickCode.clicked) {
+        await markCodeAsClicked(code);
+      }
+      
+      // Generate unique HRMS for this specific click
+      hrms = await createClickWithHrms(
+        shortlink.id,
+        messageId,
+        contactId,
+        messageClickCodeId,
+        userAgent,
+        ipAddress,
+        referrer
+      );
+      destinationWithHrms = appendHrmsToUrl(shortlink.destination, hrms)
+      
+      // Increment click counter
+      await prisma.shortlink.update({
+        where: { id: shortlink.id },
+        data: { clicks: { increment: 1 } }
+      })
+      console.log(`✅ Click: ${code} → ${destinationWithHrms} (${shortlink.clicks + 1} clicks) [messageId: ${messageId}, contactId: ${contactId}, hrms: ${hrms}]`)
+    }
+    
+    // If OG preview is enabled, serve HTML with OG meta tags
+    if (shortlink.ogEnabled && shortlink.ogImage) {
+      const html = generateOgHtml(shortlink, destinationWithHrms, code)
+      return new NextResponse(html, {
+        headers: {
+          'Content-Type': 'text/html',
+        },
+      })
+    }
+    
+    // Otherwise, redirect directly to the destination URL with hrms
+    redirect(destinationWithHrms)
   } catch (error) {
     // Check if this is a Next.js redirect (which is expected behavior)
     if (error.digest && error.digest.startsWith('NEXT_REDIRECT')) {
@@ -177,7 +195,7 @@ export async function GET(request, { params }) {
       throw error
     }
     
-    console.log(`❌ Shortlink error: ${slug} - ${error.message}`)
+    console.log(`❌ Shortlink error: ${code} - ${error.message}`)
     
     // Redirect to non-existent domain to show browser error
     redirect('https://lp.stockstotrade.com/algo-trader')

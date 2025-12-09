@@ -18,12 +18,23 @@ export function generateHrms(userId, shortlinkId) {
  * Create a new click record with unique HRMS for a shortlink
  * Each click gets its own unique HRMS for proper revenue attribution
  * @param {number} shortlinkId - Shortlink ID
+ * @param {string} messageId - Optional message ID that contained this shortlink
+ * @param {number} contactId - Optional contact ID who clicked
+ * @param {number} messageClickCodeId - Optional MessageClickCode ID
  * @param {string} userAgent - Optional user agent string
  * @param {string} ipAddress - Optional IP address
  * @param {string} referrer - Optional referrer URL
  * @returns {Promise<string>} - Unique hrms value for this click
  */
-export async function createClickWithHrms(shortlinkId, userAgent = null, ipAddress = null, referrer = null) {
+export async function createClickWithHrms(
+  shortlinkId,
+  messageId = null,
+  contactId = null,
+  messageClickCodeId = null,
+  userAgent = null,
+  ipAddress = null,
+  referrer = null
+) {
   const shortlink = await prisma.shortlink.findUnique({
     where: { id: shortlinkId },
     select: { userId: true, campaignId: true }
@@ -36,10 +47,12 @@ export async function createClickWithHrms(shortlinkId, userAgent = null, ipAddre
   // Generate unique HRMS for this specific click
   const hrms = generateHrms(shortlink.userId, shortlinkId);
 
-  // Create click record with unique HRMS
+  // Create click record with unique HRMS and message/contact tracking
   await prisma.shortlinkClick.create({
     data: {
       shortlinkId,
+      messageId,
+      messageClickCodeId,
       hrms,
       userAgent,
       ipAddress,

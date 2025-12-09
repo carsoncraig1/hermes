@@ -38,9 +38,10 @@ const ActionNode = ({ data, selected, id, onDelete, availableShortlinks = [] }) 
     e.stopPropagation();
     const shortlink = availableShortlinks.find(s => s.id === parseInt(e.target.value));
     if (shortlink) {
-      const shortlinkUrl = `https://txt.cx/${shortlink.slug}`;
+      // Insert marker format that will be replaced with code when sending
+      const shortlinkMarker = `{{SHORTLINK:${shortlink.id}}}`;
       const currentMessage = data.message || '';
-      data.onChange?.('message', currentMessage + (currentMessage ? ' ' : '') + shortlinkUrl);
+      data.onChange?.('message', currentMessage + (currentMessage ? ' ' : '') + shortlinkMarker);
       e.target.value = '';
     }
   };
@@ -77,7 +78,7 @@ const ActionNode = ({ data, selected, id, onDelete, availableShortlinks = [] }) 
                 <option value="">Insert Shortlink...</option>
                 {availableShortlinks.map(shortlink => (
                   <option key={shortlink.id} value={shortlink.id}>
-                    {shortlink.nickname || shortlink.slug}
+                    {shortlink.nickname || `Shortlink #${shortlink.id}`}
                   </option>
                 ))}
               </select>

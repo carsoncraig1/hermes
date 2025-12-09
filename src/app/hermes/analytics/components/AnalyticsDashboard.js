@@ -246,7 +246,7 @@ export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPe
                   <tr key={event.id}>
                     <td>{new Date(event.createdAt).toLocaleString()}</td>
                     <td>{event.campaign?.name || '—'}</td>
-                    <td>{event.shortlink?.nickname || event.shortlink?.slug || '—'}</td>
+                    <td>{event.shortlink?.nickname || `Shortlink #${event.shortlinkId}` || '—'}</td>
                     <td className={styles.revenueCell}>{formatCurrency(parseFloat(event.payout))}</td>
                     <td>{event.currency}</td>
                   </tr>

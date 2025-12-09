@@ -11,28 +11,38 @@ async function getUserId() {
   return session.user.id
 }
 
-// Helper function to extract shortlink slugs from message text
-function extractShortlinkSlugs(message) {
+// Helper function to extract shortlink IDs from message text
+// Looks for {{SHORTLINK:ID}} markers or txt.cx/shortlink-ID format
+function extractShortlinkIds(message) {
   if (!message) return []
-  const regex = /https:\/\/txt\.cx\/([a-zA-Z0-9_-]+)/g
-  const slugs = []
+  const ids = []
+  
+  // Pattern 1: {{SHORTLINK:123}} marker format
+  const markerRegex = /\{\{SHORTLINK:(\d+)\}\}/g
   let match
-  while ((match = regex.exec(message)) !== null) {
-    slugs.push(match[1])
+  while ((match = markerRegex.exec(message)) !== null) {
+    ids.push(parseInt(match[1], 10))
   }
-  return [...new Set(slugs)] // Remove duplicates
+  
+  // Pattern 2: txt.cx/shortlink-123 format (legacy support)
+  const urlRegex = /https:\/\/txt\.cx\/shortlink-(\d+)/g
+  while ((match = urlRegex.exec(message)) !== null) {
+    ids.push(parseInt(match[1], 10))
+  }
+  
+  return [...new Set(ids)] // Remove duplicates
 }
 
 // Helper function to associate shortlinks with a campaign
 async function associateShortlinksWithCampaign(campaignId, message, userId, tx) {
-  const slugs = extractShortlinkSlugs(message)
-  if (slugs.length === 0) return
+  const shortlinkIds = extractShortlinkIds(message)
+  if (shortlinkIds.length === 0) return
 
-  // Find all shortlinks by slug for this user
+  // Find all shortlinks by ID for this user
   const shortlinks = await tx.shortlink.findMany({
     where: {
       userId,
-      slug: { in: slugs }
+      id: { in: shortlinkIds }
     }
   })
 

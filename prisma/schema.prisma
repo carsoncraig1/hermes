@@ -37,6 +37,7 @@ model User {
   consoleLogs         ConsoleLog[]
   messages            Message[]
   revenueEvents       RevenueEvent[]
+  messageClickCodes   MessageClickCode[]
   
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -118,6 +119,7 @@ model Contact {
   lastMessageSent DateTime?
   tags            Tag[]
   messages        Message[]
+  messageClickCodes MessageClickCode[]
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -163,8 +165,7 @@ model Shortlink {
   id            Int       @id @default(autoincrement())
   userId        String
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  nickname      String?   // Optional nickname for the shortlink
-  slug          String    @unique
+  nickname      String?   // Optional nickname for the shortlink (used for identification in UI)
   destination   String
   clicks        Int       @default(0) // Counter for total clicks
   opens         Int       @default(0)  // Tracks preview fetches from messaging apps
@@ -178,25 +179,57 @@ model Shortlink {
   ogDescription String?
   revenueEvents RevenueEvent[]
   clickRecords  ShortlinkClick[] // Individual click tracking with unique HRMS
+  messageClickCodes MessageClickCode[] // Click codes for messages containing this shortlink
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   @@map("shortlinks")
 }
 
-model ShortlinkClick {
+model MessageClickCode {
   id            Int            @id @default(autoincrement())
+  code          String         @unique // 5-6 character alphanumeric code (base62)
   shortlinkId   Int
   shortlink     Shortlink      @relation(fields: [shortlinkId], references: [id], onDelete: Cascade)
-  hrms          String         @unique // Unique tracking parameter for this specific click
-  userAgent     String?        // User agent string for analytics
-  ipAddress     String?        // IP address for analytics
-  referrer      String?        // Referrer URL
-  revenueEvents RevenueEvent[] // Revenue events attributed to this click
+  messageId     String
+  message       Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  contactId     Int?
+  contact       Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clicked       Boolean        @default(false) // Whether this code has been clicked
+  clickedAt      DateTime?     // When the code was first clicked
+  expiresAt      DateTime      // Code expires after 30 days
+  shortlinkClicks ShortlinkClick[] // Clicks that used this code
   createdAt     DateTime       @default(now())
 
+  @@index([code]) // Primary lookup index
   @@index([shortlinkId, createdAt])
+  @@index([messageId])
+  @@index([contactId])
+  @@index([userId, expiresAt]) // For cleanup queries
+  @@map("message_click_codes")
+}
+
+model ShortlinkClick {
+  id                Int            @id @default(autoincrement())
+  shortlinkId       Int
+  shortlink         Shortlink      @relation(fields: [shortlinkId], references: [id], onDelete: Cascade)
+  messageId         String?        // Link to the specific message that contained this shortlink
+  message           Message?       @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  messageClickCodeId Int?          // Link to the MessageClickCode that was used
+  messageClickCode   MessageClickCode? @relation(fields: [messageClickCodeId], references: [id], onDelete: SetNull)
+  hrms              String         @unique // Unique tracking parameter for this specific click
+  userAgent         String?        // User agent string for analytics
+  ipAddress         String?        // IP address for analytics
+  referrer          String?        // Referrer URL
+  revenueEvents     RevenueEvent[] // Revenue events attributed to this click
+  createdAt         DateTime       @default(now())
+
+  @@index([shortlinkId, createdAt])
+  @@index([messageId, createdAt])
   @@index([hrms])
+  @@index([messageClickCodeId])
   @@map("shortlink_clicks")
 }
 
@@ -248,6 +281,8 @@ model Message {
   // Additional metadata
   telnyxMetadata    Json?     // Store full Telnyx response for debugging
   errorMessage      String?   @db.Text // Error message if failed
+  messageClickCodes MessageClickCode[] // Click codes generated for shortlinks in this message
+  shortlinkClicks   ShortlinkClick[] // Clicks on shortlinks in this message
 
   @@index([userId, createdAt])
   @@index([contactId])

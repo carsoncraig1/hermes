@@ -5,14 +5,8 @@ import styles from './AddShortlinkModal.module.css'
 import { addShortlink } from '@/lib/actions/shortlinks'
 import { getCampaigns } from '@/lib/actions/campaigns'
 
-function generateRandomSlug(length = 3) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-  return Array.from({ length }, () => chars.charAt(Math.floor(Math.random() * chars.length))).join('')
-}
-
 export default function AddShortlinkModal({ onClose, onAdd }) {
   const [nickname, setNickname] = useState('')
-  const [slug, setSlug] = useState('')
   const [destination, setDestination] = useState('')
   const [campaignId, setCampaignId] = useState('')
   const [campaigns, setCampaigns] = useState([])
@@ -36,10 +30,6 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
     }
     loadCampaigns()
   }, [])
-
-  const handleRandomize = () => {
-    setSlug(generateRandomSlug())
-  }
 
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0]
@@ -76,7 +66,6 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
     try {
       const shortlink = await addShortlink({
         nickname: nickname || null,
-        slug,
         destination,
         campaignId: campaignId || null,
         ogEnabled,
@@ -111,27 +100,6 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
               placeholder="Enter a friendly name for this shortlink"
               className={styles.input}
             />
-          </div>
-
-          <div className={styles.formGroup}>
-            <label htmlFor="slug">Slug</label>
-            <div className={styles.inputWithButton}>
-              <input
-                id="slug"
-                type="text"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value)}
-                placeholder="Enter slug or randomize"
-                required
-              />
-              <button 
-                type="button" 
-                onClick={handleRandomize}
-                className={styles.randomizeButton}
-              >
-                🎲
-              </button>
-            </div>
           </div>
 
           <div className={styles.formGroup}>
@@ -236,7 +204,7 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
                       <div className={styles.previewText}>
                         <div className={styles.previewTitle}>{ogTitle || 'No title'}</div>
                         <div className={styles.previewDescription}>{ogDescription || 'No description'}</div>
-                        <div className={styles.previewUrl}>txt.cx/{slug || '...'}</div>
+                        <div className={styles.previewUrl}>txt.cx/CODE (generated per message)</div>
                       </div>
                     </div>
                   </div>

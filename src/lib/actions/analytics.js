@@ -48,7 +48,6 @@ export async function getAnalytics(filters = {}) {
         shortlink: {
           select: {
             id: true,
-            slug: true,
             nickname: true
           }
         }
@@ -87,7 +86,6 @@ export async function getAnalytics(filters = {}) {
       },
       select: {
         id: true,
-        slug: true,
         nickname: true,
         clicks: true,
         opens: true,
@@ -126,7 +124,7 @@ export async function getAnalytics(filters = {}) {
           const key = event.shortlinkId ? `shortlink_${event.shortlinkId}` : 'no_shortlink';
           if (!shortlinkMap.has(key)) {
             shortlinkMap.set(key, {
-              name: event.shortlink?.nickname || event.shortlink?.slug || 'No Shortlink',
+              name: event.shortlink?.nickname || `Shortlink #${event.shortlinkId}` || 'No Shortlink',
               revenue: 0,
               events: 0
             });

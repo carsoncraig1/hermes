@@ -7,7 +7,6 @@ import styles from './AddShortlinkModal.module.css' // Reuse existing styles
 
 export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
   const [nickname, setNickname] = useState(shortlink.nickname || '')
-  const [slug, setSlug] = useState(shortlink.slug)
   const [destination, setDestination] = useState(shortlink.destination)
   const [campaignId, setCampaignId] = useState(shortlink.campaignId || '')
   const [campaigns, setCampaigns] = useState([])
@@ -68,7 +67,6 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
       const updatedShortlink = await updateShortlink({
         id: shortlink.id,
         nickname: nickname || null,
-        slug,
         destination,
         campaignId: campaignId || null,
         ogEnabled,
@@ -97,18 +95,6 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
               placeholder="Enter a friendly name for this shortlink"
-              className={styles.input}
-            />
-          </div>
-
-          <div className={styles.formGroup}>
-            <label>Slug</label>
-            <input
-              type="text"
-              value={slug}
-              onChange={(e) => setSlug(e.target.value)}
-              required
-              placeholder="Enter shortlink slug"
               className={styles.input}
             />
           </div>
@@ -214,7 +200,7 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
                       <div className={styles.previewText}>
                         <div className={styles.previewTitle}>{ogTitle || 'No title'}</div>
                         <div className={styles.previewDescription}>{ogDescription || 'No description'}</div>
-                        <div className={styles.previewUrl}>txt.cx/{slug}</div>
+                        <div className={styles.previewUrl}>txt.cx/CODE (generated per message)</div>
                       </div>
                     </div>
                   </div>

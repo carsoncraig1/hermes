@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma';
 import { auth } from '@/lib/auth';
 import { validateMessage } from '@/lib/messageUtils';
 import { checkRateLimit, createMessageRecord } from '@/lib/actions/messages';
+import { createMessageClickCodes } from '@/lib/messageClickCodes';
 
 /**
  * Get Telnyx client for a specific user
@@ -136,11 +137,58 @@ export async function sendMessage({
       };
     }
 
-    // Build message parameters according to Telnyx API documentation
+    // STEP 1: Create message record FIRST (before sending) so we have messageId
+    // This allows us to create MessageClickCodes that reference the message
+    let messageRecord = null;
+    let messageId = null;
+    let messageTextWithCodes = text; // Will be modified with click codes
+    
+    try {
+      messageRecord = await createMessageRecord({
+        userId: finalUserId,
+        telnyxMessageId: null, // Will be updated after sending
+        contactId,
+        campaignId,
+        from: fromNumber,
+        to,
+        text, // Store original text
+        type: 'SMS',
+        parts: validation.parts,
+        status: 'queued', // Will be updated after sending
+        direction: 'outbound',
+        costAmount: null, // Will be updated after sending
+        costCurrency: 'USD',
+        telnyxMetadata: null // Will be updated after sending
+      });
+      messageId = messageRecord.id;
+    } catch (dbError) {
+      console.error('Error creating message record before sending:', dbError);
+      // Continue - we'll create it after sending if this fails
+    }
+
+    // STEP 2: Create MessageClickCodes for all shortlinks in the message
+    // This replaces shortlink markers with code-only URLs (txt.cx/CODE)
+    if (messageId && contactId) {
+      try {
+        const { modifiedText } = await createMessageClickCodes(
+          messageId,
+          text,
+          contactId,
+          finalUserId
+        );
+        messageTextWithCodes = modifiedText;
+      } catch (codeError) {
+        console.error('Error creating message click codes:', codeError);
+        // Continue with original text if code creation fails
+        messageTextWithCodes = text;
+      }
+    }
+
+    // STEP 3: Build message parameters with code-embedded URLs
     const messageParams = {
       from: fromNumber,
       to,
-      text,
+      text: messageTextWithCodes, // Use text with click codes embedded
       type: 'SMS', // SMS or MMS
       messaging_profile_id: settings.messagingProfileId,
       // Webhook configuration - use profile webhooks if configured, otherwise use explicit webhook
@@ -150,7 +198,7 @@ export async function sendMessage({
       // If webhook_url is provided in request, it takes precedence
     };
 
-    // Send message via Telnyx SDK
+    // STEP 4: Send message via Telnyx SDK
     // According to docs: telnyx.messages.create(params, callback) for Node.js
     // But we're using async/await, so we call it without callback
     const response = await telnyx.messages.create(messageParams);
@@ -175,28 +223,49 @@ export async function sendMessage({
     const costAmount = response.data?.cost?.amount || null;
     const costCurrency = response.data?.cost?.currency || 'USD';
 
-    // Create message record in database
-    let messageRecord = null;
-    try {
-      messageRecord = await createMessageRecord({
-        userId: finalUserId,
-        telnyxMessageId,
-        contactId,
-        campaignId,
-        from: fromNumber,
-        to,
-        text,
-        type: 'SMS',
-        parts: validation.parts,
-        status: initialStatus,
-        direction: 'outbound',
-        costAmount,
-        costCurrency,
-        telnyxMetadata: response.data
-      });
-    } catch (dbError) {
-      console.error('Error creating message record:', dbError);
-      // Continue even if DB record creation fails - message was sent
+    // STEP 5: Update message record with Telnyx response data
+    if (messageRecord && messageId) {
+      try {
+        await prisma.message.update({
+          where: { id: messageId },
+          data: {
+            telnyxMessageId,
+            status: initialStatus,
+            costAmount: costAmount ? parseFloat(costAmount) : null,
+            costCurrency,
+            telnyxMetadata: response.data ? JSON.parse(JSON.stringify(response.data)) : null,
+            sentAt: initialStatus === 'sent' || initialStatus === 'sending' ? new Date() : null,
+            text: messageTextWithCodes // Update with code-embedded text
+          }
+        });
+      } catch (dbError) {
+        console.error('Error updating message record:', dbError);
+        // Continue even if update fails
+      }
+    } else if (!messageRecord) {
+      // If we didn't create the record before sending, create it now
+      try {
+        messageRecord = await createMessageRecord({
+          userId: finalUserId,
+          telnyxMessageId,
+          contactId,
+          campaignId,
+          from: fromNumber,
+          to,
+          text: messageTextWithCodes, // Store text with codes
+          type: 'SMS',
+          parts: validation.parts,
+          status: initialStatus,
+          direction: 'outbound',
+          costAmount,
+          costCurrency,
+          telnyxMetadata: response.data
+        });
+        messageId = messageRecord.id;
+      } catch (dbError) {
+        console.error('Error creating message record after send:', dbError);
+        // Continue even if DB record creation fails - message was sent
+      }
     }
     
     return { 
