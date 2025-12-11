@@ -123,25 +123,36 @@ export async function updateContact(data) {
       clickidArray = Array.isArray(data.clickId) ? data.clickId : (data.clickId ? [data.clickId] : [])
     }
 
+    // If unsubscribing, set unsubscribe reason to "manual"
+    const updateData = {
+      firstName: data.firstName !== undefined ? (data.firstName || null) : undefined,
+      lastName: data.lastName !== undefined ? (data.lastName || null) : undefined,
+      email: data.email !== undefined ? (data.email || null) : undefined,
+      phone: data.phone,
+      clickid: clickidArray.length > 0 ? clickidArray : undefined,
+      source: data.source !== undefined ? (data.source || null) : undefined,
+      age: data.age !== undefined ? (data.age || null) : undefined,
+      ip: data.ip !== undefined ? (data.ip || null) : undefined,
+      useragent: data.useragent !== undefined ? (data.useragent || null) : undefined,
+      referrer: data.referrer !== undefined ? (data.referrer || null) : undefined,
+      subscribed: data.subscribed,
+      tags: {
+        set: [], // Clear existing tags
+        connect: tagConnections // Connect new tags
+      }
+    };
+
+    // If unsubscribing, set unsubscribe reason to "manual"
+    if (data.subscribed === false && existing.subscribed === true) {
+      updateData.unsubscribeReason = 'manual';
+    } else if (data.subscribed === true && existing.subscribed === false) {
+      // If resubscribing, clear unsubscribe reason
+      updateData.unsubscribeReason = null;
+    }
+
     const contact = await prisma.contact.update({
       where: { id: data.id },
-      data: {
-        firstName: data.firstName || null,
-        lastName: data.lastName || null,
-        email: data.email || null,
-        phone: data.phone,
-        clickid: clickidArray.length > 0 ? clickidArray : undefined,
-        source: data.source !== undefined ? (data.source || null) : undefined,
-        age: data.age !== undefined ? (data.age || null) : undefined,
-        ip: data.ip !== undefined ? (data.ip || null) : undefined,
-        useragent: data.useragent !== undefined ? (data.useragent || null) : undefined,
-        referrer: data.referrer !== undefined ? (data.referrer || null) : undefined,
-        subscribed: data.subscribed,
-        tags: {
-          set: [], // Clear existing tags
-          connect: tagConnections // Connect new tags
-        }
-      },
+      data: updateData,
       include: {
         tags: true
       }

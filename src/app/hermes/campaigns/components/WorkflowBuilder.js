@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, useMemo, useEffect } from 'react';
+import { useCallback, useState, useMemo, useEffect, useRef } from 'react';
 import {
   ReactFlow,
   Background,
@@ -17,8 +17,137 @@ import '@xyflow/react/dist/style.css';
 import { getShortlinks } from '@/lib/actions/shortlinks';
 import styles from './WorkflowBuilder.module.css';
 
+// Searchable Single-Select Component for Trigger Source
+function SearchableSourceSelect({ 
+  value, 
+  onChange, 
+  availableSources = [],
+  placeholder = "Select source filter..."
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const containerRef = useRef(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false);
+        setSearchQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Build options list with special options
+  const allOptions = useMemo(() => {
+    const specialOptions = [
+      { value: null, label: 'All Sources (Catch-All)', icon: '🔥' },
+      { value: '__DEFAULT__', label: 'Default (Unmatched Sources Only)', icon: '⚡' },
+    ];
+    const sourceOptions = availableSources.map(source => ({
+      value: source,
+      label: source,
+      icon: '🎯'
+    }));
+    return [...specialOptions, ...sourceOptions];
+  }, [availableSources]);
+
+  // Filter options based on search
+  const filteredOptions = useMemo(() => {
+    if (!searchQuery) return allOptions;
+    const query = searchQuery.toLowerCase();
+    return allOptions.filter(opt => {
+      const label = opt.label.toLowerCase();
+      return label.includes(query);
+    });
+  }, [allOptions, searchQuery]);
+
+  const selectedOption = allOptions.find(opt => opt.value === value);
+
+  const handleSelect = (optionValue) => {
+    onChange(optionValue);
+    setIsOpen(false);
+    setSearchQuery('');
+  };
+
+  return (
+    <div className={styles.searchableSelect} ref={containerRef}>
+      <div 
+        className={styles.selectTrigger}
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <div className={styles.selectedValue}>
+          {selectedOption ? (
+            <span>
+              <span className={styles.optionIcon}>{selectedOption.icon}</span>
+              {selectedOption.label}
+            </span>
+          ) : (
+            <span className={styles.placeholder}>{placeholder}</span>
+          )}
+        </div>
+        <span className={styles.dropdownArrow}>{isOpen ? '▲' : '▼'}</span>
+      </div>
+      
+      {isOpen && (
+        <div className={styles.selectDropdown}>
+          <div className={styles.searchInputWrapper}>
+            <input
+              type="text"
+              className={styles.searchInput}
+              placeholder="Search sources..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              autoFocus
+            />
+          </div>
+          <div className={styles.optionsList}>
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map(option => {
+                const isSelected = option.value === value;
+                return (
+                  <div
+                    key={option.value === null ? '__null__' : option.value}
+                    className={`${styles.optionItem} ${isSelected ? styles.optionSelected : ''}`}
+                    onClick={() => handleSelect(option.value)}
+                  >
+                    <span className={styles.optionIcon}>{option.icon}</span>
+                    <span>{option.label}</span>
+                    {isSelected && <span className={styles.checkmark}>✓</span>}
+                  </div>
+                );
+              })
+            ) : (
+              <div className={styles.noResults}>No results found</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Custom Node Types
-const TriggerNode = ({ data, selected }) => {
+const TriggerNode = ({ data, selected, availableSources = [] }) => {
+  // triggerSource values:
+  // null = catch-all (fires on every lead)
+  // "__DEFAULT__" = default (fires only if no other workflow matches the source)
+  // string = specific source (fires only for that source)
+  const triggerSource = data?.triggerSource ?? null;
+  
+  const getDescription = () => {
+    if (triggerSource === null) {
+      return '🔥 Triggers for ALL sources (catch-all)';
+    } else if (triggerSource === '__DEFAULT__') {
+      return '⚡ Triggers for unmatched sources only (default)';
+    } else {
+      return `🎯 Triggers for source: "${triggerSource}"`;
+    }
+  };
+  
   return (
     <div className={`${styles.node} ${styles.triggerNode} ${selected ? styles.selected : ''}`}>
       <div className={styles.nodeHeader}>
@@ -26,7 +155,18 @@ const TriggerNode = ({ data, selected }) => {
         <span className={styles.nodeTitle}>New Lead</span>
       </div>
       <div className={styles.nodeBody}>
-        <div className={styles.nodeDescription}>Triggered when a new contact is created</div>
+        <div className={styles.nodeDescription}>
+          {getDescription()}
+        </div>
+        <div className={styles.nodeField}>
+          <label>Source Filter:</label>
+          <SearchableSourceSelect
+            value={triggerSource}
+            onChange={(value) => data.onChange?.('triggerSource', value)}
+            availableSources={availableSources}
+            placeholder="Select source filter..."
+          />
+        </div>
       </div>
       <Handle type="source" position={Position.Bottom} className={styles.nodeHandle} id="source" />
     </div>
@@ -84,14 +224,63 @@ const ActionNode = ({ data, selected, id, onDelete, availableShortlinks = [] }) 
               </select>
             )}
           </div>
-          <textarea
-            value={data.message || ''}
-            onChange={(e) => data.onChange?.('message', e.target.value)}
-            placeholder="Enter message text..."
-            rows={3}
-            className={styles.nodeInput}
-            onClick={(e) => e.stopPropagation()}
-          />
+          <div className={styles.messagePreview}>
+            <textarea
+              value={(() => {
+                // Replace {{SHORTLINK:ID}} markers with actual URLs for display
+                // This ensures the textarea character count matches the overlay
+                let displayValue = data.message || '';
+                displayValue = displayValue.replace(/\{\{SHORTLINK:(\d+)\}\}/g, (match, id) => {
+                  const shortlink = availableShortlinks.find(s => s.id === parseInt(id, 10));
+                  const displayName = shortlink?.nickname || `link-${id}`;
+                  return `https://txt.cx/${displayName}`;
+                });
+                return displayValue;
+              })()}
+              onChange={(e) => {
+                // Convert URLs back to markers when user edits
+                let newValue = e.target.value;
+                // Replace shortlink URLs back to markers
+                availableShortlinks.forEach(shortlink => {
+                  const url = `https://txt.cx/${shortlink.nickname || `link-${shortlink.id}`}`;
+                  // Use a regex that matches the URL and replaces with marker
+                  const regex = new RegExp(url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+                  newValue = newValue.replace(regex, `{{SHORTLINK:${shortlink.id}}}`);
+                });
+                data.onChange?.('message', newValue);
+              }}
+              placeholder="Enter message text..."
+              rows={3}
+              className={styles.nodeInput}
+              onClick={(e) => e.stopPropagation()}
+            />
+            <div 
+              className={styles.messageDisplay}
+              dangerouslySetInnerHTML={{ 
+                __html: (() => {
+                  let formatted = data.message || '';
+                  // Escape HTML first
+                  formatted = formatted
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+                  
+                  // Replace {{SHORTLINK:ID}} markers with styled URLs
+                  formatted = formatted.replace(/\{\{SHORTLINK:(\d+)\}\}/g, (match, id) => {
+                    const shortlink = availableShortlinks.find(s => s.id === parseInt(id, 10));
+                    const displayName = shortlink?.nickname || `link-${id}`;
+                    const url = `https://txt.cx/${displayName}`;
+                    return `<span class="${styles.shortlinkUrl}">${url}</span>`;
+                  });
+                  // Also format regular URLs
+                  formatted = formatted.replace(/(https?:\/\/[^\s]+)/g, (url) => {
+                    return `<span class="${styles.shortlinkUrl}">${url}</span>`;
+                  });
+                  return formatted;
+                })()
+              }}
+            />
+          </div>
         </div>
       </div>
       <Handle type="target" position={Position.Left} className={styles.nodeHandle} id="target" />
@@ -283,8 +472,8 @@ const DelayNode = ({ data, selected, id, onDelete }) => {
   );
 };
 
-const createNodeTypes = (onDelete, availableShortlinks = []) => ({
-  trigger: TriggerNode,
+const createNodeTypes = (onDelete, availableShortlinks = [], availableSources = []) => ({
+  trigger: (props) => <TriggerNode {...props} availableSources={availableSources} />,
   action: (props) => <ActionNode {...props} onDelete={onDelete} availableShortlinks={availableShortlinks} />,
   segmentation: (props) => <SegmentationNode {...props} onDelete={onDelete} />,
   delay: (props) => <DelayNode {...props} onDelete={onDelete} />,
@@ -295,7 +484,10 @@ const initialNodes = [
     id: '1',
     type: 'trigger',
     position: { x: 250, y: 100 },
-    data: { label: 'New Lead' },
+    data: { 
+      label: 'New Lead',
+      triggerSource: null, // null = catch-all, "__DEFAULT__" = default, string = specific source
+    },
   },
 ];
 
@@ -307,6 +499,7 @@ export default function WorkflowBuilder({ workflow, onSave, campaignId, campaign
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [editingNode, setEditingNode] = useState(null);
   const [availableShortlinks, setAvailableShortlinks] = useState([]);
+  const [availableSources, setAvailableSources] = useState([]);
 
   useEffect(() => {
     const loadShortlinks = async () => {
@@ -318,6 +511,20 @@ export default function WorkflowBuilder({ workflow, onSave, campaignId, campaign
       }
     };
     loadShortlinks();
+  }, []);
+
+  useEffect(() => {
+    const loadSources = async () => {
+      try {
+        const { getContacts } = await import('@/lib/actions/contacts');
+        const contacts = await getContacts();
+        const uniqueSources = [...new Set(contacts.map(c => c.source).filter(Boolean))].sort();
+        setAvailableSources(uniqueSources);
+      } catch (error) {
+        console.error('Error loading sources:', error);
+      }
+    };
+    loadSources();
   }, []);
 
   const handleDeleteNode = useCallback((nodeId) => {
@@ -429,6 +636,7 @@ export default function WorkflowBuilder({ workflow, onSave, campaignId, campaign
         conditions: node.data?.conditions,
         delayValue: node.data?.delayValue,
         delayUnit: node.data?.delayUnit,
+        triggerSource: node.data?.triggerSource, // Include trigger source configuration
         label: node.data?.label,
       },
     }));
@@ -439,12 +647,14 @@ export default function WorkflowBuilder({ workflow, onSave, campaignId, campaign
         id: edge.id,
         source: edge.source,
         target: edge.target,
+        sourceHandle: edge.sourceHandle,
+        targetHandle: edge.targetHandle,
       })),
     };
     onSave(workflowData);
   };
 
-  const nodeTypes = useMemo(() => createNodeTypes(handleDeleteNode, availableShortlinks), [handleDeleteNode, availableShortlinks]);
+  const nodeTypes = useMemo(() => createNodeTypes(handleDeleteNode, availableShortlinks, availableSources), [handleDeleteNode, availableShortlinks, availableSources]);
 
   const workflowStats = useMemo(() => {
     const actionNodes = nodes.filter(n => n.type === 'action').length;

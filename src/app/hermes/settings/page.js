@@ -20,14 +20,18 @@ export default function Settings() {
   });
   const [telnyxLoading, setTelnyxLoading] = useState(true);
   const [telnyxSaving, setTelnyxSaving] = useState(false);
+  const [autoUnsubscribe, setAutoUnsubscribe] = useState(true);
+  const [autoUnsubscribeLoading, setAutoUnsubscribeLoading] = useState(true);
+  const [autoUnsubscribeSaving, setAutoUnsubscribeSaving] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [apiKeyResponse, optOutResponse, telnyxResponse] = await Promise.all([
+        const [apiKeyResponse, optOutResponse, telnyxResponse, autoUnsubscribeResponse] = await Promise.all([
           fetch('/api/user/api-key'),
           fetch('/api/user/opt-out-text'),
           fetch('/api/user/telnyx-settings'),
+          fetch('/api/user/auto-unsubscribe'),
         ]);
         
         if (apiKeyResponse.ok) {
@@ -44,12 +48,18 @@ export default function Settings() {
           const telnyxData = await telnyxResponse.json();
           setTelnyxSettings(telnyxData);
         }
+        
+        if (autoUnsubscribeResponse.ok) {
+          const autoUnsubscribeData = await autoUnsubscribeResponse.json();
+          setAutoUnsubscribe(autoUnsubscribeData.autoUnsubscribeOnFailure ?? true);
+        }
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
         setLoading(false);
         setOptOutLoading(false);
         setTelnyxLoading(false);
+        setAutoUnsubscribeLoading(false);
       }
     };
     fetchData();
@@ -109,6 +119,30 @@ export default function Settings() {
       alert('Failed to save Telnyx settings');
     } finally {
       setTelnyxSaving(false);
+    }
+  };
+
+  const handleSaveAutoUnsubscribe = async () => {
+    setAutoUnsubscribeSaving(true);
+    try {
+      const response = await fetch('/api/user/auto-unsubscribe', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ autoUnsubscribeOnFailure: autoUnsubscribe }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setAutoUnsubscribe(data.autoUnsubscribeOnFailure);
+        alert('Auto-unsubscribe setting saved successfully!');
+      } else {
+        alert('Failed to save auto-unsubscribe setting');
+      }
+    } catch (error) {
+      console.error('Error saving auto-unsubscribe setting:', error);
+      alert('Failed to save auto-unsubscribe setting');
+    } finally {
+      setAutoUnsubscribeSaving(false);
     }
   };
 
@@ -522,6 +556,64 @@ if (hrms && conversionOccurred) {
                   >
                     {telnyxSaving ? 'Saving...' : 'Save Telnyx Settings'}
                   </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Auto-Unsubscribe on Failure Card */}
+        <div className={styles.settingsCard}>
+          <div className={styles.cardHeader}>
+            <h2>Auto-Unsubscribe on Delivery Failures</h2>
+            <span className={styles.cardBadge}>Recommended</span>
+          </div>
+          <div className={styles.cardContent}>
+            <p className={styles.cardDescription}>
+              Automatically unsubscribe contacts when messages fail to deliver due to invalid phone numbers, carrier opt-outs, or other unrecoverable errors. This helps maintain a clean contact list and prevents sending to invalid numbers.
+            </p>
+            {autoUnsubscribeLoading ? (
+              <div className={styles.loading}>Loading...</div>
+            ) : (
+              <>
+                <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <input
+                    type="checkbox"
+                    id="autoUnsubscribe"
+                    checked={autoUnsubscribe}
+                    onChange={(e) => setAutoUnsubscribe(e.target.checked)}
+                    style={{ width: '1.25rem', height: '1.25rem', cursor: 'pointer' }}
+                  />
+                  <label 
+                    htmlFor="autoUnsubscribe" 
+                    style={{ 
+                      color: 'var(--text-primary)', 
+                      fontSize: '0.875rem', 
+                      cursor: 'pointer',
+                      userSelect: 'none'
+                    }}
+                  >
+                    Automatically unsubscribe contacts on delivery failures
+                  </label>
+                </div>
+                <div className={styles.optOutActions}>
+                  <button
+                    onClick={handleSaveAutoUnsubscribe}
+                    disabled={autoUnsubscribeSaving}
+                    className={styles.saveButton}
+                  >
+                    {autoUnsubscribeSaving ? 'Saving...' : 'Save Setting'}
+                  </button>
+                </div>
+                <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--border-radius-sm)', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                  <strong>How it works:</strong>
+                  <ul style={{ marginTop: '0.5rem', marginLeft: '1.25rem', paddingLeft: 0 }}>
+                    <li>When a message fails with <code>sending_failed</code> or <code>delivery_failed</code> status</li>
+                    <li>The system analyzes error messages for keywords indicating invalid numbers</li>
+                    <li>If detected, the contact is automatically unsubscribed</li>
+                    <li>The unsubscribe reason is tracked: <code>delivery_failed</code>, <code>sending_failed</code>, or <code>carrier_opt_out</code></li>
+                    <li>Temporary errors (network issues, timeouts) are ignored</li>
+                  </ul>
                 </div>
               </>
             )}

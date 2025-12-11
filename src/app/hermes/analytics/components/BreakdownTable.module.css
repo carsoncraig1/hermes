@@ -1,0 +1,134 @@
+.tableContainer {
+  overflow-x: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-lg);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  min-width: 1200px;
+}
+
+.table th {
+  background: var(--bg-tertiary);
+  padding: 1rem 1.25rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-bottom: 2px solid var(--border-primary);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.table td {
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid var(--border-primary);
+  color: var(--text-primary);
+}
+
+.tableRow {
+  transition: background var(--transition-fast);
+}
+
+.tableRow:hover {
+  background: var(--bg-tertiary);
+}
+
+.dimensionColumn {
+  min-width: 250px;
+  max-width: 400px;
+}
+
+.metricColumn {
+  text-align: right;
+  min-width: 100px;
+}
+
+.dimensionCell {
+  font-weight: 500;
+}
+
+.dimensionLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.indent {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin-right: 0.25rem;
+}
+
+.level1 {
+  background: var(--bg-secondary);
+  font-weight: 600;
+}
+
+.level1 .dimensionLabel {
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+}
+
+.level2 {
+  background: var(--bg-tertiary);
+}
+
+.level2 .dimensionLabel {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.level3 {
+  background: var(--bg-secondary);
+}
+
+.level3 .dimensionLabel {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+.metricCell {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+.revenueCell {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.roasCell {
+  font-weight: 600;
+}
+
+.positive {
+  color: #10b981;
+}
+
+.negative {
+  color: #ef4444;
+}
+
+.noData {
+  text-align: center;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 3rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-lg);
+}
+
+.noData p {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+

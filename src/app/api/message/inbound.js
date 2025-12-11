@@ -118,7 +118,8 @@ export async function POST(request) {
             phone: normalizedFrom
           },
           data: {
-            subscribed: false
+            subscribed: false,
+            unsubscribeReason: 'STOP'
           }
         });
 

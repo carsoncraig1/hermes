@@ -1,0 +1,168 @@
+.conversationList {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+}
+
+.conversationItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-primary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  background: var(--bg-secondary);
+}
+
+.conversationItem:hover {
+  background: var(--bg-tertiary);
+}
+
+.conversationItem.selected {
+  background: var(--bg-elevated);
+  border-left: 3px solid var(--accent-orange);
+}
+
+.conversationAvatar {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent-orange);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: white;
+  font-size: 1.125rem;
+}
+
+.avatarInitial {
+  font-size: 1.25rem;
+}
+
+.avatarPhone {
+  font-size: 1rem;
+}
+
+.conversationContent {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.conversationHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.conversationNameRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.conversationName {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusIndicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.conversationTime {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.conversationMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.phoneNumber {
+  font-family: var(--font-mono);
+}
+
+.messageCount {
+  color: var(--text-muted);
+}
+
+.conversationPreview {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  overflow: hidden;
+}
+
+.previewDirection {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.previewText {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previewStatus {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+}
+
+.statusdelivered,
+.statussent {
+  color: #10b981;
+}
+
+.statussending_failed,
+.statusdelivery_failed {
+  color: #ef4444;
+}
+
+.statusqueued,
+.statussending {
+  color: #f59e0b;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.emptySubtext {
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+}
+

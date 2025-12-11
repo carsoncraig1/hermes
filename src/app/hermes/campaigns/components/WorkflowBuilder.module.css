@@ -242,6 +242,138 @@
   letter-spacing: 0.05em;
 }
 
+/* Searchable Single-Select for Trigger Source */
+.searchableSelect {
+  position: relative;
+  width: 100%;
+}
+
+.selectTrigger {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-sm);
+  padding: 0.5rem 0.75rem;
+  min-height: 40px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  transition: all var(--transition-fast);
+}
+
+.selectTrigger:hover {
+  border-color: var(--border-secondary);
+}
+
+.selectTrigger:focus-within {
+  border-color: var(--accent-orange);
+  box-shadow: 0 0 0 3px var(--accent-orange-muted);
+}
+
+.selectedValue {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.optionIcon {
+  font-size: 1rem;
+}
+
+.placeholder {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.dropdownArrow {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.selectDropdown {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  max-height: 300px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.searchInputWrapper {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.searchInput {
+  width: 100%;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-sm);
+  padding: 0.5rem 0.75rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-family: var(--font-family);
+  transition: all var(--transition-fast);
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: var(--accent-orange);
+  box-shadow: 0 0 0 3px var(--accent-orange-muted);
+}
+
+.optionsList {
+  overflow-y: auto;
+  max-height: 250px;
+  padding: 0.25rem;
+}
+
+.optionItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+}
+
+.optionItem:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.optionSelected {
+  background: var(--bg-tertiary);
+  color: var(--accent-orange);
+}
+
+.checkmark {
+  margin-left: auto;
+  color: var(--accent-orange);
+  font-weight: 600;
+}
+
+.noResults {
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
 .messageHeader {
   display: flex;
   justify-content: space-between;
@@ -273,22 +405,62 @@
   box-shadow: 0 0 0 3px var(--accent-orange-muted);
 }
 
+.messagePreview {
+  position: relative;
+}
+
 .nodeInput {
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
   border-radius: var(--border-radius-sm);
   padding: 0.5rem;
-  color: var(--text-primary);
+  color: transparent;
   font-size: 0.875rem;
   font-family: var(--font-family);
   resize: vertical;
   transition: all var(--transition-fast);
+  width: 100%;
+  caret-color: var(--text-primary);
+  min-height: 80px;
+  box-sizing: border-box;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.nodeInput::selection {
+  background: rgba(255, 107, 53, 0.3);
 }
 
 .nodeInput:focus {
   outline: none;
   border-color: var(--accent-orange);
   box-shadow: 0 0 0 3px var(--accent-orange-muted);
+}
+
+.messageDisplay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0.5rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-primary);
+  border-radius: var(--border-radius-sm);
+  font-family: var(--font-family);
+  font-size: 0.875rem;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  pointer-events: none;
+  z-index: 1;
+  line-height: 1.5;
+}
+
+.shortlinkUrl {
+  color: var(--accent-orange) !important;
+  text-decoration: underline;
 }
 
 .nodeHandle {

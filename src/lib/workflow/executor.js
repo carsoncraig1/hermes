@@ -271,8 +271,56 @@ export async function triggerWorkflowsForContact(contact, userId) {
       },
     });
 
-    // Execute each workflow
-    for (const campaign of campaigns) {
+    // Filter workflows by source before executing
+    const contactSource = contact.source || null;
+    
+    // Categorize workflows by trigger type
+    const specificSourceCampaigns = [];
+    const defaultCampaigns = [];
+    const catchAllCampaigns = [];
+    
+    campaigns.forEach(campaign => {
+      if (!campaign.workflow || !campaign.workflow.nodes) {
+        return;
+      }
+
+      // Find the trigger node
+      const triggerNode = campaign.workflow.nodes.find(node => node.type === 'trigger');
+      if (!triggerNode) {
+        return;
+      }
+
+      // Get the trigger source configuration
+      const triggerSource = triggerNode.data?.triggerSource;
+
+      // Categorize based on trigger type
+      if (triggerSource === null || triggerSource === undefined) {
+        // Catch-all: fires on every lead
+        catchAllCampaigns.push(campaign);
+      } else if (triggerSource === '__DEFAULT__') {
+        // Default: only fires if no specific source match
+        defaultCampaigns.push(campaign);
+      } else {
+        // Specific source: only fires if source matches
+        if (triggerSource === contactSource) {
+          specificSourceCampaigns.push(campaign);
+        }
+      }
+    });
+
+    // Execution order:
+    // 1. Specific source workflows (highest priority)
+    // 2. Default workflows (only if no specific source match was found)
+    // 3. Catch-all workflows (always fire)
+    
+    const campaignsToExecute = [
+      ...specificSourceCampaigns,
+      ...(specificSourceCampaigns.length === 0 ? defaultCampaigns : []), // Only default if no specific match
+      ...catchAllCampaigns // Always include catch-all
+    ];
+
+    // Execute workflows in priority order
+    for (const campaign of campaignsToExecute) {
       if (campaign.workflow) {
         try {
           await executeWorkflow(campaign.workflow, contact, userId, campaign.id);

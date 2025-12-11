@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { serverLog } from '@/lib/serverLogger';
 import { updateMessageRecord } from '@/lib/actions/messages';
+import { parseDeliveryError, getUnsubscribeReason } from '@/lib/errorParsing';
 
 /**
  * Telnyx Webhook Handler for Message Status Updates
@@ -70,7 +71,10 @@ export async function POST(request) {
       where: {
         telnyxMessagingProfileId: messagingProfileId
       },
-      select: { id: true }
+      select: { 
+        id: true,
+        autoUnsubscribeOnFailure: true
+      }
     });
 
     if (!user) {
@@ -80,6 +84,7 @@ export async function POST(request) {
     }
 
     // Update message record if it exists
+    let messageRecord = null;
     if (telnyxMessageId) {
       try {
         const updateData = {
@@ -101,10 +106,64 @@ export async function POST(request) {
           }
         }
 
-        await updateMessageRecord(telnyxMessageId, updateData);
+        const updatedMessage = await updateMessageRecord(telnyxMessageId, updateData);
+        
+        // Get contactId from the updated message record
+        messageRecord = {
+          contactId: updatedMessage.contactId,
+          to: updatedMessage.to,
+          errorMessage: updatedMessage.errorMessage
+        };
       } catch (error) {
         console.error(`[Telnyx Webhook] Error updating message record ${telnyxMessageId}:`, error);
         // Continue processing even if update fails
+      }
+    }
+
+    // Handle auto-unsubscribe on delivery failures
+    if (user.autoUnsubscribeOnFailure && 
+        (status === 'sending_failed' || status === 'delivery_failed') &&
+        messageRecord?.contactId &&
+        toNumber) {
+      try {
+        const unsubscribeReason = getUnsubscribeReason(status, errors);
+        
+        if (unsubscribeReason) {
+          const errorParsed = parseDeliveryError(errors);
+          
+          // Unsubscribe the contact
+          const updateResult = await prisma.contact.updateMany({
+            where: {
+              id: messageRecord.contactId,
+              userId: user.id
+            },
+            data: {
+              subscribed: false,
+              unsubscribeReason: unsubscribeReason
+            }
+          });
+
+          if (updateResult.count > 0) {
+            const logMessage = `Auto-unsubscribed contact ${toNumber} due to ${status} (${unsubscribeReason})`;
+            const logMeta = {
+              contactId: messageRecord.contactId,
+              phone: toNumber,
+              status,
+              unsubscribeReason,
+              errorParsed,
+              messageId: telnyxMessageId
+            };
+            
+            await serverLog(logMessage, 'warn', logMeta, user.id).catch(err => {
+              console.error('Error logging auto-unsubscribe:', err);
+            });
+            
+            console.log(`[Auto-Unsubscribe] User ${user.id}: Unsubscribed contact ${toNumber} (${messageRecord.contactId}) - Reason: ${unsubscribeReason}`);
+          }
+        }
+      } catch (unsubscribeError) {
+        console.error(`[Telnyx Webhook] Error auto-unsubscribing contact:`, unsubscribeError);
+        // Continue processing even if unsubscribe fails
       }
     }
 

@@ -1,43 +1,71 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { getAnalytics, getCampaignsWithROAS } from '@/lib/actions/analytics';
+import { getBreakdownData, getDimensionValues } from '@/lib/actions/analyticsBreakdown';
+import { buildBreakdownTree, DIMENSIONS } from '@/lib/analyticsBreakdown';
+import DimensionSelector from './DimensionSelector';
+import BreakdownTable from './BreakdownTable';
 import styles from './AnalyticsDashboard.module.css';
 
 export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPerformance }) {
   const [analytics, setAnalytics] = useState(initialAnalytics);
   const [campaignPerformance, setCampaignPerformance] = useState(initialCampaignPerformance);
   const [loading, setLoading] = useState(false);
+  const [breakdownData, setBreakdownData] = useState([]);
+  const [dimensionValues, setDimensionValues] = useState(null);
   
   // Filters
   const [dateRange, setDateRange] = useState({
     start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
   });
-  const [selectedCampaign, setSelectedCampaign] = useState('all');
-  const [selectedShortlink, setSelectedShortlink] = useState('all');
-  const [groupBy, setGroupBy] = useState('none');
+  
+  // Breakdown dimensions (3 levels)
+  const [dimensions, setDimensions] = useState([
+    DIMENSIONS.CAMPAIGN,
+    DIMENSIONS.NONE,
+    DIMENSIONS.NONE
+  ]);
+
+  // Load dimension values on mount
+  useEffect(() => {
+    getDimensionValues().then(setDimensionValues).catch(console.error);
+  }, []);
 
   const refreshData = async () => {
     setLoading(true);
     try {
+      // Ensure dates are valid
+      const startDate = dateRange.start ? new Date(dateRange.start) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const endDate = dateRange.end ? (() => {
+        const date = new Date(dateRange.end);
+        date.setHours(23, 59, 59, 999);
+        return date;
+      })() : new Date();
+
+      // Validate dates
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        console.error('Invalid date range:', dateRange);
+        return;
+      }
+
       const filters = {
         dateRange: {
-          start: new Date(dateRange.start),
-          end: new Date(dateRange.end + 'T23:59:59')
-        },
-        ...(selectedCampaign !== 'all' && { campaignId: selectedCampaign }),
-        ...(selectedShortlink !== 'all' && { shortlinkId: selectedShortlink }),
-        ...(groupBy !== 'none' && { groupBy })
+          start: startDate,
+          end: endDate
+        }
       };
 
-      const [analyticsData, campaignData] = await Promise.all([
+      const [analyticsData, campaignData, breakdownItems] = await Promise.all([
         getAnalytics(filters),
-        getCampaignsWithROAS(filters)
+        getCampaignsWithROAS(filters),
+        getBreakdownData(filters)
       ]);
 
       setAnalytics(analyticsData);
       setCampaignPerformance(campaignData);
+      setBreakdownData(breakdownItems);
     } catch (error) {
       console.error('Error refreshing analytics:', error);
     } finally {
@@ -47,7 +75,22 @@ export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPe
 
   useEffect(() => {
     refreshData();
-  }, [dateRange.start, dateRange.end, selectedCampaign, selectedShortlink, groupBy]);
+  }, [dateRange.start, dateRange.end]);
+
+  // Build breakdown tree from data
+  const breakdown = useMemo(() => {
+    if (!breakdownData || breakdownData.length === 0) return {};
+    
+    const activeDimensions = dimensions.filter(d => d !== DIMENSIONS.NONE);
+    if (activeDimensions.length === 0) return {};
+    
+    return buildBreakdownTree(breakdownData, activeDimensions, {
+      dateRange: {
+        start: dateRange.start,
+        end: dateRange.end
+      }
+    });
+  }, [breakdownData, dimensions, dateRange]);
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
@@ -64,53 +107,13 @@ export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPe
     return `${roas.toFixed(2)}x`;
   };
 
+  const handleDimensionChange = (newDimensions) => {
+    setDimensions(newDimensions);
+  };
+
   return (
     <div className={styles.analyticsContainer}>
-      {/* Filters */}
-      <div className={styles.filtersSection}>
-        <div className={styles.filterGroup}>
-          <label>Date Range</label>
-          <div className={styles.dateInputs}>
-            <input
-              type="date"
-              value={dateRange.start}
-              onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-              className={styles.dateInput}
-            />
-            <span>to</span>
-            <input
-              type="date"
-              value={dateRange.end}
-              onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-              className={styles.dateInput}
-            />
-          </div>
-        </div>
-
-        <div className={styles.filterGroup}>
-          <label>Group By</label>
-          <select
-            value={groupBy}
-            onChange={(e) => setGroupBy(e.target.value)}
-            className={styles.filterSelect}
-          >
-            <option value="none">None</option>
-            <option value="campaign">Campaign</option>
-            <option value="shortlink">Shortlink</option>
-            <option value="date">Date</option>
-          </select>
-        </div>
-
-        <button
-          onClick={refreshData}
-          disabled={loading}
-          className={styles.refreshButton}
-        >
-          {loading ? 'Loading...' : '↻ Refresh'}
-        </button>
-      </div>
-
-      {/* Key Metrics */}
+      {/* Summary Cards */}
       <div className={styles.metricsGrid}>
         <div className={styles.metricCard}>
           <div className={styles.metricLabel}>Total Revenue</div>
@@ -144,34 +147,76 @@ export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPe
         </div>
       </div>
 
-      {/* Grouped Data Visualization */}
-      {groupBy !== 'none' && Object.keys(analytics.groupedData).length > 0 && (
-        <div className={styles.chartSection}>
-          <h2>Revenue by {groupBy.charAt(0).toUpperCase() + groupBy.slice(1)}</h2>
-          <div className={styles.chartContainer}>
-            {Object.entries(analytics.groupedData).map(([key, data]) => (
-              <div key={key} className={styles.chartBar}>
-                <div className={styles.chartBarLabel}>
-                  {data.name || data.date || key}
-                </div>
-                <div className={styles.chartBarTrack}>
-                  <div
-                    className={styles.chartBarFill}
-                    style={{
-                      width: `${(data.revenue / analytics.totalRevenue) * 100}%`
-                    }}
-                  />
-                </div>
-                <div className={styles.chartBarValue}>
-                  {formatCurrency(data.revenue)} ({data.events} events)
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* Breakdown Report Section */}
+      <div className={styles.reportSection}>
+        <div className={styles.reportHeader}>
+          <h2>Breakdown Report</h2>
+          <p className={styles.reportDescription}>
+            Select up to 3 dimensions to create multi-level breakdown reports
+          </p>
         </div>
-      )}
 
-      {/* Campaign Performance Table */}
+        {/* Filters and Dimension Selectors */}
+        <div className={styles.filtersSection}>
+          <div className={styles.filterGroup}>
+            <label>Date Range</label>
+            <div className={styles.dateInputs}>
+              <input
+                type="date"
+                value={dateRange.start}
+                onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                className={styles.dateInput}
+              />
+              <span>to</span>
+              <input
+                type="date"
+                value={dateRange.end}
+                onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                className={styles.dateInput}
+              />
+            </div>
+          </div>
+
+          <DimensionSelector
+            dimensions={dimensions}
+            onChange={handleDimensionChange}
+            level={1}
+          />
+
+          {dimensions[0] !== DIMENSIONS.NONE && (
+            <DimensionSelector
+              dimensions={dimensions}
+              onChange={handleDimensionChange}
+              level={2}
+            />
+          )}
+
+          {dimensions[0] !== DIMENSIONS.NONE && dimensions[1] !== DIMENSIONS.NONE && (
+            <DimensionSelector
+              dimensions={dimensions}
+              onChange={handleDimensionChange}
+              level={3}
+            />
+          )}
+
+          <button
+            onClick={refreshData}
+            disabled={loading}
+            className={styles.refreshButton}
+          >
+            {loading ? 'Loading...' : '↻ Refresh'}
+          </button>
+        </div>
+
+        {/* Breakdown Table */}
+        {dimensions[0] !== DIMENSIONS.NONE && (
+          <div className={styles.breakdownTableSection}>
+            <BreakdownTable breakdown={breakdown} dimensions={dimensions} />
+          </div>
+        )}
+      </div>
+
+      {/* Campaign Performance Table (Legacy) */}
       <div className={styles.tableSection}>
         <h2>Campaign Performance</h2>
         <div className={styles.tableContainer}>
@@ -221,42 +266,6 @@ export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPe
           </table>
         </div>
       </div>
-
-      {/* Recent Revenue Events */}
-      <div className={styles.tableSection}>
-        <h2>Recent Revenue Events</h2>
-        <div className={styles.tableContainer}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Campaign</th>
-                <th>Shortlink</th>
-                <th>Payout</th>
-                <th>Currency</th>
-              </tr>
-            </thead>
-            <tbody>
-              {analytics.revenueEvents.length === 0 ? (
-                <tr>
-                  <td colSpan="5" className={styles.noData}>No revenue events found</td>
-                </tr>
-              ) : (
-                analytics.revenueEvents.map((event) => (
-                  <tr key={event.id}>
-                    <td>{new Date(event.createdAt).toLocaleString()}</td>
-                    <td>{event.campaign?.name || '—'}</td>
-                    <td>{event.shortlink?.nickname || `Shortlink #${event.shortlinkId}` || '—'}</td>
-                    <td className={styles.revenueCell}>{formatCurrency(parseFloat(event.payout))}</td>
-                    <td>{event.currency}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 }
-

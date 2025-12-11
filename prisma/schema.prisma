@@ -26,6 +26,7 @@ model User {
   telnyxApiKey        String?   // Telnyx API key for SMS sending
   telnyxPhoneNumber   String?   // Telnyx phone number to use as sender
   telnyxMessagingProfileId String? // Telnyx messaging profile ID
+  autoUnsubscribeOnFailure Boolean @default(true) // Automatically unsubscribe contacts on delivery failures
   
   // Relations to app data
   accounts            Account[]
@@ -116,6 +117,7 @@ model Contact {
   useragent       String?
   referrer        String?
   subscribed      Boolean?
+  unsubscribeReason String? // Reason for unsubscription: "STOP", "delivery_failed", "sending_failed", "manual", etc.
   lastMessageSent DateTime?
   tags            Tag[]
   messages        Message[]

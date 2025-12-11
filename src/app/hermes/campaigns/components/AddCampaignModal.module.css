@@ -119,6 +119,10 @@ body:has(.sidebar.collapsed) .modalOverlay {
   transition: all var(--transition-normal);
   outline: none;
   caret-color: var(--text-primary);
+  box-sizing: border-box;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
 .textarea::selection {
@@ -147,7 +151,6 @@ body:has(.sidebar.collapsed) .modalOverlay {
 
 .shortlinkUrl {
   color: var(--accent-orange) !important;
-  font-weight: 600;
   text-decoration: underline;
 }
 
@@ -227,29 +230,180 @@ body:has(.sidebar.collapsed) .modalOverlay {
   padding: 0.5rem;
 }
 
-.tagsGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 0.5rem;
+/* Searchable Multi-Select */
+.searchableSelect {
+  position: relative;
+  width: 100%;
   margin-top: 0.5rem;
 }
 
-.tagLabel {
+.selectTrigger {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-md);
+  padding: 0.75rem 1rem;
+  min-height: 48px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  transition: all var(--transition-fast);
+}
+
+.selectTrigger:hover {
+  border-color: var(--border-secondary);
+}
+
+.selectTrigger:focus-within {
+  border-color: var(--accent-orange);
+  box-shadow: 0 0 0 3px var(--accent-orange-muted);
+}
+
+.selectedItems {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+.selectedChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  background: var(--accent-orange);
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--border-radius-sm);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.chipRemove {
+  background: transparent;
+  border: none;
+  color: white;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background var(--transition-fast);
+}
+
+.chipRemove:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.placeholder {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.dropdownArrow {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.selectDropdown {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  max-height: 300px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.searchInputWrapper {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.searchInput {
+  width: 100%;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-sm);
+  padding: 0.5rem 0.75rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-family: var(--font-family);
+  transition: all var(--transition-fast);
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: var(--accent-orange);
+  box-shadow: 0 0 0 3px var(--accent-orange-muted);
+}
+
+.optionsList {
+  overflow-y: auto;
+  max-height: 250px;
+  padding: 0.25rem;
+}
+
+.optionItem {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.625rem 0.75rem;
   border-radius: var(--border-radius-sm);
   cursor: pointer;
   color: var(--text-secondary);
   transition: all var(--transition-fast);
-  border: 1px solid transparent;
 }
 
-.tagLabel:hover {
+.optionItem:hover {
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  border-color: var(--border-primary);
+}
+
+.optionSelected {
+  background: var(--bg-tertiary);
+  color: var(--accent-orange);
+}
+
+.optionCheckbox {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border-primary);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--bg-tertiary);
+  color: var(--accent-orange);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.optionSelected .optionCheckbox {
+  background: var(--accent-orange);
+  border-color: var(--accent-orange);
+  color: white;
+}
+
+.noResults {
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.875rem;
 }
 
 .checkbox {

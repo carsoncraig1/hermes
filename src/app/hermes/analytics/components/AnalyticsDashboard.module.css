@@ -4,15 +4,44 @@
   gap: 2rem;
 }
 
+.reportSection {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-lg);
+  padding: 2rem;
+}
+
+.reportHeader {
+  margin-bottom: 2rem;
+}
+
+.reportHeader h2 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.reportDescription {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
 .filtersSection {
   display: flex;
   gap: 1.5rem;
   align-items: flex-end;
   padding: 1.5rem;
-  background: var(--bg-secondary);
+  background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
-  border-radius: var(--border-radius-lg);
+  border-radius: var(--border-radius-md);
   flex-wrap: wrap;
+  margin-bottom: 2rem;
+}
+
+.breakdownTableSection {
+  margin-top: 1.5rem;
 }
 
 .filterGroup {

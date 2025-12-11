@@ -93,10 +93,23 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
             <input
               type="text"
               value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
-              placeholder="Enter a friendly name for this shortlink"
+              onChange={(e) => {
+                // Remove all spaces from nickname
+                const valueWithoutSpaces = e.target.value.replace(/\s/g, '');
+                setNickname(valueWithoutSpaces);
+              }}
+              onPaste={(e) => {
+                // Remove spaces from pasted content
+                e.preventDefault();
+                const pastedText = e.clipboardData.getData('text').replace(/\s/g, '');
+                setNickname(pastedText);
+              }}
+              placeholder="Enter a friendly name (no spaces allowed)"
               className={styles.input}
             />
+            <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+              Spaces are not allowed in nicknames
+            </small>
           </div>
           
           <div className={styles.formGroup}>
