@@ -100,6 +100,12 @@ export async function sendMessage({
   // Declare variables in outer scope for error handling
   let finalUserId = userId;
   let validation = null;
+  let messageRecord = null; // Declare in outer scope for error handling
+  let messageId = null; // Declare in outer scope for error handling
+  let messageTextWithCodes = text; // Declare in outer scope for error handling
+  let fromNumber = null; // Declare in outer scope for error handling
+  let normalizedTo = null; // Declare in outer scope for error handling
+  let settings = null; // Declare in outer scope for error handling
   
   try {
     // Get userId from session if not provided
@@ -117,6 +123,18 @@ export async function sendMessage({
     // Validate message text
     validation = validateMessage(text);
     if (!validation.valid) {
+      // Log validation failure
+      await serverLog(
+        `Message validation failed: ${validation.error}`,
+        'warn',
+        {
+          textLength: text.length,
+          parts: validation.parts,
+          error: validation.error
+        },
+        finalUserId
+      ).catch(err => console.error('Error logging validation failure:', err));
+      
       return {
         success: false,
         error: validation.error,
@@ -142,6 +160,20 @@ export async function sendMessage({
     // Check rate limits
     const rateLimit = await checkRateLimit(finalUserId);
     if (!rateLimit.allowed) {
+      // Log rate limit hit
+      await serverLog(
+        `Rate limit exceeded: ${rateLimit.minuteCount}/${rateLimit.minuteLimit} messages/minute, ${rateLimit.hourCount}/${rateLimit.hourLimit} messages/hour`,
+        'warn',
+        {
+          minuteCount: rateLimit.minuteCount,
+          minuteLimit: rateLimit.minuteLimit,
+          hourCount: rateLimit.hourCount,
+          hourLimit: rateLimit.hourLimit,
+          retryAfter: rateLimit.retryAfter
+        },
+        finalUserId
+      ).catch(err => console.error('Error logging rate limit:', err));
+      
       return {
         success: false,
         error: `Rate limit exceeded. ${rateLimit.minuteCount}/${rateLimit.minuteLimit} messages in the last minute, ${rateLimit.hourCount}/${rateLimit.hourLimit} in the last hour.`,
@@ -160,10 +192,10 @@ export async function sendMessage({
     }
 
     // Get user's Telnyx settings
-    const settings = await getUserTelnyxSettings(finalUserId);
+    settings = await getUserTelnyxSettings(finalUserId);
 
     // Normalize phone numbers to E.164 format for Telnyx
-    const normalizedTo = normalizePhoneForTelnyx(to);
+    normalizedTo = normalizePhoneForTelnyx(to);
     if (!normalizedTo) {
       return {
         success: false,
@@ -172,7 +204,7 @@ export async function sendMessage({
     }
 
     // Use provided from number, or user's default, or fallback
-    const fromNumber = normalizePhoneForTelnyx(from || settings.phoneNumber || process.env.TELNYX_PHONE_NUMBER || process.env.TELNYX_FROM_NUMBER);
+    fromNumber = normalizePhoneForTelnyx(from || settings.phoneNumber || process.env.TELNYX_PHONE_NUMBER || process.env.TELNYX_FROM_NUMBER);
     
     if (!fromNumber) {
       return {
@@ -183,9 +215,7 @@ export async function sendMessage({
 
     // STEP 1: Create message record FIRST (before sending) so we have messageId
     // This allows us to create MessageClickCodes that reference the message
-    let messageRecord = null;
-    let messageId = null;
-    let messageTextWithCodes = text; // Will be modified with click codes
+    messageTextWithCodes = text; // Will be modified with click codes
     
     try {
       messageRecord = await createMessageRecord({
@@ -229,9 +259,10 @@ export async function sendMessage({
     }
 
     // STEP 3: Build message parameters with code-embedded URLs
+    // Telnyx requires 'to' to be an array of phone numbers
     const messageParams = {
       from: fromNumber,
-      to: normalizedTo, // Use normalized phone number
+      to: [normalizedTo], // Telnyx requires an array of phone numbers
       text: messageTextWithCodes, // Use text with click codes embedded
       type: 'SMS', // SMS or MMS
       messaging_profile_id: settings.messagingProfileId,
@@ -312,6 +343,23 @@ export async function sendMessage({
       }
     }
     
+    // Log successful message send
+    await serverLog(
+      `Message sent successfully to ${normalizedTo}`,
+      'info',
+      {
+        messageId: telnyxMessageId,
+        contactId,
+        campaignId,
+        from: fromNumber,
+        to: normalizedTo,
+        status: initialStatus,
+        cost: costAmount,
+        parts: validation.parts
+      },
+      finalUserId
+    ).catch(err => console.error('Error logging message send:', err));
+    
     return { 
       success: true, 
       data: response.data,
@@ -328,41 +376,100 @@ export async function sendMessage({
     let errorMessage = 'Failed to send message';
     let errorDetails = null;
     
-    if (error.response) {
-      // Telnyx API error response
+    // Try to extract error details from various possible locations in Telnyx SDK error structure
+    if (error.raw?.errors && Array.isArray(error.raw.errors) && error.raw.errors.length > 0) {
+      // Telnyx SDK error structure: error.raw.errors[0]
+      const firstError = error.raw.errors[0];
+      errorDetails = error.raw;
+      errorMessage = firstError.detail || firstError.title || firstError.message || errorMessage;
+      console.error('Telnyx error details:', JSON.stringify(error.raw, null, 2));
+    } else if (error.response?.data) {
+      // Alternative error response structure
       errorDetails = error.response.data;
       errorMessage = error.response.data?.errors?.[0]?.detail || 
                      error.response.data?.errors?.[0]?.title || 
                      error.message || errorMessage;
+      console.error('Telnyx error response:', JSON.stringify(error.response.data, null, 2));
     } else if (error.message) {
       errorMessage = error.message;
     }
     
-    // Create failed message record for tracking (only if we have userId)
+    // Get settings again for error handling (variables might not be in scope if error occurred early)
+    let errorFromNumber = null;
+    let errorNormalizedTo = null;
+    let errorSettings = null;
+    try {
+      if (finalUserId) {
+        errorSettings = await getUserTelnyxSettings(finalUserId);
+        const rawFromNumber = from || errorSettings.phoneNumber || process.env.TELNYX_PHONE_NUMBER || process.env.TELNYX_FROM_NUMBER;
+        errorFromNumber = rawFromNumber ? normalizePhoneForTelnyx(rawFromNumber) : null;
+        errorNormalizedTo = normalizePhoneForTelnyx(to) || to;
+      }
+    } catch (settingsError) {
+      console.error('Error getting settings for error handling:', settingsError);
+    }
+    
+    // Log the request parameters that were sent (for debugging)
+    // Use error-scoped variables with fallbacks to try-catch scoped variables
+    const loggedFrom = errorFromNumber || (typeof fromNumber !== 'undefined' ? fromNumber : null) || 'unknown';
+    const loggedTo = errorNormalizedTo || (typeof normalizedTo !== 'undefined' ? normalizedTo : null) || to || 'unknown';
+    const loggedProfileId = errorSettings?.messagingProfileId || (typeof settings !== 'undefined' ? settings?.messagingProfileId : null) || 'unknown';
+    
+    // Log message send failure
+    await serverLog(
+      `Failed to send message to ${loggedTo}: ${errorMessage}`,
+      'error',
+      {
+        contactId,
+        campaignId,
+        from: loggedFrom,
+        to: loggedTo,
+        error: errorMessage,
+        errorDetails: errorDetails?.errors?.[0] || errorDetails,
+        telnyxRequestId: errorDetails?.requestId || error.requestId
+      },
+      finalUserId
+    ).catch(err => console.error('Error logging message failure:', err));
+    
+    // Update existing message record to failed status, or create one if it doesn't exist
     if (finalUserId) {
       try {
-        const settings = await getUserTelnyxSettings(finalUserId);
-        const fromNumber = from || settings.phoneNumber || process.env.TELNYX_PHONE_NUMBER || process.env.TELNYX_FROM_NUMBER;
+        const normalizedToForError = errorNormalizedTo || normalizePhoneForTelnyx(to) || to;
         
-        const normalizedToForError = normalizePhoneForTelnyx(to) || to;
-        await createMessageRecord({
-          userId: finalUserId,
-          telnyxMessageId: null,
-          contactId,
-          campaignId,
-          from: fromNumber || 'unknown',
-          to: normalizedToForError,
-          text,
-          type: 'SMS',
-          parts: validation?.parts || 1,
-          status: 'sending_failed',
-          direction: 'outbound',
-          costAmount: null,
-          costCurrency: 'USD',
-          telnyxMetadata: errorDetails || { error: errorMessage }
-        });
+        // If we have an existing message record (created before sending), update it
+        if (messageRecord && messageId) {
+          await prisma.message.update({
+            where: { id: messageId },
+            data: {
+              status: 'sending_failed',
+              failedAt: new Date(),
+              errorMessage: errorMessage,
+              telnyxMetadata: errorDetails || { error: errorMessage }
+            }
+          });
+        } else {
+          // If no existing record, create a new failed message record
+          await createMessageRecord({
+            userId: finalUserId,
+            telnyxMessageId: null,
+            contactId,
+            campaignId,
+            from: errorFromNumber || 'unknown',
+            to: normalizedToForError,
+            text,
+            type: 'SMS',
+            parts: validation?.parts || 1,
+            status: 'sending_failed',
+            direction: 'outbound',
+            costAmount: null,
+            costCurrency: 'USD',
+            errorMessage: errorMessage,
+            failedAt: new Date(),
+            telnyxMetadata: errorDetails || { error: errorMessage }
+          });
+        }
       } catch (dbError) {
-        console.error('Error creating failed message record:', dbError);
+        console.error('Error updating/creating failed message record:', dbError);
         // Continue even if DB record creation fails
       }
     }

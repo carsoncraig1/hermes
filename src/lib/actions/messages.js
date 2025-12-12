@@ -203,7 +203,9 @@ export async function createMessageRecord({
   direction = 'outbound',
   costAmount = null,
   costCurrency = 'USD',
-  telnyxMetadata = null
+  telnyxMetadata = null,
+  errorMessage = null,
+  failedAt = null
 }) {
   const message = await prisma.message.create({
     data: {
@@ -221,7 +223,9 @@ export async function createMessageRecord({
       costAmount: costAmount ? parseFloat(costAmount) : null,
       costCurrency,
       telnyxMetadata: telnyxMetadata ? JSON.parse(JSON.stringify(telnyxMetadata)) : null,
-      sentAt: status === 'sent' ? new Date() : null
+      errorMessage,
+      sentAt: status === 'sent' || status === 'sending' ? new Date() : null,
+      failedAt: failedAt || (status === 'sending_failed' || status === 'delivery_failed' ? new Date() : null)
     }
   });
 

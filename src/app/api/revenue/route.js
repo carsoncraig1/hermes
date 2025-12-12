@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { serverLog } from '@/lib/serverLogger';
 
 /**
  * Helper function to get user ID from API key
@@ -148,6 +149,21 @@ export async function GET(request) {
         }
       });
     }
+
+    // Log revenue event
+    await serverLog(
+      `Revenue event recorded: $${payoutAmount} ${currency}`,
+      'info',
+      {
+        revenueEventId: revenueEvent.id,
+        hrms,
+        shortlinkId: shortlinkClick.shortlinkId,
+        campaignId: shortlinkClick.shortlink.campaignId,
+        payout: payoutAmount,
+        currency
+      },
+      userId
+    ).catch(err => console.error('Error logging revenue event:', err));
 
     return NextResponse.json({
       success: true,

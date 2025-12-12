@@ -1,18 +1,24 @@
 'use server'
 
-import prisma from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 
 /**
- * Logs messages to the database for the authenticated user
- * @param {string} message - The message to log
- * @param {string} level - Log level (info, warn, error, debug)
- * @param {Object} meta - Additional metadata to include in the log
- * @param {string} userId - Optional userId (if not provided, will get from session)
- * @returns {Promise<{success: boolean, timestamp: string}>}
+ * In-memory log storage
+ * Map<userId, Array<logEntry>>
  */
+const logStore = new Map()
 
 const MAX_LOGS_PER_USER = 1000 // Limit the number of stored logs per user
+
+/**
+ * Log entry structure
+ * @typedef {Object} LogEntry
+ * @property {string} id - Unique log ID
+ * @property {string} timestamp - ISO timestamp
+ * @property {string} level - Log level (info, warn, error, debug)
+ * @property {string} message - Log message
+ * @property {Object|null} meta - Additional metadata
+ */
 
 async function getUserId() {
   const session = await auth()
@@ -22,6 +28,30 @@ async function getUserId() {
   return session.user.id
 }
 
+/**
+ * Clean up old logs for a user (keep only the most recent MAX_LOGS_PER_USER)
+ * @param {string} userId - User ID
+ */
+function cleanupOldLogs(userId) {
+  const logs = logStore.get(userId)
+  if (!logs || logs.length <= MAX_LOGS_PER_USER) {
+    return
+  }
+  
+  // Sort by timestamp (newest first) and keep only the most recent
+  logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+  const logsToKeep = logs.slice(0, MAX_LOGS_PER_USER)
+  logStore.set(userId, logsToKeep)
+}
+
+/**
+ * Logs messages to in-memory storage for the authenticated user
+ * @param {string} message - The message to log
+ * @param {string} level - Log level (info, warn, error, debug)
+ * @param {Object} meta - Additional metadata to include in the log
+ * @param {string} userId - Optional userId (if not provided, will get from session)
+ * @returns {Promise<{success: boolean, timestamp: string}>}
+ */
 export async function serverLog(message, level = 'info', meta = {}, userId = null) {
   try {
     // Get userId if not provided
@@ -36,40 +66,27 @@ export async function serverLog(message, level = 'info', meta = {}, userId = nul
     }
     
     const timestamp = new Date()
+    const logId = `${userId}-${timestamp.getTime()}-${Math.random().toString(36).substr(2, 9)}`
     
-    // Create log entry in database
-    await prisma.consoleLog.create({
-      data: {
-        userId,
-        level,
-        message,
-        meta: meta && Object.keys(meta).length > 0 ? meta : null,
-        createdAt: timestamp
-      }
-    })
-    
-    // Clean up old logs (keep only the most recent MAX_LOGS_PER_USER)
-    const logCount = await prisma.consoleLog.count({
-      where: { userId }
-    })
-    
-    if (logCount > MAX_LOGS_PER_USER) {
-      // Get the oldest logs to delete
-      const logsToDelete = await prisma.consoleLog.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'asc' },
-        take: logCount - MAX_LOGS_PER_USER,
-        select: { id: true }
-      })
-      
-      if (logsToDelete.length > 0) {
-        await prisma.consoleLog.deleteMany({
-          where: {
-            id: { in: logsToDelete.map(log => log.id) }
-          }
-        })
-      }
+    // Create log entry
+    const logEntry = {
+      id: logId,
+      timestamp: timestamp.toISOString(),
+      level,
+      message,
+      meta: meta && Object.keys(meta).length > 0 ? meta : null
     }
+    
+    // Get or create log array for this user
+    if (!logStore.has(userId)) {
+      logStore.set(userId, [])
+    }
+    
+    const userLogs = logStore.get(userId)
+    userLogs.push(logEntry)
+    
+    // Clean up old logs if needed
+    cleanupOldLogs(userId)
     
     // Also log to server console for debugging
     const metaStr = meta && Object.keys(meta).length > 0 ? JSON.stringify(meta) : ''
@@ -77,7 +94,7 @@ export async function serverLog(message, level = 'info', meta = {}, userId = nul
     
     return { success: true, timestamp: timestamp.toISOString() }
   } catch (error) {
-    console.error('Error logging to database:', error)
+    console.error('Error logging to memory:', error)
     return { success: false, error: error.message }
   }
 }
@@ -100,20 +117,15 @@ export async function getLogs(limit = 100, userId = null) {
       return []
     }
     
-    const logs = await prisma.consoleLog.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: limit
-    })
+    // Get logs for this user
+    const userLogs = logStore.get(userId) || []
     
-    // Format logs for the frontend
-    return logs.map(log => ({
-      id: log.id,
-      timestamp: log.createdAt.toISOString(),
-      level: log.level,
-      message: log.message,
-      meta: log.meta
-    }))
+    // Sort by timestamp (newest first) and limit
+    const sortedLogs = [...userLogs].sort((a, b) => 
+      new Date(b.timestamp) - new Date(a.timestamp)
+    )
+    
+    return sortedLogs.slice(0, limit)
   } catch (error) {
     console.error('Error fetching logs:', error)
     return []
@@ -137,9 +149,8 @@ export async function clearLogs(userId = null) {
       return { success: false, error: 'No user ID available' }
     }
     
-    await prisma.consoleLog.deleteMany({
-      where: { userId }
-    })
+    // Clear logs for this user
+    logStore.set(userId, [])
     
     return { success: true }
   } catch (error) {

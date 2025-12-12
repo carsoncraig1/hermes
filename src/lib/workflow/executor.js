@@ -2,6 +2,7 @@
 
 import prisma from '@/lib/prisma';
 import { sendMessage as telnyxSendMessage } from '@/lib/telnyx';
+import { serverLog } from '@/lib/serverLogger';
 
 // Resolve shortlink URLs in message text
 async function resolveShortlinkUrls(messageText, userId) {
@@ -407,6 +408,12 @@ async function evaluateOpenCondition(contactId, userId, campaignId, value) {
 // Execute a workflow for a contact
 export async function executeWorkflow(workflow, contact, userId, campaignId = null) {
   if (!workflow || !workflow.nodes || !workflow.edges) {
+    await serverLog(
+      'Invalid workflow structure',
+      'error',
+      { campaignId, contactId: contact?.id },
+      userId
+    ).catch(() => {});
     console.error('Invalid workflow structure');
     return;
   }
@@ -416,9 +423,29 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
   // Find the trigger node (should be the starting point)
   const triggerNode = nodes.find((node) => node.type === 'trigger');
   if (!triggerNode) {
+    await serverLog(
+      'No trigger node found in workflow',
+      'error',
+      { campaignId, contactId: contact?.id },
+      userId
+    ).catch(() => {});
     console.error('No trigger node found in workflow');
     return;
   }
+
+  // Log workflow execution start
+  await serverLog(
+    `Workflow execution started for contact ${contact.phone}`,
+    'info',
+    {
+      campaignId,
+      contactId: contact.id,
+      contactPhone: contact.phone,
+      nodesCount: nodes.length,
+      edgesCount: edges.length
+    },
+    userId
+  ).catch(err => console.error('Error logging workflow start:', err));
 
   // Build adjacency list for graph traversal with edge IDs
   // Map: sourceNodeId -> [{ targetNodeId, sourceHandle, targetHandle }]
@@ -463,6 +490,22 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
         const conditions = currentNode.data?.conditions || [];
         const matches = await evaluateConditions(contact, conditions, userId, campaignId);
         
+        // Log segmentation result
+        await serverLog(
+          `Workflow segmentation node evaluated: ${matches ? 'Contact matches criteria' : 'Contact does not match criteria'}`,
+          'info',
+          {
+            campaignId,
+            contactId: contact.id,
+            contactPhone: contact.phone,
+            nodeId: currentNodeId,
+            nodeType: 'segmentation',
+            matches,
+            conditionsCount: conditions.length
+          },
+          userId
+        ).catch(err => console.error('Error logging segmentation:', err));
+        
         // Get connected edges for this segmentation node
         const segmentationEdges = graph.get(currentNodeId) || [];
         
@@ -483,7 +526,23 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
       case 'action':
         // Execute action
         if (currentNode.data?.message) {
-          await sendMessage(contact, currentNode.data.message, userId, campaignId);
+          const sendResult = await sendMessage(contact, currentNode.data.message, userId, campaignId);
+          
+          // Log action node execution
+          await serverLog(
+            `Workflow action node executed: ${sendResult.success ? 'Message sent' : 'Message failed'}`,
+            sendResult.success ? 'info' : 'error',
+            {
+              campaignId,
+              contactId: contact.id,
+              contactPhone: contact.phone,
+              nodeId: currentNodeId,
+              nodeType: 'action',
+              success: sendResult.success,
+              error: sendResult.error
+            },
+            userId
+          ).catch(err => console.error('Error logging workflow action:', err));
         }
         break;
 
@@ -499,6 +558,23 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
         } else {
           delayMs = delayValue * 60 * 1000; // minutes
         }
+        
+        // Log delay node execution
+        await serverLog(
+          `Workflow delay node executed: ${delayValue} ${delayUnit}`,
+          'info',
+          {
+            campaignId,
+            contactId: contact.id,
+            contactPhone: contact.phone,
+            nodeId: currentNodeId,
+            nodeType: 'delay',
+            delayValue,
+            delayUnit,
+            delayMs
+          },
+          userId
+        ).catch(err => console.error('Error logging delay:', err));
         
         // Pass delay to next nodes
         const delayEdges = graph.get(currentNodeId) || [];
@@ -595,8 +671,37 @@ export async function triggerWorkflowsForContact(contact, userId) {
     for (const campaign of campaignsToExecute) {
       if (campaign.workflow) {
         try {
+          // Log workflow trigger
+          const triggerType = specificSourceCampaigns.includes(campaign) ? 'specific_source' : 
+                             defaultCampaigns.includes(campaign) ? 'default' : 'catch_all';
+          
+          await serverLog(
+            `Workflow triggered for new lead: ${contact.phone}`,
+            'info',
+            {
+              campaignId: campaign.id,
+              campaignName: campaign.name,
+              contactId: contact.id,
+              contactPhone: contact.phone,
+              contactSource: contact.source,
+              triggerType
+            },
+            userId
+          ).catch(err => console.error('Error logging workflow trigger:', err));
+          
           await executeWorkflow(campaign.workflow, contact, userId, campaign.id);
         } catch (error) {
+          await serverLog(
+            `Error executing workflow for campaign ${campaign.id}: ${error.message}`,
+            'error',
+            {
+              campaignId: campaign.id,
+              campaignName: campaign.name,
+              contactId: contact.id,
+              error: error.message
+            },
+            userId
+          ).catch(err => console.error('Error logging workflow error:', err));
           console.error(`Error executing workflow for campaign ${campaign.id}:`, error);
         }
       }

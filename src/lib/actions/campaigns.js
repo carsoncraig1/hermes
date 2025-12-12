@@ -2,6 +2,7 @@
 import prisma from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { auth } from '@/lib/auth'
+import { serverLog } from '@/lib/serverLogger'
 
 async function getUserId() {
   const session = await auth()
@@ -559,12 +560,27 @@ export async function getDedicatedSendCampaigns() {
     })
     
     // Filter to only campaigns without workflow (legacy/dedicated send)
+    // Convert Decimal to number to avoid client component warnings
     const campaigns = allCampaigns
       .filter(campaign => campaign.workflow === null)
-      .map(campaign => ({
-        ...campaign,
-        totalRevenue: campaign.totalRevenue ? parseFloat(campaign.totalRevenue.toString()) : 0
-      }))
+      .map(campaign => {
+        const totalRevenue = campaign.totalRevenue ? parseFloat(campaign.totalRevenue.toString()) : 0;
+        return {
+          id: campaign.id,
+          userId: campaign.userId,
+          name: campaign.name,
+          message: campaign.message,
+          workflow: campaign.workflow,
+          enabled: campaign.enabled,
+          messagesSent: campaign.messagesSent,
+          totalRevenue: totalRevenue, // Converted to number
+          lastMessageSent: campaign.lastMessageSent,
+          createdAt: campaign.createdAt,
+          updatedAt: campaign.updatedAt,
+          targets: campaign.targets,
+          shortlinks: campaign.shortlinks
+        };
+      })
     
     return campaigns
   } catch (error) {
@@ -623,6 +639,18 @@ export async function executeDedicatedSend(campaignId) {
       throw new Error('No contacts found for this campaign')
     }
     
+    // Log dedicated send start
+    await serverLog(
+      `Dedicated send started: "${campaign.name}" to ${contacts.length} contacts`,
+      'info',
+      {
+        campaignId: campaignIdInt,
+        campaignName: campaign.name,
+        contactsCount: contacts.length
+      },
+      userId
+    ).catch(err => console.error('Error logging dedicated send start:', err))
+    
     // Import sendMessage from telnyx
     const { sendMessage } = await import('@/lib/telnyx')
     
@@ -679,6 +707,20 @@ export async function executeDedicatedSend(campaignId) {
         lastMessageSent: new Date()
       }
     })
+    
+    // Log dedicated send completion
+    await serverLog(
+      `Dedicated send completed: "${campaign.name}" - ${successCount} sent, ${failCount} failed`,
+      successCount > 0 && failCount === 0 ? 'info' : failCount > 0 ? 'warn' : 'error',
+      {
+        campaignId: campaignIdInt,
+        campaignName: campaign.name,
+        totalContacts: contacts.length,
+        successCount,
+        failCount
+      },
+      userId
+    ).catch(err => console.error('Error logging dedicated send completion:', err))
     
     return {
       success: true,
