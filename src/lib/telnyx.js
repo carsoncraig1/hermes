@@ -8,6 +8,41 @@ import { checkRateLimit, createMessageRecord } from '@/lib/actions/messages';
 import { createMessageClickCodes } from '@/lib/messageClickCodes';
 
 /**
+ * Normalize phone number to E.164 format for Telnyx
+ * Ensures phone numbers are in the format +1XXXXXXXXXX
+ */
+function normalizePhoneForTelnyx(phone) {
+  if (!phone) return null;
+  
+  // If already in E.164 format, return as-is
+  if (phone.startsWith('+')) {
+    return phone;
+  }
+  
+  // Remove all non-digit characters
+  const digits = phone.replace(/\D/g, '');
+  
+  // If it has 11 digits and starts with 1, add +
+  if (digits.length === 11 && digits[0] === '1') {
+    return `+${digits}`;
+  }
+  
+  // If it has 10 digits, assume US number and add +1
+  if (digits.length === 10) {
+    return `+1${digits}`;
+  }
+  
+  // If it has 11 digits but doesn't start with 1, might be missing country code
+  // Try adding +1 prefix
+  if (digits.length === 11) {
+    return `+${digits}`;
+  }
+  
+  // Return as-is if we can't normalize (let Telnyx validate)
+  return phone;
+}
+
+/**
  * Get Telnyx client for a specific user
  * @param {string} userId - User ID
  * @returns {Promise<Telnyx|null>} - Telnyx client instance or null if no API key
@@ -127,8 +162,17 @@ export async function sendMessage({
     // Get user's Telnyx settings
     const settings = await getUserTelnyxSettings(finalUserId);
 
+    // Normalize phone numbers to E.164 format for Telnyx
+    const normalizedTo = normalizePhoneForTelnyx(to);
+    if (!normalizedTo) {
+      return {
+        success: false,
+        error: 'Invalid recipient phone number format.',
+      };
+    }
+
     // Use provided from number, or user's default, or fallback
-    const fromNumber = from || settings.phoneNumber || process.env.TELNYX_PHONE_NUMBER || process.env.TELNYX_FROM_NUMBER;
+    const fromNumber = normalizePhoneForTelnyx(from || settings.phoneNumber || process.env.TELNYX_PHONE_NUMBER || process.env.TELNYX_FROM_NUMBER);
     
     if (!fromNumber) {
       return {
@@ -187,7 +231,7 @@ export async function sendMessage({
     // STEP 3: Build message parameters with code-embedded URLs
     const messageParams = {
       from: fromNumber,
-      to,
+      to: normalizedTo, // Use normalized phone number
       text: messageTextWithCodes, // Use text with click codes embedded
       type: 'SMS', // SMS or MMS
       messaging_profile_id: settings.messagingProfileId,
@@ -300,13 +344,14 @@ export async function sendMessage({
         const settings = await getUserTelnyxSettings(finalUserId);
         const fromNumber = from || settings.phoneNumber || process.env.TELNYX_PHONE_NUMBER || process.env.TELNYX_FROM_NUMBER;
         
+        const normalizedToForError = normalizePhoneForTelnyx(to) || to;
         await createMessageRecord({
           userId: finalUserId,
           telnyxMessageId: null,
           contactId,
           campaignId,
           from: fromNumber || 'unknown',
-          to,
+          to: normalizedToForError,
           text,
           type: 'SMS',
           parts: validation?.parts || 1,
