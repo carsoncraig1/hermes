@@ -201,6 +201,8 @@ model MessageClickCode {
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   clicked       Boolean        @default(false) // Whether this code has been clicked
   clickedAt      DateTime?     // When the code was first clicked
+  opened         Boolean        @default(false) // Whether this code has been opened (preview fetched by bot)
+  openedAt       DateTime?     // When the code was first opened (preview fetched)
   expiresAt      DateTime      // Code expires after 30 days
   shortlinkClicks ShortlinkClick[] // Clicks that used this code
   createdAt     DateTime       @default(now())

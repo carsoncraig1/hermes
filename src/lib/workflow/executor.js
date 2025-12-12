@@ -75,61 +75,333 @@ async function sendMessage(contact, messageText, userId, campaignId = null) {
 }
 
 // Evaluate segmentation conditions
-function evaluateConditions(contact, conditions) {
+async function evaluateConditions(contact, conditions, userId, campaignId = null) {
   if (!conditions || conditions.length === 0) {
     return true; // No conditions means all pass
   }
 
-  return conditions.every((condition) => {
-    const { field, operator, value } = condition;
-    if (!field || !value) return true; // Skip incomplete conditions
+  // Check all conditions - some may need async database queries
+  const conditionResults = await Promise.all(
+    conditions.map(async (condition) => {
+      const { field, operator, value } = condition;
+      if (!field || !value) return true; // Skip incomplete conditions
 
-    const contactValue = contact[field];
+      // Handle special fields that require database queries
+      if (field === 'clicked') {
+        return await evaluateClickCondition(contact.id, userId, campaignId, value);
+      }
+      
+      if (field === 'opened') {
+        return await evaluateOpenCondition(contact.id, userId, campaignId, value);
+      }
 
-    // Handle array fields
-    if (Array.isArray(contactValue)) {
-      const searchValue = value.toLowerCase();
-      const contactStr = contactValue.join(' ').toLowerCase();
+      // Handle regular contact fields
+      const contactValue = contact[field];
+
+      // Handle array fields
+      if (Array.isArray(contactValue)) {
+        const searchValue = value.toLowerCase();
+        const contactStr = contactValue.join(' ').toLowerCase();
+        switch (operator) {
+          case 'equals':
+            return contactStr === searchValue;
+          case 'contains':
+            return contactStr.includes(searchValue);
+          case 'notEquals':
+            return contactStr !== searchValue;
+          default:
+            return false;
+        }
+      }
+
+      // Handle boolean fields
+      if (typeof contactValue === 'boolean') {
+        const boolValue = value.toLowerCase() === 'true' || value === '1';
+        switch (operator) {
+          case 'equals':
+            return contactValue === boolValue;
+          case 'notEquals':
+            return contactValue !== boolValue;
+          default:
+            return false;
+        }
+      }
+
+      // Handle string fields
+      const contactStr = String(contactValue || '').toLowerCase();
+      const searchStr = String(value || '').toLowerCase();
+
       switch (operator) {
         case 'equals':
-          return contactStr === searchValue;
+          return contactStr === searchStr;
         case 'contains':
-          return contactStr.includes(searchValue);
+          return contactStr.includes(searchStr);
         case 'notEquals':
-          return contactStr !== searchValue;
+          return contactStr !== searchStr;
         default:
           return false;
       }
-    }
+    })
+  );
 
-    // Handle boolean fields
-    if (typeof contactValue === 'boolean') {
-      const boolValue = value.toLowerCase() === 'true' || value === '1';
-      switch (operator) {
-        case 'equals':
-          return contactValue === boolValue;
-        case 'notEquals':
-          return contactValue !== boolValue;
-        default:
-          return false;
-      }
-    }
+  // All conditions must pass (AND logic)
+  return conditionResults.every(result => result === true);
+}
 
-    // Handle string fields
-    const contactStr = String(contactValue || '').toLowerCase();
-    const searchStr = String(value || '').toLowerCase();
-
-    switch (operator) {
-      case 'equals':
-        return contactStr === searchStr;
-      case 'contains':
-        return contactStr.includes(searchStr);
-      case 'notEquals':
-        return contactStr !== searchStr;
-      default:
-        return false;
+// Evaluate click condition
+async function evaluateClickCondition(contactId, userId, campaignId, value) {
+  const now = new Date();
+  let whereClause = {
+    messageClickCode: {
+      contactId: contactId,
+      userId: userId
     }
-  });
+  };
+
+  // Add time-based filters
+  switch (value) {
+    case 'never':
+      // Check if contact has any clicks
+      const hasClicks = await prisma.shortlinkClick.count({
+        where: {
+          messageClickCode: {
+            contactId: contactId,
+            userId: userId
+          }
+        }
+      });
+      return hasClicks === 0;
+
+    case 'ever':
+      // Check if contact has any clicks ever
+      const hasAnyClicks = await prisma.shortlinkClick.count({
+        where: {
+          messageClickCode: {
+            contactId: contactId,
+            userId: userId
+          }
+        }
+      });
+      return hasAnyClicks > 0;
+
+    case 'within_campaign':
+      // Check if contact clicked within this campaign
+      if (!campaignId) return false;
+      const campaignClicks = await prisma.shortlinkClick.count({
+        where: {
+          messageClickCode: {
+            contactId: contactId,
+            userId: userId,
+            message: {
+              campaignId: campaignId
+            }
+          }
+        }
+      });
+      return campaignClicks > 0;
+
+    case 'within_last_message':
+      // Check if contact clicked on the most recent message sent to them
+      const lastMessage = await prisma.message.findFirst({
+        where: {
+          contactId: contactId,
+          userId: userId,
+          direction: 'outbound'
+        },
+        orderBy: {
+          createdAt: 'desc'
+        },
+        select: { id: true }
+      });
+      
+      if (!lastMessage) return false;
+      
+      const lastMessageClicks = await prisma.shortlinkClick.count({
+        where: {
+          messageClickCode: {
+            contactId: contactId,
+            userId: userId,
+            messageId: lastMessage.id
+          }
+        }
+      });
+      return lastMessageClicks > 0;
+
+    case 'within_24h':
+      const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const clicks24h = await prisma.shortlinkClick.count({
+        where: {
+          messageClickCode: {
+            contactId: contactId,
+            userId: userId
+          },
+          createdAt: {
+            gte: dayAgo
+          }
+        }
+      });
+      return clicks24h > 0;
+
+    case 'within_7d':
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const clicks7d = await prisma.shortlinkClick.count({
+        where: {
+          messageClickCode: {
+            contactId: contactId,
+            userId: userId
+          },
+          createdAt: {
+            gte: weekAgo
+          }
+        }
+      });
+      return clicks7d > 0;
+
+    case 'within_30d':
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const clicks30d = await prisma.shortlinkClick.count({
+        where: {
+          messageClickCode: {
+            contactId: contactId,
+            userId: userId
+          },
+          createdAt: {
+            gte: monthAgo
+          }
+        }
+      });
+      return clicks30d > 0;
+
+    default:
+      return false;
+  }
+}
+
+// Evaluate open condition (message preview opens)
+// Opens are tracked per MessageClickCode when bots fetch the preview
+async function evaluateOpenCondition(contactId, userId, campaignId, value) {
+  const now = new Date();
+  
+  switch (value) {
+    case 'never':
+      // Check if contact has any opened MessageClickCodes
+      const hasAnyOpens = await prisma.messageClickCode.count({
+        where: {
+          contactId: contactId,
+          userId: userId,
+          opened: true
+        }
+      });
+      return hasAnyOpens === 0;
+
+    case 'ever':
+      // Check if contact has any opened MessageClickCodes
+      const hasOpens = await prisma.messageClickCode.count({
+        where: {
+          contactId: contactId,
+          userId: userId,
+          opened: true
+        }
+      });
+      return hasOpens > 0;
+
+    case 'within_campaign':
+      if (!campaignId) return false;
+      // Check if any MessageClickCodes in campaign messages have been opened
+      const campaignMessages = await prisma.message.findMany({
+        where: {
+          contactId: contactId,
+          userId: userId,
+          campaignId: campaignId,
+          direction: 'outbound'
+        },
+        select: { id: true }
+      });
+      
+      if (campaignMessages.length === 0) return false;
+      
+      const messageIds = campaignMessages.map(m => m.id);
+      const campaignOpens = await prisma.messageClickCode.count({
+        where: {
+          contactId: contactId,
+          userId: userId,
+          messageId: { in: messageIds },
+          opened: true
+        }
+      });
+      return campaignOpens > 0;
+
+    case 'within_last_message':
+      const lastMessage = await prisma.message.findFirst({
+        where: {
+          contactId: contactId,
+          userId: userId,
+          direction: 'outbound'
+        },
+        orderBy: {
+          createdAt: 'desc'
+        },
+        select: { id: true }
+      });
+      
+      if (!lastMessage) return false;
+      
+      const lastMessageOpens = await prisma.messageClickCode.count({
+        where: {
+          contactId: contactId,
+          userId: userId,
+          messageId: lastMessage.id,
+          opened: true
+        }
+      });
+      return lastMessageOpens > 0;
+
+    case 'within_24h':
+      // Check if MessageClickCodes opened in last 24h
+      const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const opens24h = await prisma.messageClickCode.count({
+        where: {
+          contactId: contactId,
+          userId: userId,
+          opened: true,
+          openedAt: {
+            gte: dayAgo
+          }
+        }
+      });
+      return opens24h > 0;
+
+    case 'within_7d':
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const opens7d = await prisma.messageClickCode.count({
+        where: {
+          contactId: contactId,
+          userId: userId,
+          opened: true,
+          openedAt: {
+            gte: weekAgo
+          }
+        }
+      });
+      return opens7d > 0;
+
+    case 'within_30d':
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const opens30d = await prisma.messageClickCode.count({
+        where: {
+          contactId: contactId,
+          userId: userId,
+          opened: true,
+          openedAt: {
+            gte: monthAgo
+          }
+        }
+      });
+      return opens30d > 0;
+
+    default:
+      return false;
+  }
 }
 
 // Execute a workflow for a contact
@@ -189,7 +461,7 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
       case 'segmentation':
         // Check if contact matches conditions
         const conditions = currentNode.data?.conditions || [];
-        const matches = evaluateConditions(contact, conditions);
+        const matches = await evaluateConditions(contact, conditions, userId, campaignId);
         
         // Get connected edges for this segmentation node
         const segmentationEdges = graph.get(currentNodeId) || [];

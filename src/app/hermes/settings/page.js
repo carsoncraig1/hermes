@@ -9,6 +9,7 @@ export default function Settings() {
   const [apiKey, setApiKey] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showDocs, setShowDocs] = useState(false);
+  const [activeTab, setActiveTab] = useState('leads'); // 'leads' or 'revenue'
   const [copied, setCopied] = useState(false);
   const [optOutText, setOptOutText] = useState('');
   const [optOutLoading, setOptOutLoading] = useState(true);
@@ -196,22 +197,41 @@ export default function Settings() {
           </div>
           {showDocs && (
             <div className={styles.cardContent}>
-              <div className={styles.markdownContent}>
-                <h3>Endpoint</h3>
-                <pre className={styles.codeBlock}>
-                  <code>POST /api/contact</code>
-                </pre>
+              {/* Tab Navigation */}
+              <div className={styles.tabNavigation}>
+                <button
+                  onClick={() => setActiveTab('leads')}
+                  className={`${styles.tabButton} ${activeTab === 'leads' ? styles.tabButtonActive : ''}`}
+                >
+                  Add New Leads
+                </button>
+                <button
+                  onClick={() => setActiveTab('revenue')}
+                  className={`${styles.tabButton} ${activeTab === 'revenue' ? styles.tabButtonActive : ''}`}
+                >
+                  Revenue Postbacks
+                </button>
+              </div>
 
-                <h3>Authentication</h3>
-                <p>Include your API key in the request header:</p>
-                <pre className={styles.codeBlock}>
-                  <code>{`hermes-api-key: ${apiKey || 'your-api-key-here'}`}</code>
-                </pre>
+              {/* Tab Content */}
+              <div className={styles.tabContent}>
+                {activeTab === 'leads' && (
+                  <div className={styles.markdownContent}>
+                    <h3>Endpoint</h3>
+                    <pre className={styles.codeBlock}>
+                      <code>POST /api/contact</code>
+                    </pre>
 
-                <h3>Request Body</h3>
-                <p>All fields are optional except <code>phone</code> (must be a valid US phone number):</p>
-                <pre className={styles.codeBlock}>
-                  <code>{`{
+                    <h3>Authentication</h3>
+                    <p>Include your API key in the request header:</p>
+                    <pre className={styles.codeBlock}>
+                      <code>{`hermes-api-key: ${apiKey || 'your-api-key-here'}`}</code>
+                    </pre>
+
+                    <h3>Request Body</h3>
+                    <p>All fields are optional except <code>phone</code> (must be a valid US phone number):</p>
+                    <pre className={styles.codeBlock}>
+                      <code>{`{
   "phone": "+15551234567",        // Required - US phone number only (10 digits, or with +1)
   "firstName": "John",            // Optional
   "lastName": "Doe",              // Optional
@@ -225,12 +245,12 @@ export default function Settings() {
   "subscribed": true,             // Optional - Default: true
   "tags": ["vip", "customer"]    // Optional - Array of tag names
 }`}</code>
-                </pre>
+                    </pre>
 
-                <h3>Example Request</h3>
-                <p>Using cURL:</p>
-                <pre className={styles.codeBlock}>
-                  <code>{`curl -X POST https://your-domain.com/api/contact \\
+                    <h3>Example Request</h3>
+                    <p>Using cURL:</p>
+                    <pre className={styles.codeBlock}>
+                      <code>{`curl -X POST https://your-domain.com/api/contact \\
   -H "Content-Type: application/json" \\
   -H "hermes-api-key: ${apiKey || 'your-api-key-here'}" \\
   -d '{
@@ -242,11 +262,11 @@ export default function Settings() {
     "clickid": ["click123"],
     "subscribed": true
   }'`}</code>
-                </pre>
+                    </pre>
 
-                <p>Using JavaScript (fetch):</p>
-                <pre className={styles.codeBlock}>
-                  <code>{`fetch('https://your-domain.com/api/contact', {
+                    <p>Using JavaScript (fetch):</p>
+                    <pre className={styles.codeBlock}>
+                      <code>{`fetch('https://your-domain.com/api/contact', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -265,12 +285,12 @@ export default function Settings() {
 .then(response => response.json())
 .then(data => console.log(data))
 .catch(error => console.error('Error:', error));`}</code>
-                </pre>
+                    </pre>
 
-                <h3>Response</h3>
-                <p><strong>Success (201 Created):</strong></p>
-                <pre className={styles.codeBlock}>
-                  <code>{`{
+                    <h3>Response</h3>
+                    <p><strong>Success (201 Created):</strong></p>
+                    <pre className={styles.codeBlock}>
+                      <code>{`{
   "id": 123,
   "phone": "+15551234567",
   "firstName": "John",
@@ -279,123 +299,167 @@ export default function Settings() {
   ...
   "createdAt": "2024-01-01T00:00:00.000Z"
 }`}</code>
-                </pre>
+                    </pre>
 
-                <p><strong>Update (200 OK):</strong> If a contact with the same phone number already exists, it will be updated instead of creating a new one.</p>
+                    <p><strong>Update (200 OK):</strong> If a contact with the same phone number already exists, it will be updated instead of creating a new one.</p>
 
-                <p><strong>Error (400/401):</strong></p>
-                <pre className={styles.codeBlock}>
-                  <code>{`{
+                    <p><strong>Error (400/401):</strong></p>
+                    <pre className={styles.codeBlock}>
+                      <code>{`{
   "error": "Error message here"
 }`}</code>
-                </pre>
-                <p>Common error messages:</p>
-                <ul>
-                  <li><code>"Phone number is required"</code> - Phone field is missing</li>
-                  <li><code>"Invalid phone number format. Only US phone numbers are accepted..."</code> - Non-US number or invalid format</li>
-                  <li><code>"Invalid API key"</code> - API key is missing or invalid</li>
-                  <li><code>"Authentication required..."</code> - No valid authentication provided</li>
-                </ul>
+                    </pre>
+                    <p>Common error messages:</p>
+                    <ul>
+                      <li><code>"Phone number is required"</code> - Phone field is missing</li>
+                      <li><code>"Invalid phone number format. Only US phone numbers are accepted..."</code> - Non-US number or invalid format</li>
+                      <li><code>"Invalid API key"</code> - API key is missing or invalid</li>
+                      <li><code>"Authentication required..."</code> - No valid authentication provided</li>
+                    </ul>
 
-                <h3>Phone Number Format</h3>
-                <p><strong>US phone numbers only.</strong> Phone numbers should be in E.164 format:</p>
-                <ul>
-                  <li>10-digit US number: <code>5551234567</code> → normalized to <code>+15551234567</code></li>
-                  <li>11-digit US number with country code: <code>15551234567</code> → normalized to <code>+15551234567</code></li>
-                  <li>US number with +1: <code>+15551234567</code> → accepted as-is</li>
-                  <li>The API will automatically normalize valid US formats</li>
-                  <li><strong>Non-US country codes are rejected</strong></li>
-                </ul>
+                    <h3>Phone Number Format</h3>
+                    <p><strong>US phone numbers only.</strong> Phone numbers should be in E.164 format:</p>
+                    <ul>
+                      <li>10-digit US number: <code>5551234567</code> → normalized to <code>+15551234567</code></li>
+                      <li>11-digit US number with country code: <code>15551234567</code> → normalized to <code>+15551234567</code></li>
+                      <li>US number with +1: <code>+15551234567</code> → accepted as-is</li>
+                      <li>The API will automatically normalize valid US formats</li>
+                      <li><strong>Non-US country codes are rejected</strong></li>
+                    </ul>
 
-                <h3>Deduplication</h3>
-                <p>Contacts are automatically deduplicated by phone number <strong>per account</strong>. If a contact with the same phone number already exists:</p>
-                <ul>
-                  <li>The existing contact will be updated with any new data provided</li>
-                  <li>New click IDs will be appended to existing ones</li>
-                  <li>Tags will be merged</li>
-                </ul>
+                    <h3>Deduplication</h3>
+                    <p>Contacts are automatically deduplicated by phone number <strong>per account</strong>. If a contact with the same phone number already exists:</p>
+                    <ul>
+                      <li>The existing contact will be updated with any new data provided</li>
+                      <li>New click IDs will be appended to existing ones</li>
+                      <li>Tags will be merged</li>
+                    </ul>
 
-                <h3>Click IDs</h3>
-                <p>Click IDs can be provided as:</p>
-                <ul>
-                  <li>Single value: <code>"clickid": "click123"</code></li>
-                  <li>Array: <code>"clickid": ["click1", "click2", "click3"]</code></li>
-                  <li>When updating, new click IDs are appended to existing ones</li>
-                </ul>
+                    <h3>Click IDs</h3>
+                    <p>Click IDs can be provided as:</p>
+                    <ul>
+                      <li>Single value: <code>"clickid": "click123"</code></li>
+                      <li>Array: <code>"clickid": ["click1", "click2", "click3"]</code></li>
+                      <li>When updating, new click IDs are appended to existing ones</li>
+                    </ul>
+                  </div>
+                )}
 
-                <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid var(--border-primary)' }} />
+                {activeTab === 'revenue' && (
+                  <div className={styles.markdownContent}>
+                    <h3>Your Postback URL</h3>
+                    <p>Use this unique postback URL in your tracking system to report revenue events:</p>
+                    <div style={{ 
+                      background: 'var(--bg-tertiary)', 
+                      padding: '1rem', 
+                      borderRadius: 'var(--border-radius-sm)',
+                      marginBottom: '1rem',
+                      position: 'relative'
+                    }}>
+                      <pre style={{ 
+                        margin: 0, 
+                        whiteSpace: 'pre-wrap', 
+                        wordBreak: 'break-all',
+                        fontSize: '0.8125rem',
+                        color: 'var(--text-primary)',
+                        fontFamily: 'monospace'
+                      }}>
+                        {apiKey ? `https://txt.cx/api/revenue?key=${apiKey}&hrms={hrms}&payout={payout}&currency={currency}` : 'Loading...'}
+                      </pre>
+                      {apiKey && (
+                        <button
+                          onClick={() => {
+                            const url = `https://txt.cx/api/revenue?key=${apiKey}&hrms={hrms}&payout={payout}&currency={currency}`;
+                            navigator.clipboard.writeText(url);
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 2000);
+                          }}
+                          className={styles.copyButton}
+                          style={{ marginTop: '0.5rem' }}
+                        >
+                          {copied ? '✓ Copied!' : 'Copy Postback URL'}
+                        </button>
+                      )}
+                    </div>
 
-                <h2>Revenue Tracking API</h2>
-                <p>Report revenue events from your tracking system to calculate ROAS (Return on Ad Spend) for campaigns.</p>
+                    <h3>Endpoint</h3>
+                    <pre className={styles.codeBlock}>
+                      <code>GET https://txt.cx/api/revenue</code>
+                    </pre>
 
-                <h3>Endpoint</h3>
-                <pre className={styles.codeBlock}>
-                  <code>POST /api/revenue</code>
-                </pre>
+                    <h3>Query Parameters</h3>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1rem' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border-primary)' }}>
+                          <th style={{ padding: '0.5rem', textAlign: 'left', color: 'var(--text-primary)' }}>Parameter</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'left', color: 'var(--text-primary)' }}>Required</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'left', color: 'var(--text-primary)' }}>Description</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}><code>key</code></td>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}>Yes</td>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}>Your Hermes API key (included in postback URL above)</td>
+                        </tr>
+                        <tr>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}><code>hrms</code></td>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}>Yes</td>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}>Tracking parameter from shortlink URL (extracted from destination URL)</td>
+                        </tr>
+                        <tr>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}><code>payout</code></td>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}>Yes</td>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}>Revenue amount (positive number)</td>
+                        </tr>
+                        <tr>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}><code>currency</code></td>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}>No</td>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}>Currency code (default: "USD")</td>
+                        </tr>
+                        <tr>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}><code>metadata</code></td>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}>No</td>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}>Additional tracking data as URL-encoded JSON string</td>
+                        </tr>
+                      </tbody>
+                    </table>
 
-                <h3>Request Body</h3>
-                <pre className={styles.codeBlock}>
-                  <code>{`{
-  "hrms": "hrms_userId_shortlinkId_timestamp_random",  // Required - Tracking parameter from shortlink URL
-  "payout": 29.99,                                     // Required - Revenue amount (positive number)
-  "currency": "USD",                                   // Optional - Default: "USD"
-  "metadata": {                                        // Optional - Additional tracking data
-    "orderId": "12345",
-    "product": "Subscription"
-  }
-}`}</code>
-                </pre>
+                    <h3>How It Works</h3>
+                    <ol>
+                      <li>When a user clicks a shortlink, the system automatically appends an <code>hrms</code> parameter to the destination URL</li>
+                      <li>The <code>hrms</code> parameter is a unique tracking identifier tied to the shortlink, campaign, and user</li>
+                      <li>When a conversion occurs, send a GET request to your postback URL with the <code>hrms</code> value and payout amount</li>
+                      <li>The revenue will be automatically attributed to the associated campaign and shortlink</li>
+                    </ol>
 
-                <h3>How It Works</h3>
-                <ol>
-                  <li>When a user clicks a shortlink, the system automatically appends an <code>hrms</code> parameter to the destination URL</li>
-                  <li>The <code>hrms</code> parameter is a unique tracking identifier tied to the shortlink, campaign, and user</li>
-                  <li>When a conversion occurs, send a POST request to <code>/api/revenue</code> with the <code>hrms</code> value and payout amount</li>
-                  <li>The revenue will be automatically attributed to the associated campaign and shortlink</li>
-                </ol>
+                    <h3>Example Postback URL</h3>
+                    <p>When a conversion occurs, your tracking system should make a GET request like this:</p>
+                    <pre className={styles.codeBlock}>
+                      <code>{`https://txt.cx/api/revenue?key=${apiKey || 'YOUR_API_KEY'}&hrms=hrms_cmirzyw6_123_1704067200000_a1b2c3d4&payout=29.99&currency=USD`}</code>
+                    </pre>
 
-                <h3>Example Request</h3>
-                <p>Using cURL:</p>
-                <pre className={styles.codeBlock}>
-                  <code>{`curl -X POST https://your-domain.com/api/revenue \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "hrms": "hrms_cmirzyw6_123_1704067200000_a1b2c3d4",
-    "payout": 29.99,
-    "currency": "USD",
-    "metadata": {
-      "orderId": "12345",
-      "product": "Premium Subscription"
-    }
-  }'`}</code>
-                </pre>
+                    <h3>Example with Metadata</h3>
+                    <p>To include additional tracking data, URL-encode a JSON object:</p>
+                    <pre className={styles.codeBlock}>
+                      <code>{`const metadata = encodeURIComponent(JSON.stringify({
+  orderId: '12345',
+  product: 'Premium Subscription'
+}));
 
-                <p>Using JavaScript (fetch):</p>
-                <pre className={styles.codeBlock}>
-                  <code>{`fetch('https://your-domain.com/api/revenue', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({
-    hrms: 'hrms_cmirzyw6_123_1704067200000_a1b2c3d4',  // From URL parameter
-    payout: 29.99,
-    currency: 'USD',
-    metadata: {
-      orderId: '12345',
-      product: 'Premium Subscription'
-    }
-  })
-})
-.then(response => response.json())
-.then(data => console.log(data))
-.catch(error => console.error('Error:', error));`}</code>
-                </pre>
+const url = \`https://txt.cx/api/revenue?key=${apiKey || 'YOUR_API_KEY'}&hrms=\${hrms}&payout=\${payout}&currency=USD&metadata=\${metadata}\`;
 
-                <h3>Response</h3>
-                <p><strong>Success (201 Created):</strong></p>
-                <pre className={styles.codeBlock}>
-                  <code>{`{
+// Make GET request
+fetch(url)
+  .then(response => response.json())
+  .then(data => console.log(data))
+  .catch(error => console.error('Error:', error));`}</code>
+                    </pre>
+
+                    <h3>Response</h3>
+                    <p><strong>Success (201 Created):</strong></p>
+                    <pre className={styles.codeBlock}>
+                      <code>{`{
   "success": true,
   "revenueEvent": {
     "id": 456,
@@ -405,42 +469,51 @@ export default function Settings() {
     "createdAt": "2024-01-01T12:00:00.000Z"
   }
 }`}</code>
-                </pre>
+                    </pre>
 
-                <p><strong>Error (400/404/500):</strong></p>
-                <pre className={styles.codeBlock}>
-                  <code>{`{
+                    <p><strong>Error (400/401/403/404/500):</strong></p>
+                    <pre className={styles.codeBlock}>
+                      <code>{`{
   "error": "Error message here"
 }`}</code>
-                </pre>
-                <p>Common error messages:</p>
-                <ul>
-                  <li><code>"hrms parameter is required"</code> - hrms field is missing</li>
-                  <li><code>"payout amount is required"</code> - payout field is missing</li>
-                  <li><code>"payout must be a valid positive number"</code> - Invalid payout value</li>
-                  <li><code>"Invalid hrms parameter. Shortlink not found."</code> - hrms doesn't match any shortlink</li>
-                </ul>
+                    </pre>
+                    <p>Common error messages:</p>
+                    <ul>
+                      <li><code>"API key is required"</code> - Missing or invalid API key</li>
+                      <li><code>"hrms parameter is required"</code> - hrms parameter is missing</li>
+                      <li><code>"payout parameter is required"</code> - payout parameter is missing</li>
+                      <li><code>"payout must be a valid positive number"</code> - Invalid payout value</li>
+                      <li><code>"Invalid hrms parameter. Shortlink click not found."</code> - hrms doesn't match any shortlink click</li>
+                      <li><code>"Invalid hrms parameter. Shortlink click does not belong to your account."</code> - hrms belongs to a different user</li>
+                    </ul>
 
-                <h3>Extracting hrms from URL</h3>
-                <p>In your tracking script, extract the <code>hrms</code> parameter from the URL:</p>
-                <pre className={styles.codeBlock}>
-                  <code>{`// JavaScript example
+                    <h3>Extracting hrms from URL</h3>
+                    <p>In your tracking script, extract the <code>hrms</code> parameter from the destination URL:</p>
+                    <pre className={styles.codeBlock}>
+                      <code>{`// JavaScript example
 const urlParams = new URLSearchParams(window.location.search);
 const hrms = urlParams.get('hrms');
 
-// Then send to revenue API when conversion occurs
+// When conversion occurs, send GET request to postback URL
 if (hrms && conversionOccurred) {
-  fetch('/api/revenue', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      hrms: hrms,
-      payout: orderTotal,
-      metadata: { orderId: orderId }
-    })
-  });
+  const postbackUrl = \`https://txt.cx/api/revenue?key=${apiKey || 'YOUR_API_KEY'}&hrms=\${hrms}&payout=\${orderTotal}&currency=USD\`;
+  
+  fetch(postbackUrl)
+    .then(response => response.json())
+    .then(data => console.log('Revenue tracked:', data))
+    .catch(error => console.error('Error:', error));
 }`}</code>
-                </pre>
+                    </pre>
+
+                    <h3>Integration with Tracking Systems</h3>
+                    <p>Most tracking systems support postback URLs. Simply paste your postback URL above into your tracking system's conversion postback settings, replacing the placeholder values:</p>
+                    <ul>
+                      <li><code>{'{hrms}'}</code> - Will be replaced with the actual hrms value from the URL</li>
+                      <li><code>{'{payout}'}</code> - Will be replaced with the conversion payout amount</li>
+                      <li><code>{'{currency}'}</code> - Will be replaced with the currency code (optional, defaults to USD)</li>
+                    </ul>
+                  </div>
+                )}
               </div>
             </div>
           )}

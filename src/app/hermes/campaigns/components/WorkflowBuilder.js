@@ -306,10 +306,12 @@ const SegmentationNode = ({ data, selected, id, onDelete }) => {
   };
 
   const updateCondition = (index, field, value) => {
-    const updated = [...conditions];
-    updated[index] = { ...updated[index], [field]: value };
-    setConditions(updated);
-    data.onChange?.('conditions', updated);
+    setConditions(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      data.onChange?.('conditions', updated);
+      return updated;
+    });
   };
 
   const removeCondition = (index) => {
@@ -341,10 +343,29 @@ const SegmentationNode = ({ data, selected, id, onDelete }) => {
           {conditions.map((condition, index) => (
             <div key={index} className={styles.conditionRow}>
               <select
-                value={condition.field}
-                onChange={(e) => updateCondition(index, 'field', e.target.value)}
+                value={condition.field || ''}
+                onChange={(e) => {
+                  const newField = e.target.value;
+                  // Update all fields at once for special fields
+                  if (newField === 'clicked' || newField === 'opened') {
+                    setConditions(prev => {
+                      const updated = [...prev];
+                      updated[index] = { 
+                        ...updated[index], 
+                        field: newField,
+                        operator: 'equals',
+                        value: 'never'
+                      };
+                      data.onChange?.('conditions', updated);
+                      return updated;
+                    });
+                  } else {
+                    updateCondition(index, 'field', newField);
+                  }
+                }}
                 className={styles.conditionSelect}
                 onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
               >
                 <option value="">Select field...</option>
                 <option value="source">Source</option>
@@ -352,25 +373,45 @@ const SegmentationNode = ({ data, selected, id, onDelete }) => {
                 <option value="subscribed">Subscribed</option>
                 <option value="tags">Tags</option>
                 <option value="clickid">Click ID</option>
+                <option value="clicked">Clicked?</option>
+                <option value="opened">Opened?</option>
               </select>
               <select
                 value={condition.operator}
                 onChange={(e) => updateCondition(index, 'operator', e.target.value)}
                 className={styles.conditionSelect}
                 onClick={(e) => e.stopPropagation()}
+                disabled={condition.field === 'clicked' || condition.field === 'opened'}
               >
                 <option value="equals">Equals</option>
                 <option value="contains">Contains</option>
                 <option value="notEquals">Not Equals</option>
               </select>
-              <input
-                type="text"
-                value={condition.value}
-                onChange={(e) => updateCondition(index, 'value', e.target.value)}
-                placeholder="Value"
-                className={styles.conditionInput}
-                onClick={(e) => e.stopPropagation()}
-              />
+              {condition.field === 'clicked' || condition.field === 'opened' ? (
+                <select
+                  value={condition.value}
+                  onChange={(e) => updateCondition(index, 'value', e.target.value)}
+                  className={styles.conditionSelect}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <option value="never">Never</option>
+                  <option value="ever">Ever</option>
+                  <option value="within_campaign">Within Campaign</option>
+                  <option value="within_last_message">Within Last Message</option>
+                  <option value="within_24h">Within Last 24 Hours</option>
+                  <option value="within_7d">Within Last 7 Days</option>
+                  <option value="within_30d">Within Last 30 Days</option>
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={condition.value}
+                  onChange={(e) => updateCondition(index, 'value', e.target.value)}
+                  placeholder="Value"
+                  className={styles.conditionInput}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();

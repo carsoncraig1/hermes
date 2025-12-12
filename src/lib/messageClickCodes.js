@@ -231,6 +231,21 @@ export async function markCodeAsClicked(code) {
 }
 
 /**
+ * Mark a MessageClickCode as opened (preview fetched by bot)
+ * @param {string} code - Click code
+ * @returns {Promise<void>}
+ */
+export async function markCodeAsOpened(code) {
+  await prisma.messageClickCode.update({
+    where: { code },
+    data: {
+      opened: true,
+      openedAt: new Date()
+    }
+  });
+}
+
+/**
  * Cleanup expired MessageClickCodes (older than 30 days)
  * @param {number} daysOld - Delete codes older than this many days (default: 30)
  * @returns {Promise<number>} - Number of codes deleted

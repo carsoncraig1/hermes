@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { createClickWithHrms, appendHrmsToUrl } from '@/lib/revenue'
-import { lookupMessageClickCode, markCodeAsClicked } from '@/lib/messageClickCodes'
+import { lookupMessageClickCode, markCodeAsClicked, markCodeAsOpened } from '@/lib/messageClickCodes'
 
 // Bot/crawler User-Agent patterns for link preview fetching
 const BOT_PATTERNS = [
@@ -141,11 +141,16 @@ export async function GET(request, { params }) {
     if (isBot) {
       // Bot prefetch = "open" (user saw the preview in their messages)
       // Don't generate HRMS for bot requests
-      await prisma.shortlink.update({
-        where: { id: shortlink.id },
-        data: { opens: { increment: 1 } }
-      })
-      console.log(`👁️ Open (preview): ${code} → ${shortlink.destination} (${shortlink.opens + 1} opens) [${userAgent.substring(0, 50)}...]`)
+      // Update both the shortlink global counter and the specific MessageClickCode
+      await Promise.all([
+        prisma.shortlink.update({
+          where: { id: shortlink.id },
+          data: { opens: { increment: 1 } }
+        }),
+        // Mark this specific MessageClickCode as opened (first time only)
+        !messageClickCode.opened && markCodeAsOpened(code)
+      ])
+      console.log(`👁️ Open (preview): ${code} → ${shortlink.destination} (${shortlink.opens + 1} opens) [contactId: ${contactId}, messageId: ${messageId}] [${userAgent.substring(0, 50)}...]`)
     } else {
       // Real user click - we have full message-level tracking!
       const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || null

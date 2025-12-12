@@ -268,3 +268,44 @@
   white-space: pre-wrap;
 }
 
+.tabNavigation {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.tabButton {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  padding: 0.75rem 1.5rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+  bottom: -1px;
+}
+
+.tabButton:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.tabButtonActive {
+  color: var(--accent-orange);
+  border-bottom-color: var(--accent-orange);
+  background: transparent;
+}
+
+.tabButtonActive:hover {
+  color: var(--accent-orange);
+  background: transparent;
+}
+
+.tabContent {
+  margin-top: 1rem;
+}
+
