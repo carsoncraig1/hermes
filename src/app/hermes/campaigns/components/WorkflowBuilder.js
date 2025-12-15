@@ -186,6 +186,17 @@ const ActionNode = ({ data, selected, id, onDelete, availableShortlinks = [] }) 
     }
   };
 
+  // Calculate character count from the display value (with URLs expanded)
+  const displayValue = (() => {
+    let value = data.message || '';
+    value = value.replace(/\{\{SHORTLINK:(\d+)\}\}/g, (match, id) => {
+      const shortlink = availableShortlinks.find(s => s.id === parseInt(id, 10));
+      const displayName = shortlink?.nickname || `link-${id}`;
+      return `https://txt.cx/${displayName}`;
+    });
+    return value;
+  })();
+
   return (
     <div className={`${styles.node} ${styles.actionNode} ${selected ? styles.selected : ''}`}>
       <div className={styles.nodeHeader}>
@@ -207,7 +218,7 @@ const ActionNode = ({ data, selected, id, onDelete, availableShortlinks = [] }) 
       <div className={styles.nodeBody}>
         <div className={styles.nodeField}>
           <div className={styles.messageHeader}>
-            <label>Message:</label>
+            <label>Message Content</label>
             {availableShortlinks.length > 0 && (
               <select
                 onChange={handleShortlinkInsert}
@@ -226,17 +237,7 @@ const ActionNode = ({ data, selected, id, onDelete, availableShortlinks = [] }) 
           </div>
           <div className={styles.messagePreview}>
             <textarea
-              value={(() => {
-                // Replace {{SHORTLINK:ID}} markers with actual URLs for display
-                // This ensures the textarea character count matches the overlay
-                let displayValue = data.message || '';
-                displayValue = displayValue.replace(/\{\{SHORTLINK:(\d+)\}\}/g, (match, id) => {
-                  const shortlink = availableShortlinks.find(s => s.id === parseInt(id, 10));
-                  const displayName = shortlink?.nickname || `link-${id}`;
-                  return `https://txt.cx/${displayName}`;
-                });
-                return displayValue;
-              })()}
+              value={displayValue}
               onChange={(e) => {
                 // Convert URLs back to markers when user edits
                 let newValue = e.target.value;
@@ -249,8 +250,8 @@ const ActionNode = ({ data, selected, id, onDelete, availableShortlinks = [] }) 
                 });
                 data.onChange?.('message', newValue);
               }}
-              placeholder="Enter message text..."
-              rows={3}
+              placeholder="Enter your SMS message"
+              rows={4}
               className={styles.nodeInput}
               onClick={(e) => e.stopPropagation()}
             />
@@ -280,6 +281,9 @@ const ActionNode = ({ data, selected, id, onDelete, availableShortlinks = [] }) 
                 })()
               }}
             />
+          </div>
+          <div className={styles.charCount}>
+            Characters: {displayValue.length}
           </div>
         </div>
       </div>
