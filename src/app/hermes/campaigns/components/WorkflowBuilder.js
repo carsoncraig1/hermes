@@ -132,13 +132,17 @@ function SearchableSourceSelect({
 
 // Custom Node Types
 const TriggerNode = ({ data, selected, availableSources = [] }) => {
-  // triggerSource values:
+  const triggerType = data?.triggerType || 'newLead'; // 'newLead' or 'manualFire'
+  // triggerSource values (only for newLead):
   // null = catch-all (fires on every lead)
   // "__DEFAULT__" = default (fires only if no other workflow matches the source)
   // string = specific source (fires only for that source)
   const triggerSource = data?.triggerSource ?? null;
   
   const getDescription = () => {
+    if (triggerType === 'manualFire') {
+      return '🎯 Manually triggered by user';
+    }
     if (triggerSource === null) {
       return '🔥 Triggers for ALL sources (catch-all)';
     } else if (triggerSource === '__DEFAULT__') {
@@ -151,22 +155,24 @@ const TriggerNode = ({ data, selected, availableSources = [] }) => {
   return (
     <div className={`${styles.node} ${styles.triggerNode} ${selected ? styles.selected : ''}`}>
       <div className={styles.nodeHeader}>
-        <span className={styles.nodeIcon}>⚡</span>
-        <span className={styles.nodeTitle}>New Lead</span>
+        <span className={styles.nodeIcon}>{triggerType === 'manualFire' ? '🎯' : '⚡'}</span>
+        <span className={styles.nodeTitle}>{triggerType === 'manualFire' ? 'Manual Fire' : 'New Lead'}</span>
       </div>
       <div className={styles.nodeBody}>
         <div className={styles.nodeDescription}>
           {getDescription()}
         </div>
-        <div className={styles.nodeField}>
-          <label>Source Filter:</label>
-          <SearchableSourceSelect
-            value={triggerSource}
-            onChange={(value) => data.onChange?.('triggerSource', value)}
-            availableSources={availableSources}
-            placeholder="Select source filter..."
-          />
-        </div>
+        {triggerType === 'newLead' && (
+          <div className={styles.nodeField}>
+            <label>Source Filter:</label>
+            <SearchableSourceSelect
+              value={triggerSource}
+              onChange={(value) => data.onChange?.('triggerSource', value)}
+              availableSources={availableSources}
+              placeholder="Select source filter..."
+            />
+          </div>
+        )}
       </div>
       <Handle type="source" position={Position.Bottom} className={styles.nodeHandle} id="source" />
     </div>
@@ -549,18 +555,7 @@ const createNodeTypes = (onDelete, availableShortlinks = [], availableSources = 
   delay: (props) => <DelayNode {...props} onDelete={onDelete} />,
 });
 
-const initialNodes = [
-  {
-    id: '1',
-    type: 'trigger',
-    position: { x: 250, y: 100 },
-    data: { 
-      label: 'New Lead',
-      triggerSource: null, // null = catch-all, "__DEFAULT__" = default, string = specific source
-    },
-  },
-];
-
+const initialNodes = [];
 const initialEdges = [];
 
 export default function WorkflowBuilder({ workflow, onSave, campaignId, campaignName, onCampaignNameChange }) {
@@ -619,10 +614,7 @@ export default function WorkflowBuilder({ workflow, onSave, campaignId, campaign
 
   const onConnect = useCallback(
     (params) => {
-      // Prevent connecting trigger node as target
-      if (params.target === '1') {
-        return;
-      }
+      // Allow connections to trigger nodes (they can be targets now)
       setEdges((eds) => addEdge(params, eds));
     },
     [setEdges]
@@ -675,16 +667,19 @@ export default function WorkflowBuilder({ workflow, onSave, campaignId, campaign
     }));
   }, [nodes, onNodeDataChange, selectedNodeId]);
 
-  const addNode = (type) => {
+  const addNode = (type, triggerType = null) => {
     const newNode = {
       id: `${type}-${Date.now()}`,
       type,
       position: { x: Math.random() * 400 + 200, y: Math.random() * 400 + 200 },
       data: { 
-        label: type === 'trigger' ? 'New Lead' 
+        label: type === 'trigger' 
+          ? (triggerType === 'manualFire' ? 'Manual Fire' : 'New Lead')
           : type === 'action' ? 'Send Message' 
           : type === 'segmentation' ? 'Segment Contacts'
           : 'Time Delay',
+        triggerType: type === 'trigger' ? (triggerType || 'newLead') : undefined,
+        triggerSource: type === 'trigger' && triggerType !== 'manualFire' ? null : undefined,
         message: type === 'action' ? '' : undefined,
         conditions: type === 'segmentation' ? [] : undefined,
         delayValue: type === 'delay' ? '' : undefined,
@@ -696,6 +691,13 @@ export default function WorkflowBuilder({ workflow, onSave, campaignId, campaign
   };
 
   const handleSave = () => {
+    // Validate workflow has at least one trigger node
+    const hasTrigger = nodes.some(node => node.type === 'trigger');
+    if (!hasTrigger) {
+      alert('Workflow must have at least one trigger node. Please add a trigger from the Trigger Nodes section.');
+      return;
+    }
+    
     // Clean up nodes before saving (remove onChange handlers and React Flow internal props)
     const cleanNodes = nodes.map(node => ({
       id: node.id,
@@ -706,6 +708,7 @@ export default function WorkflowBuilder({ workflow, onSave, campaignId, campaign
         conditions: node.data?.conditions,
         delayValue: node.data?.delayValue,
         delayUnit: node.data?.delayUnit,
+        triggerType: node.data?.triggerType, // Include trigger type
         triggerSource: node.data?.triggerSource, // Include trigger source configuration
         label: node.data?.label,
       },
@@ -749,16 +752,27 @@ export default function WorkflowBuilder({ workflow, onSave, campaignId, campaign
             />
           </div>
           <div className={styles.nodePalette}>
-            <h3>Add Node</h3>
-            <button onClick={() => addNode('action')} className={styles.paletteButton}>
-              📤 Send Message
-            </button>
-            <button onClick={() => addNode('segmentation')} className={styles.paletteButton}>
-              🔀 Segment Contacts
-            </button>
-            <button onClick={() => addNode('delay')} className={styles.paletteButton}>
-              ⏱️ Time Delay
-            </button>
+            <div className={styles.paletteSection}>
+              <h3>Trigger Nodes</h3>
+              <button onClick={() => addNode('trigger', 'newLead')} className={styles.paletteButton}>
+                ⚡ New Lead
+              </button>
+              <button onClick={() => addNode('trigger', 'manualFire')} className={styles.paletteButton}>
+                🎯 Manual Fire
+              </button>
+            </div>
+            <div className={styles.paletteSection}>
+              <h3>Add Node</h3>
+              <button onClick={() => addNode('action')} className={styles.paletteButton}>
+                📤 Send Message
+              </button>
+              <button onClick={() => addNode('segmentation')} className={styles.paletteButton}>
+                🔀 Segment Contacts
+              </button>
+              <button onClick={() => addNode('delay')} className={styles.paletteButton}>
+                ⏱️ Time Delay
+              </button>
+            </div>
           </div>
         </div>
         <div className={styles.workflowStats}>

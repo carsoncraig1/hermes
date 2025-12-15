@@ -74,8 +74,8 @@ export async function getAnalytics(filters = {}) {
     });
 
     // Calculate totals
-    const totalRevenue = revenueEvents.reduce((sum, event) => sum + parseFloat(event.payout), 0);
-    const totalCost = messages.reduce((sum, msg) => sum + (msg.costAmount ? parseFloat(msg.costAmount) : 0), 0);
+    const totalRevenue = revenueEvents.reduce((sum, event) => sum + parseFloat(event.payout.toString()), 0);
+    const totalCost = messages.reduce((sum, msg) => sum + (msg.costAmount ? parseFloat(msg.costAmount.toString()) : 0), 0);
     const roas = totalCost > 0 ? (totalRevenue / totalCost) : 0;
 
     // Get shortlink click data
@@ -114,7 +114,7 @@ export async function getAnalytics(filters = {}) {
             });
           }
           const group = campaignMap.get(key);
-          group.revenue += parseFloat(event.payout);
+          group.revenue += parseFloat(event.payout.toString());
           group.events += 1;
         });
         groupedData = Object.fromEntries(campaignMap);
@@ -130,7 +130,7 @@ export async function getAnalytics(filters = {}) {
             });
           }
           const group = shortlinkMap.get(key);
-          group.revenue += parseFloat(event.payout);
+          group.revenue += parseFloat(event.payout.toString());
           group.events += 1;
         });
         groupedData = Object.fromEntries(shortlinkMap);
@@ -146,12 +146,23 @@ export async function getAnalytics(filters = {}) {
             });
           }
           const group = dateMap.get(date);
-          group.revenue += parseFloat(event.payout);
+          group.revenue += parseFloat(event.payout.toString());
           group.events += 1;
         });
         groupedData = Object.fromEntries(dateMap);
       }
     }
+
+    // Convert Decimal fields to numbers to avoid client component warnings
+    const revenueEventsClean = revenueEvents.slice(0, 100).map(event => ({
+      ...event,
+      payout: parseFloat(event.payout.toString())
+    }));
+    
+    const messagesClean = messages.slice(0, 100).map(msg => ({
+      ...msg,
+      costAmount: msg.costAmount ? parseFloat(msg.costAmount.toString()) : null
+    }));
 
     return {
       totalRevenue,
@@ -163,8 +174,8 @@ export async function getAnalytics(filters = {}) {
       totalClicks: shortlinks.reduce((sum, s) => sum + s.clicks, 0),
       totalOpens: shortlinks.reduce((sum, s) => sum + s.opens, 0),
       groupedData,
-      revenueEvents: revenueEvents.slice(0, 100), // Limit for display
-      messages: messages.slice(0, 100)
+      revenueEvents: revenueEventsClean, // Converted Decimal fields
+      messages: messagesClean // Converted Decimal fields
     };
   } catch (error) {
     console.error('Error fetching analytics:', error);
@@ -284,8 +295,8 @@ export async function getCampaignsWithROAS(filters = {}) {
     );
 
     return campaigns.map(campaign => {
-      const revenue = campaign.revenueEvents.reduce((sum, event) => sum + parseFloat(event.payout), 0);
-      const cost = campaign.messages.reduce((sum, msg) => sum + (msg.costAmount ? parseFloat(msg.costAmount) : 0), 0);
+      const revenue = campaign.revenueEvents.reduce((sum, event) => sum + parseFloat(event.payout.toString()), 0);
+      const cost = campaign.messages.reduce((sum, msg) => sum + (msg.costAmount ? parseFloat(msg.costAmount.toString()) : 0), 0);
       const clicks = campaign.shortlinks.reduce((sum, s) => sum + s.clicks, 0);
       const opens = campaign.shortlinks.reduce((sum, s) => sum + s.opens, 0);
       const roas = cost > 0 ? (revenue / cost) : 0;

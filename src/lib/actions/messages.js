@@ -55,7 +55,8 @@ export async function getMessages(filters = {}) {
         campaign: {
           select: {
             id: true,
-            name: true
+            name: true,
+            totalRevenue: true // Include totalRevenue for potential display
           }
         }
       },
@@ -65,7 +66,15 @@ export async function getMessages(filters = {}) {
       take: filters.limit || 1000
     });
 
-    return messages;
+    // Convert Decimal fields to numbers to avoid client component warnings
+    return messages.map(message => ({
+      ...message,
+      costAmount: message.costAmount ? parseFloat(message.costAmount.toString()) : null,
+      campaign: message.campaign ? {
+        ...message.campaign,
+        totalRevenue: message.campaign.totalRevenue ? parseFloat(message.campaign.totalRevenue.toString()) : null
+      } : null
+    }));
   } catch (error) {
     console.error('Error fetching messages:', error);
     throw error;

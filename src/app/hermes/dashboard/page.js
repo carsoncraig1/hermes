@@ -2,6 +2,7 @@ import { getSubscribedContactsCount } from '@/lib/actions/contacts';
 import DashboardHeader from './components/DashboardHeader';
 import ConsoleWindow from '../console/components/ConsoleWindow';
 import DedicatedSendCard from './components/DedicatedSendCard';
+import ManualFireCard from './components/ManualFireCard';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import './dashboard.css';
 
@@ -22,7 +23,10 @@ export default async function Dashboard() {
               <p className="stat-number">{subscribedCount}</p>
             </div>
           </div>
-          <DedicatedSendCard />
+          <div className="campaign-cards-container">
+            <DedicatedSendCard />
+            <ManualFireCard />
+          </div>
           <AnalyticsDashboard />
         </div>
         <div className="side-content">

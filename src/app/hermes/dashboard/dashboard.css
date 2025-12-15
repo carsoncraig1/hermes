@@ -55,6 +55,13 @@
   gap: 1rem;
 }
 
+/* Campaign Cards Container */
+.campaign-cards-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
 .stat-card {
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
@@ -110,6 +117,10 @@
   
   .side-content {
     width: 100%;
+  }
+  
+  .campaign-cards-container {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -41,7 +41,13 @@ export default function CreateWorkflowCampaign({ onClose }) {
     if (!name.trim()) {
       return;
     }
-    if (!workflow || !workflow.nodes || workflow.nodes.length <= 1) {
+    if (!workflow || !workflow.nodes || workflow.nodes.length === 0) {
+      return;
+    }
+    // Must have at least one trigger node
+    const hasTrigger = workflow.nodes.some(node => node.type === 'trigger');
+    if (!hasTrigger) {
+      alert('Workflow must have at least one trigger node');
       return;
     }
 
@@ -90,7 +96,7 @@ export default function CreateWorkflowCampaign({ onClose }) {
             </button>
             <button 
               type="submit" 
-              disabled={saving || !name.trim() || !workflow || !workflow.nodes || workflow.nodes.length <= 1} 
+              disabled={saving || !name.trim() || !workflow || !workflow.nodes || workflow.nodes.length === 0 || !workflow.nodes.some(node => node.type === 'trigger')} 
               className={styles.submitButton}
             >
               {saving ? 'Creating...' : 'Create Campaign'}

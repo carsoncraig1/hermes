@@ -252,6 +252,182 @@ export async function getCampaignContacts(campaignId) {
   })
 }
 
+// Get contacts by tags and/or sources for manual fire
+export async function getContactsForManualFire({ selectedTags = [], selectedSources = [], targetAllSubscribed = false }) {
+  try {
+    const userId = await getUserId()
+    
+    if (targetAllSubscribed) {
+      return await prisma.contact.findMany({
+        where: {
+          userId,
+          subscribed: true
+        }
+      })
+    }
+    
+    const whereConditions = {
+      userId,
+      subscribed: true,
+    }
+    
+    // Build OR conditions for tags and sources
+    if (selectedTags.length > 0 || selectedSources.length > 0) {
+      const orConditions = []
+      
+      if (selectedTags.length > 0) {
+        // Get tag IDs from tag names (handle both string names and objects with name property)
+        const tagNames = selectedTags.map(tag => typeof tag === 'string' ? tag : tag.name).filter(Boolean)
+        const tags = await prisma.tag.findMany({
+          where: {
+            userId,
+            name: { in: tagNames }
+          },
+          select: { id: true }
+        })
+        const tagIds = tags.map(t => t.id)
+        
+        if (tagIds.length > 0) {
+          orConditions.push({
+            tags: {
+              some: {
+                id: {
+                  in: tagIds
+                }
+              }
+            }
+          })
+        }
+      }
+      
+      if (selectedSources.length > 0) {
+        orConditions.push({
+          source: {
+            in: selectedSources
+          }
+        })
+      }
+      
+      if (orConditions.length > 0) {
+        whereConditions.OR = orConditions
+      }
+    }
+    
+    return await prisma.contact.findMany({
+      where: whereConditions
+    })
+  } catch (error) {
+    console.error('Error fetching contacts for manual fire:', error)
+    throw error
+  }
+}
+
+// Execute manual fire workflow
+export async function executeManualFire(campaignId, { selectedTags = [], selectedSources = [], targetAllSubscribed = false }) {
+  try {
+    const userId = await getUserId()
+    
+    // Ensure campaignId is an integer
+    const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
+    
+    // Verify ownership and get campaign
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: campaignIdInt, userId },
+      select: {
+        id: true,
+        name: true,
+        workflow: true
+      }
+    })
+    
+    if (!campaign) {
+      throw new Error('Campaign not found')
+    }
+    
+    if (!campaign.workflow) {
+      throw new Error('Campaign is not a workflow campaign')
+    }
+    
+    // Verify it's a manual fire workflow
+    const triggerNode = campaign.workflow.nodes?.find(node => node.type === 'trigger')
+    if (!triggerNode || triggerNode.data?.triggerType !== 'manualFire') {
+      throw new Error('Campaign is not a manual fire workflow')
+    }
+    
+    // Get contacts based on selection
+    const contacts = await getContactsForManualFire({
+      selectedTags,
+      selectedSources,
+      targetAllSubscribed
+    })
+    
+    if (contacts.length === 0) {
+      throw new Error('No contacts found matching the selected criteria')
+    }
+    
+    // Import workflow executor
+    const { executeWorkflow } = await import('@/lib/workflow/executor')
+    
+    // Log manual fire start
+    await serverLog(
+      `Manual fire started: "${campaign.name}" to ${contacts.length} contacts`,
+      'info',
+      {
+        campaignId: campaignIdInt,
+        campaignName: campaign.name,
+        contactsCount: contacts.length,
+        selectedTags,
+        selectedSources,
+        targetAllSubscribed
+      },
+      userId
+    ).catch(err => console.error('Error logging manual fire start:', err))
+    
+    let successCount = 0
+    let failCount = 0
+    
+    // Execute workflow for each contact
+    for (const contact of contacts) {
+      if (!contact.phone || !contact.subscribed) {
+        failCount++
+        continue
+      }
+      
+      try {
+        await executeWorkflow(campaign.workflow, contact, userId, campaignIdInt)
+        successCount++
+      } catch (error) {
+        failCount++
+        console.error(`Error executing workflow for contact ${contact.phone}:`, error)
+      }
+    }
+    
+    // Log manual fire completion
+    await serverLog(
+      `Manual fire completed: "${campaign.name}" - ${successCount} executed, ${failCount} failed`,
+      successCount > 0 && failCount === 0 ? 'info' : failCount > 0 ? 'warn' : 'error',
+      {
+        campaignId: campaignIdInt,
+        campaignName: campaign.name,
+        totalContacts: contacts.length,
+        successCount,
+        failCount
+      },
+      userId
+    ).catch(err => console.error('Error logging manual fire completion:', err))
+    
+    return {
+      success: true,
+      totalContacts: contacts.length,
+      successCount,
+      failCount
+    }
+  } catch (error) {
+    console.error('Error executing manual fire:', error)
+    throw error
+  }
+}
+
 export async function getCampaigns() {
   try {
     const userId = await getUserId()
@@ -289,11 +465,17 @@ export async function getCampaigns() {
       const queued = messages.filter(m => m.status === 'queued' || m.status === 'sending').length
       
       const totalCost = messages.reduce((sum, m) => {
-        return sum + (m.costAmount ? parseFloat(m.costAmount) : 0)
+        return sum + (m.costAmount ? parseFloat(m.costAmount.toString()) : 0)
       }, 0)
       
       // Convert Decimal to number to avoid client component warnings
       const totalRevenue = campaign.totalRevenue ? parseFloat(campaign.totalRevenue.toString()) : 0;
+      
+      // Convert messages array to remove Decimal objects
+      const messagesClean = messages.map(m => ({
+        ...m,
+        costAmount: m.costAmount ? parseFloat(m.costAmount.toString()) : null
+      }))
       
       return {
         id: campaign.id,
@@ -309,6 +491,7 @@ export async function getCampaigns() {
         updatedAt: campaign.updatedAt,
         targets: campaign.targets,
         shortlinks: campaign.shortlinks,
+        messages: messagesClean, // Include cleaned messages array
         deliveryStats: {
           total,
           delivered,
@@ -535,6 +718,41 @@ export async function updateWorkflowCampaign({ id, name, workflow }) {
 }
 
 // Get only dedicated send campaigns (legacy campaigns without workflow)
+export async function getWorkflowCampaigns() {
+  try {
+    const userId = await getUserId()
+    
+    const campaigns = await prisma.campaign.findMany({
+      where: {
+        userId,
+        workflow: { not: null },
+        enabled: true
+      },
+      select: {
+        id: true,
+        name: true,
+        workflow: true
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    })
+    
+    // Filter to only include campaigns with manual fire triggers
+    const manualFireCampaigns = campaigns.filter(campaign => {
+      if (!campaign.workflow?.nodes) return false
+      const triggerNode = campaign.workflow.nodes.find(node => node.type === 'trigger')
+      if (!triggerNode) return false
+      return triggerNode.data?.triggerType === 'manualFire'
+    })
+    
+    return manualFireCampaigns
+  } catch (error) {
+    console.error('Error fetching workflow campaigns:', error)
+    throw error
+  }
+}
+
 export async function getDedicatedSendCampaigns() {
   try {
     const userId = await getUserId()

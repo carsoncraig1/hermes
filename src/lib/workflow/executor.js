@@ -638,6 +638,12 @@ export async function triggerWorkflowsForContact(contact, userId) {
         return;
       }
 
+      // Skip manual fire triggers - they are only executed manually
+      const triggerType = triggerNode.data?.triggerType || 'newLead';
+      if (triggerType === 'manualFire') {
+        return;
+      }
+
       // Get the trigger source configuration
       const triggerSource = triggerNode.data?.triggerSource;
 

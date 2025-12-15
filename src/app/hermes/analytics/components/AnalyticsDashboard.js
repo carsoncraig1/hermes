@@ -159,7 +159,7 @@ export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPe
           <div className={styles.metricLabel}>Conversion Rate</div>
           <div className={styles.metricValue}>
             {analytics.totalClicks > 0 
-              ? `${((analytics.revenueEventCount || 0) / analytics.totalClicks) * 100).toFixed(2)}%`
+              ? `${(((analytics.revenueEventCount || 0) / analytics.totalClicks) * 100).toFixed(2)}%`
               : '0%'}
           </div>
         </div>
