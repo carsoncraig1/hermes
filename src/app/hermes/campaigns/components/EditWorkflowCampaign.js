@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { updateWorkflowCampaign } from '@/lib/actions/campaigns';
 import WorkflowBuilder from './WorkflowBuilder';
@@ -12,6 +12,7 @@ export default function EditWorkflowCampaign({ campaign, onClose }) {
   const [workflow, setWorkflow] = useState(campaign?.workflow || null);
   const [saving, setSaving] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const workflowBuilderRef = useRef(null);
 
   useEffect(() => {
     const checkSidebar = () => {
@@ -41,7 +42,26 @@ export default function EditWorkflowCampaign({ campaign, onClose }) {
     if (!name.trim()) {
       return;
     }
-    if (!workflow || !workflow.nodes || workflow.nodes.length <= 1) {
+    
+    // Get the latest workflow state from WorkflowBuilder
+    let currentWorkflow = workflow;
+    if (workflowBuilderRef.current?.getCurrentWorkflow) {
+      const latestWorkflow = workflowBuilderRef.current.getCurrentWorkflow();
+      if (latestWorkflow) {
+        currentWorkflow = latestWorkflow;
+        setWorkflow(latestWorkflow);
+      }
+    }
+    
+    if (!currentWorkflow || !currentWorkflow.nodes || currentWorkflow.nodes.length === 0) {
+      alert('Workflow must have at least one node');
+      return;
+    }
+    
+    // Must have at least one trigger node
+    const hasTrigger = currentWorkflow.nodes.some(node => node.type === 'trigger');
+    if (!hasTrigger) {
+      alert('Workflow must have at least one trigger node. Please add a trigger from the Trigger Nodes section.');
       return;
     }
 
@@ -50,7 +70,7 @@ export default function EditWorkflowCampaign({ campaign, onClose }) {
       await updateWorkflowCampaign({
         id: campaign.id,
         name,
-        workflow,
+        workflow: currentWorkflow,
       });
       router.refresh();
       onClose();
@@ -78,6 +98,7 @@ export default function EditWorkflowCampaign({ campaign, onClose }) {
           <div className={styles.workflowSection}>
             <div className={styles.workflowContainer}>
               <WorkflowBuilder
+                ref={workflowBuilderRef}
                 workflow={workflow}
                 onSave={handleSave}
                 campaignId={campaign.id}
@@ -92,7 +113,7 @@ export default function EditWorkflowCampaign({ campaign, onClose }) {
             </button>
             <button 
               type="submit" 
-              disabled={saving || !name.trim() || !workflow || !workflow.nodes || workflow.nodes.length <= 1} 
+              disabled={saving || !name.trim() || !workflow || !workflow.nodes || workflow.nodes.length === 0 || !workflow.nodes.some(node => node.type === 'trigger')} 
               className={styles.submitButton}
             >
               {saving ? 'Saving...' : 'Save Changes'}

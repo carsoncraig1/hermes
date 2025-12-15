@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, useMemo, useEffect, useRef } from 'react';
+import { useCallback, useState, useMemo, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import {
   ReactFlow,
   Background,
@@ -539,7 +539,7 @@ const createNodeTypes = (onDelete, availableShortlinks = [], availableSources = 
 const initialNodes = [];
 const initialEdges = [];
 
-export default function WorkflowBuilder({ workflow, onSave, campaignId, campaignName, onCampaignNameChange }) {
+const WorkflowBuilder = forwardRef(function WorkflowBuilder({ workflow, onSave, campaignId, campaignName, onCampaignNameChange }, ref) {
   const [nodes, setNodes, onNodesChange] = useNodesState(workflow?.nodes || initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(workflow?.edges || initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -671,14 +671,7 @@ export default function WorkflowBuilder({ workflow, onSave, campaignId, campaign
     setNodes((nds) => [...nds, newNode]);
   };
 
-  const handleSave = () => {
-    // Validate workflow has at least one trigger node
-    const hasTrigger = nodes.some(node => node.type === 'trigger');
-    if (!hasTrigger) {
-      alert('Workflow must have at least one trigger node. Please add a trigger from the Trigger Nodes section.');
-      return;
-    }
-    
+  const getCurrentWorkflow = useCallback(() => {
     // Clean up nodes before saving (remove onChange handlers and React Flow internal props)
     const cleanNodes = nodes.map(node => ({
       id: node.id,
@@ -695,7 +688,7 @@ export default function WorkflowBuilder({ workflow, onSave, campaignId, campaign
       },
     }));
     
-    const workflowData = {
+    return {
       nodes: cleanNodes,
       edges: edges.map(edge => ({
         id: edge.id,
@@ -705,8 +698,24 @@ export default function WorkflowBuilder({ workflow, onSave, campaignId, campaign
         targetHandle: edge.targetHandle,
       })),
     };
+  }, [nodes, edges]);
+
+  const handleSave = () => {
+    // Validate workflow has at least one trigger node
+    const hasTrigger = nodes.some(node => node.type === 'trigger');
+    if (!hasTrigger) {
+      alert('Workflow must have at least one trigger node. Please add a trigger from the Trigger Nodes section.');
+      return;
+    }
+    
+    const workflowData = getCurrentWorkflow();
     onSave(workflowData);
   };
+
+  // Expose getCurrentWorkflow method via ref
+  useImperativeHandle(ref, () => ({
+    getCurrentWorkflow,
+  }));
 
   const nodeTypes = useMemo(() => createNodeTypes(handleDeleteNode, availableShortlinks, availableSources), [handleDeleteNode, availableShortlinks, availableSources]);
 
@@ -820,5 +829,7 @@ export default function WorkflowBuilder({ workflow, onSave, campaignId, campaign
       </div>
     </div>
   );
-}
+});
+
+export default WorkflowBuilder;
 
