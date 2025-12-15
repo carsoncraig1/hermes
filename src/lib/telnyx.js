@@ -6,6 +6,7 @@ import { auth } from '@/lib/auth';
 import { validateMessage } from '@/lib/messageUtils';
 import { checkRateLimit, createMessageRecord } from '@/lib/actions/messages';
 import { createMessageClickCodes } from '@/lib/messageClickCodes';
+import { serverLog } from '@/lib/serverLogger';
 
 /**
  * Normalize phone number to E.164 format for Telnyx
