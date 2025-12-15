@@ -522,7 +522,7 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
         const segmentationEdges = graph.get(nodeId) || [];
         
         // Route based on match result and edge sourceHandle
-        segmentationEdges.forEach((edge) => {
+        for (const edge of segmentationEdges) {
           const shouldFollow = 
             (matches && edge.sourceHandle === 'source-true') || // YES path
             (!matches && edge.sourceHandle === 'source-false'); // NO path
@@ -530,7 +530,7 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
           if (shouldFollow && !visited.has(edge.target)) {
             await processNode(edge.target, 0);
           }
-        });
+        }
         
         // Don't add nodes below - we've already handled routing
         return;
