@@ -579,7 +579,7 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
             campaignId,
             contactId: contact.id,
             contactPhone: contact.phone,
-            nodeId: currentNodeId,
+            nodeId: nodeId,
             nodeType: 'delay',
             delayValue,
             delayUnit,

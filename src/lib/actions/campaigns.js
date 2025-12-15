@@ -390,10 +390,11 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
     const validContacts = contacts.filter(contact => contact.phone && contact.subscribed)
     
     // Process contacts in parallel batches with rate limiting
-    // Batch size: 100 contacts at a time for faster processing
+    // Batch size: 5 contacts at a time to prevent database connection pool exhaustion
+    // Each workflow execution opens multiple DB connections (rate limit check, logging, message sending)
+    // With 5 contacts, we're sending ~5 messages per batch, well under rate limits
     // Rate limit: 1200 messages/minute = 20 messages/second
-    // We'll send in batches of 100 with small delays to stay under rate limit
-    const BATCH_SIZE = 100
+    const BATCH_SIZE = 5
     const batches = []
     for (let i = 0; i < validContacts.length; i += BATCH_SIZE) {
       batches.push(validContacts.slice(i, i + BATCH_SIZE))
@@ -436,11 +437,14 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
         }
       })
       
-      // Small delay between batches to respect rate limits
-      // 100 contacts per batch, ~20 messages/second = ~5 seconds per batch
-      // We'll wait 50ms between batches to allow rate limit to recover
+      // Delay between batches to:
+      // 1. Allow database connections to close and be reused
+      // 2. Respect rate limits (5 contacts per batch = ~0.25 seconds at 20 msg/sec)
+      // 3. Prevent overwhelming the database connection pool
       if (batchIndex < batches.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 50))
+        // Wait 500ms between batches to allow connections to close and rate limit to recover
+        // This gives the database time to close connections from the previous batch
+        await new Promise(resolve => setTimeout(resolve, 500))
       }
     }
     
