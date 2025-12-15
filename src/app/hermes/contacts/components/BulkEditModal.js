@@ -7,8 +7,9 @@ import styles from './BulkEditModal.module.css';
 
 export default function BulkEditModal({ selectedContacts, onClose, onUpdate }) {
   const [source, setSource] = useState('');
-  const [selectedTags, setSelectedTags] = useState([]);
+  const [selectedTagNames, setSelectedTagNames] = useState([]);
   const [availableTags, setAvailableTags] = useState([]);
+  const [tagInput, setTagInput] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -23,12 +24,27 @@ export default function BulkEditModal({ selectedContacts, onClose, onUpdate }) {
     loadTags();
   }, []);
 
-  const handleTagToggle = (tagId) => {
-    setSelectedTags(prev => 
-      prev.includes(tagId)
-        ? prev.filter(id => id !== tagId)
-        : [...prev, tagId]
+  const handleTagToggle = (tagName) => {
+    setSelectedTagNames(prev => 
+      prev.includes(tagName)
+        ? prev.filter(name => name !== tagName)
+        : [...prev, tagName]
     );
+  };
+
+  const handleAddTag = (e) => {
+    if (e.key === 'Enter' && tagInput.trim()) {
+      e.preventDefault();
+      const newTag = tagInput.trim();
+      if (!selectedTagNames.includes(newTag)) {
+        setSelectedTagNames(prev => [...prev, newTag]);
+      }
+      setTagInput('');
+    }
+  };
+
+  const handleRemoveTag = (tagToRemove) => {
+    setSelectedTagNames(prev => prev.filter(tag => tag !== tagToRemove));
   };
 
   const handleSubmit = async (e) => {
@@ -40,11 +56,9 @@ export default function BulkEditModal({ selectedContacts, onClose, onUpdate }) {
       for (const contact of selectedContacts) {
         const updateData = {
           id: contact.id,
+          phone: contact.phone,
           source: source || undefined,
-          tags: selectedTags.map(tagId => {
-            const tag = availableTags.find(t => t.id === tagId);
-            return tag ? tag.name : null;
-          }).filter(Boolean),
+          tags: selectedTagNames,
         };
 
         // Only update if there's something to update
@@ -84,22 +98,49 @@ export default function BulkEditModal({ selectedContacts, onClose, onUpdate }) {
           </div>
 
           <div className={styles.formGroup}>
-            <label>Tags</label>
-            <div className={styles.tagsGrid}>
-              {availableTags.map(tag => (
-                <label key={tag.id} className={styles.tagLabel}>
-                  <input
-                    type="checkbox"
-                    checked={selectedTags.includes(tag.id)}
-                    onChange={() => handleTagToggle(tag.id)}
-                    className={styles.checkbox}
-                  />
-                  {tag.name}
-                </label>
-              ))}
+            <label htmlFor="tags">Tags</label>
+            <div className={styles.tagInput}>
+              <div className={styles.tagContainer}>
+                {selectedTagNames.map((tag, index) => (
+                  <span key={index} className={styles.tag}>
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTag(tag)}
+                      className={styles.removeTag}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <input
+                type="text"
+                id="tags"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={handleAddTag}
+                placeholder="Type and press Enter to add tags"
+                className={styles.tagInputField}
+              />
             </div>
-            {availableTags.length === 0 && (
-              <div className={styles.emptyState}>No tags available</div>
+            {availableTags.length > 0 && (
+              <div className={styles.availableTagsSection}>
+                <div className={styles.availableTagsLabel}>Quick add existing tags:</div>
+                <div className={styles.tagsGrid}>
+                  {availableTags.map(tag => (
+                    <label key={tag.id} className={styles.tagLabel}>
+                      <input
+                        type="checkbox"
+                        checked={selectedTagNames.includes(tag.name)}
+                        onChange={() => handleTagToggle(tag.name)}
+                        className={styles.checkbox}
+                      />
+                      {tag.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
 

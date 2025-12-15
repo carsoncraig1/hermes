@@ -5,9 +5,21 @@ import AnalyticsDashboard from './components/AnalyticsDashboard';
 export const dynamic = 'force-dynamic';
 
 export default async function Analytics() {
+  // Use the same default date range as the client (last 30 days)
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(endDate.getDate() - 30);
+  
+  const filters = {
+    dateRange: {
+      start: startDate,
+      end: endDate
+    }
+  };
+
   const [analytics, campaignPerformance] = await Promise.all([
-    getAnalytics(),
-    getCampaignsWithROAS()
+    getAnalytics(filters),
+    getCampaignsWithROAS(filters)
   ]);
 
   return (

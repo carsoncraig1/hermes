@@ -9,6 +9,7 @@ import {
   getFilteredRowModel,
   useReactTable,
 } from '@tanstack/react-table';
+import { createSelectColumn } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import styles from './ContactsTable.module.css';
 import AddContactModal from './AddContactModal';
@@ -58,8 +59,31 @@ function DraggableColumnHeader({ header, column }) {
   );
 }
 
-const createColumns = (columnOrder = [], rowSelection, setRowSelection, filteredContacts) => [
-  columnHelper.accessor('id', {
+const createColumns = (columnOrder = [], rowSelection, setRowSelection, filteredContacts) => {
+  // Create select column for row selection
+  const selectColumn = columnHelper.display({
+    id: 'select',
+    header: ({ table }) => (
+      <input
+        type="checkbox"
+        checked={table.getIsAllRowsSelected()}
+        onChange={table.getToggleAllRowsSelectedHandler()}
+        className={styles.selectCheckbox}
+      />
+    ),
+    cell: ({ row }) => (
+      <input
+        type="checkbox"
+        checked={row.getIsSelected()}
+        onChange={row.getToggleSelectedHandler()}
+        className={styles.selectCheckbox}
+      />
+    ),
+  });
+
+  return [
+    selectColumn,
+    columnHelper.accessor('id', {
     header: 'ID',
     id: 'id',
   }),
@@ -143,10 +167,11 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
   }),
   columnHelper.accessor('updatedAt', {
     header: 'Updated At',
-    id: 'updatedAt',
+      id: 'updatedAt',
     cell: info => format(new Date(info.getValue()), 'yyyy-MM-dd HH:mm'),
   }),
-];
+  ];
+};
 
 // Available filter fields with their types
 const FILTER_FIELDS = [
@@ -911,9 +936,12 @@ export default function ContactsTable({ initialContacts }) {
 
   const columns = useMemo(() => createColumns(columnOrder, rowSelection, setRowSelection, filteredContacts), [columnOrder, rowSelection, filteredContacts]);
   
-  const visibleColumns = useMemo(() => 
-    columns.filter(col => visibleFields.includes(col.id) || col.id === 'select')
-  , [columns, visibleFields]);
+  const visibleColumns = useMemo(() => {
+    // Always include select column first, then filter other columns
+    const selectCol = columns.find(col => col.id === 'select');
+    const otherCols = columns.filter(col => col.id !== 'select' && visibleFields.includes(col.id));
+    return selectCol ? [selectCol, ...otherCols] : otherCols;
+  }, [columns, visibleFields]);
 
   const table = useReactTable({
     data: filteredContacts,
@@ -923,11 +951,12 @@ export default function ContactsTable({ initialContacts }) {
     getFilteredRowModel: getFilteredRowModel(),
     enableRowSelection: true,
     onRowSelectionChange: setRowSelection,
+    getRowId: (row) => String(row.id),
     state: {
       globalFilter,
       columnFilters,
       rowSelection,
-      columnOrder: columnOrder.filter(f => visibleFields.includes(f)),
+      columnOrder: ['select', ...columnOrder.filter(f => visibleFields.includes(f))],
     },
     onGlobalFilterChange: setGlobalFilter,
     onColumnFiltersChange: setColumnFilters,
@@ -1071,74 +1100,44 @@ export default function ContactsTable({ initialContacts }) {
       <div className={styles.tableWrapper}>
         <table className={styles.table}>
           <thead>
-            <tr>
-              <th className={styles.checkboxCell}>
-                <input type="checkbox" />
-              </th>
-              {table.getHeaderGroups().map(headerGroup => (
-                headerGroup.headers.map(header => (
-                  <th key={header.id} className={styles.draggableHeader}>
+            {table.getHeaderGroups().map(headerGroup => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map(header => (
+                  <th key={header.id} className={header.id === 'select' ? styles.checkboxCell : styles.draggableHeader}>
                     {flexRender(header.column.columnDef.header, header.getContext())}
                   </th>
-                ))
-              ))}
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {contactsList.map((contact) => (
-              <tr key={contact.id}>
-                <td className={styles.checkboxCell}>
-                  <input type="checkbox" />
-                </td>
-                {visibleColumns.map(column => {
-                  const cellValue = contact[column.id];
-                  let displayValue = cellValue;
-                  
-                  if (column.id === 'clickid') {
-                    displayValue = Array.isArray(cellValue) ? cellValue.join(', ') : (cellValue || 'null');
-                  } else if (column.id === 'useragent') {
-                    displayValue = cellValue ? (cellValue.length > 50 ? cellValue.substring(0, 50) + '...' : cellValue) : 'null';
-                  } else if (column.id === 'tags') {
-                    displayValue = contact.tags && contact.tags.length > 0 ? (
-                      <div className={styles.tagContainer}>
-                        {contact.tags.map((tag) => (
-                          <span key={tag.id} className={styles.tag}>
-                            {tag.name}
-                          </span>
-                        ))}
-                      </div>
-                    ) : 'No tags';
-                  } else if (column.id === 'lastMessageSent') {
-                    displayValue = cellValue ? format(new Date(cellValue), 'yyyy-MM-dd HH:mm') : 'Never';
-                  } else if (column.id === 'createdAt' || column.id === 'updatedAt') {
-                    displayValue = cellValue ? format(new Date(cellValue), 'yyyy-MM-dd HH:mm') : 'null';
-                  } else {
-                    displayValue = cellValue || 'null';
-                  }
-                  
-                  return (
-                    <td key={column.id} data-column={column.id}>
-                      {displayValue}
-                    </td>
-                  );
-                })}
-                <td className={styles.actions}>
-                  <button 
-                    onClick={() => handleEdit(contact)}
-                    className={styles.actionButton}
-                  >
-                    Edit
-                  </button>
-                  <button 
-                    onClick={() => handleDelete(contact.id)}
-                    className={styles.actionButton}
-                  >
-                    Delete
-                  </button>
-                </td>
+                ))}
+                <th>Actions</th>
               </tr>
             ))}
+          </thead>
+          <tbody>
+            {table.getRowModel().rows.map((row) => {
+              const contact = row.original;
+              return (
+                <tr key={row.id}>
+                  {row.getVisibleCells().map(cell => (
+                    <td key={cell.id} className={cell.column.id === 'select' ? styles.checkboxCell : ''} data-column={cell.column.id}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                  <td className={styles.actions}>
+                    <button 
+                      onClick={() => handleEdit(contact)}
+                      className={styles.actionButton}
+                    >
+                      Edit
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(contact.id)}
+                      className={styles.actionButton}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

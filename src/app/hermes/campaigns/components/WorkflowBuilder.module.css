@@ -399,10 +399,12 @@
   transition: all var(--transition-fast);
   max-width: 200px;
   flex-shrink: 0;
+  font-weight: 500;
 }
 
 .shortlinkSelect:hover {
   border-color: var(--accent-orange);
+  background: var(--bg-elevated);
 }
 
 .shortlinkSelect:focus {
@@ -411,8 +413,47 @@
   box-shadow: 0 0 0 3px var(--accent-orange-muted);
 }
 
+.noShortlinksHint {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-style: italic;
+  padding: 0.25rem 0.5rem;
+}
+
 .messagePreview {
   position: relative;
+}
+
+.shortlinkInsertContainer {
+  position: absolute;
+  bottom: 0.5rem;
+  right: 0.5rem;
+  z-index: 10;
+}
+
+.shortlinkInsertButton {
+  background: var(--accent-orange);
+  border: none;
+  border-radius: var(--border-radius-sm);
+  padding: 0.5rem 0.75rem;
+  color: white;
+  font-size: 0.8125rem;
+  font-family: var(--font-family);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-sm);
+}
+
+.shortlinkInsertButton:hover {
+  background: var(--accent-orange-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.shortlinkInsertButton:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-orange-muted);
 }
 
 .nodeInput {

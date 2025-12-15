@@ -219,20 +219,26 @@ const ActionNode = ({ data, selected, id, onDelete, availableShortlinks = [] }) 
         <div className={styles.nodeField}>
           <div className={styles.messageHeader}>
             <label>Message Content</label>
-            {availableShortlinks.length > 0 && (
+            {availableShortlinks.length > 0 ? (
               <select
                 onChange={handleShortlinkInsert}
                 className={styles.shortlinkSelect}
                 onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
                 defaultValue=""
+                title="Insert a shortlink into your message"
               >
-                <option value="">Insert Shortlink...</option>
+                <option value="">🔗 Insert Shortlink...</option>
                 {availableShortlinks.map(shortlink => (
                   <option key={shortlink.id} value={shortlink.id}>
                     {shortlink.nickname || `Shortlink #${shortlink.id}`}
                   </option>
                 ))}
               </select>
+            ) : (
+              <span className={styles.noShortlinksHint} title="Create shortlinks in the Shortlinks page to insert them here">
+                No shortlinks available
+              </span>
             )}
           </div>
           <div className={styles.messagePreview}>
@@ -255,6 +261,25 @@ const ActionNode = ({ data, selected, id, onDelete, availableShortlinks = [] }) 
               className={styles.nodeInput}
               onClick={(e) => e.stopPropagation()}
             />
+            {availableShortlinks.length > 0 && (
+              <div className={styles.shortlinkInsertContainer}>
+                <select
+                  onChange={handleShortlinkInsert}
+                  className={styles.shortlinkInsertButton}
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  defaultValue=""
+                  title="Insert a shortlink into your message"
+                >
+                  <option value="">🔗 Insert Shortlink</option>
+                  {availableShortlinks.map(shortlink => (
+                    <option key={shortlink.id} value={shortlink.id}>
+                      {shortlink.nickname || `Shortlink #${shortlink.id}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div 
               className={styles.messageDisplay}
               dangerouslySetInnerHTML={{ 

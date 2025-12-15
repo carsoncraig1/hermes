@@ -9,9 +9,9 @@ import BreakdownTable from './BreakdownTable';
 import styles from './AnalyticsDashboard.module.css';
 
 export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPerformance }) {
-  const [analytics, setAnalytics] = useState(initialAnalytics);
-  const [campaignPerformance, setCampaignPerformance] = useState(initialCampaignPerformance);
-  const [loading, setLoading] = useState(false);
+  const [analytics, setAnalytics] = useState(initialAnalytics || null);
+  const [campaignPerformance, setCampaignPerformance] = useState(initialCampaignPerformance || []);
+  const [loading, setLoading] = useState(!initialAnalytics);
   const [breakdownData, setBreakdownData] = useState([]);
   const [dimensionValues, setDimensionValues] = useState(null);
   
@@ -73,8 +73,18 @@ export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPe
     }
   };
 
+  const [isInitialMount, setIsInitialMount] = useState(true);
+
   useEffect(() => {
-    refreshData();
+    // Skip refresh on initial mount if we have initialAnalytics
+    if (isInitialMount && initialAnalytics) {
+      setIsInitialMount(false);
+      return;
+    }
+    // Refresh when date range changes (but not on initial mount)
+    if (!isInitialMount) {
+      refreshData();
+    }
   }, [dateRange.start, dateRange.end]);
 
   // Build breakdown tree from data
@@ -111,37 +121,45 @@ export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPe
     setDimensions(newDimensions);
   };
 
+  if (loading && !analytics) {
+    return <div className={styles.loading}>Loading analytics...</div>;
+  }
+
+  if (!analytics) {
+    return <div className={styles.error}>Failed to load analytics</div>;
+  }
+
   return (
     <div className={styles.analyticsContainer}>
       {/* Summary Cards */}
       <div className={styles.metricsGrid}>
         <div className={styles.metricCard}>
           <div className={styles.metricLabel}>Total Revenue</div>
-          <div className={styles.metricValue}>{formatCurrency(analytics.totalRevenue)}</div>
+          <div className={styles.metricValue}>{formatCurrency(analytics.totalRevenue || 0)}</div>
         </div>
         <div className={styles.metricCard}>
           <div className={styles.metricLabel}>Total Cost</div>
-          <div className={styles.metricValue}>{formatCurrency(analytics.totalCost)}</div>
+          <div className={styles.metricValue}>{formatCurrency(analytics.totalCost || 0)}</div>
         </div>
         <div className={styles.metricCard}>
           <div className={styles.metricLabel}>ROAS</div>
           <div className={`${styles.metricValue} ${styles.roasValue}`}>
-            {formatROAS(analytics.roas)}
+            {formatROAS(analytics.roas || 0)}
           </div>
         </div>
         <div className={styles.metricCard}>
           <div className={styles.metricLabel}>Revenue Events</div>
-          <div className={styles.metricValue}>{formatNumber(analytics.revenueEventCount)}</div>
+          <div className={styles.metricValue}>{formatNumber(analytics.revenueEventCount || 0)}</div>
         </div>
         <div className={styles.metricCard}>
           <div className={styles.metricLabel}>Total Clicks</div>
-          <div className={styles.metricValue}>{formatNumber(analytics.totalClicks)}</div>
+          <div className={styles.metricValue}>{formatNumber(analytics.totalClicks || 0)}</div>
         </div>
         <div className={styles.metricCard}>
           <div className={styles.metricLabel}>Conversion Rate</div>
           <div className={styles.metricValue}>
             {analytics.totalClicks > 0 
-              ? `${((analytics.revenueEventCount / analytics.totalClicks) * 100).toFixed(2)}%`
+              ? `${((analytics.revenueEventCount || 0) / analytics.totalClicks) * 100).toFixed(2)}%`
               : '0%'}
           </div>
         </div>
