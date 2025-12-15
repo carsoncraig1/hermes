@@ -462,22 +462,34 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
   });
 
   // Execute workflow starting from trigger
+  // Use a queue-based approach where delays are handled asynchronously
   const visited = new Set();
-  const queue = [{ nodeId: triggerNode.id, delay: 0 }]; // Add delay tracking
-
-  while (queue.length > 0) {
-    const { nodeId: currentNodeId, delay: currentDelay } = queue.shift();
+  const scheduledNodes = new Map(); // Track scheduled node executions
+  
+  // Process node immediately or schedule it
+  const processNode = async (nodeId, delayMs = 0) => {
+    if (visited.has(nodeId)) return;
     
-    // Apply delay if needed
-    if (currentDelay > 0) {
-      await new Promise(resolve => setTimeout(resolve, currentDelay));
+    // If there's a delay, schedule it asynchronously (non-blocking)
+    if (delayMs > 0) {
+      const timeoutId = setTimeout(async () => {
+        await executeNode(nodeId);
+      }, delayMs);
+      scheduledNodes.set(nodeId, timeoutId);
+      return;
     }
     
-    if (visited.has(currentNodeId)) continue;
-    visited.add(currentNodeId);
+    // No delay, execute immediately
+    await executeNode(nodeId);
+  };
 
-    const currentNode = nodes.find((n) => n.id === currentNodeId);
-    if (!currentNode) continue;
+  // Execute a single node
+  const executeNode = async (nodeId) => {
+    if (visited.has(nodeId)) return;
+    visited.add(nodeId);
+
+    const currentNode = nodes.find((n) => n.id === nodeId);
+    if (!currentNode) return;
 
     // Execute node based on type
     switch (currentNode.type) {
@@ -498,7 +510,7 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
             campaignId,
             contactId: contact.id,
             contactPhone: contact.phone,
-            nodeId: currentNodeId,
+            nodeId: nodeId,
             nodeType: 'segmentation',
             matches,
             conditionsCount: conditions.length
@@ -507,7 +519,7 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
         ).catch(err => console.error('Error logging segmentation:', err));
         
         // Get connected edges for this segmentation node
-        const segmentationEdges = graph.get(currentNodeId) || [];
+        const segmentationEdges = graph.get(nodeId) || [];
         
         // Route based on match result and edge sourceHandle
         segmentationEdges.forEach((edge) => {
@@ -516,12 +528,12 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
             (!matches && edge.sourceHandle === 'source-false'); // NO path
           
           if (shouldFollow && !visited.has(edge.target)) {
-            queue.push({ nodeId: edge.target, delay: 0 });
+            await processNode(edge.target, 0);
           }
         });
         
         // Don't add nodes below - we've already handled routing
-        continue;
+        return;
 
       case 'action':
         // Execute action
@@ -536,7 +548,7 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
               campaignId,
               contactId: contact.id,
               contactPhone: contact.phone,
-              nodeId: currentNodeId,
+              nodeId: nodeId,
               nodeType: 'action',
               success: sendResult.success,
               error: sendResult.error
@@ -576,29 +588,32 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
           userId
         ).catch(err => console.error('Error logging delay:', err));
         
-        // Pass delay to next nodes
-        const delayEdges = graph.get(currentNodeId) || [];
-        delayEdges.forEach((edge) => {
+        // Schedule next nodes with the delay
+        const delayEdges = graph.get(nodeId) || [];
+        for (const edge of delayEdges) {
           if (!visited.has(edge.target)) {
-            queue.push({ nodeId: edge.target, delay: delayMs });
+            await processNode(edge.target, delayMs);
           }
-        });
+        }
         
         // Don't add nodes below - we've already handled delay propagation
-        continue;
+        return;
 
       default:
         console.warn(`Unknown node type: ${currentNode.type}`);
     }
 
-    // Add connected nodes to queue (for non-segmentation, non-delay nodes)
-    const nextEdges = graph.get(currentNodeId) || [];
-    nextEdges.forEach((edge) => {
+    // Add connected nodes to process (for non-segmentation, non-delay nodes)
+    const nextEdges = graph.get(nodeId) || [];
+    for (const edge of nextEdges) {
       if (!visited.has(edge.target)) {
-        queue.push({ nodeId: edge.target, delay: 0 });
+        await processNode(edge.target, 0);
       }
-    });
-  }
+    }
+  };
+
+  // Start processing from the trigger node
+  await processNode(triggerNode.id, 0);
 }
 
 // Trigger workflows for a new contact

@@ -386,19 +386,61 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
     let successCount = 0
     let failCount = 0
     
-    // Execute workflow for each contact
-    for (const contact of contacts) {
-      if (!contact.phone || !contact.subscribed) {
-        failCount++
-        continue
+    // Filter out invalid contacts
+    const validContacts = contacts.filter(contact => contact.phone && contact.subscribed)
+    
+    // Process contacts in parallel batches with rate limiting
+    // Batch size: 100 contacts at a time for faster processing
+    // Rate limit: 1200 messages/minute = 20 messages/second
+    // We'll send in batches of 100 with small delays to stay under rate limit
+    const BATCH_SIZE = 100
+    const batches = []
+    for (let i = 0; i < validContacts.length; i += BATCH_SIZE) {
+      batches.push(validContacts.slice(i, i + BATCH_SIZE))
+    }
+    
+    // Import rate limit checker
+    const { checkRateLimit } = await import('@/lib/actions/messages')
+    
+    // Process batches sequentially, but contacts within each batch in parallel
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex]
+      
+      // Check rate limit before processing batch
+      const rateLimit = await checkRateLimit(userId)
+      if (!rateLimit.allowed) {
+        // If rate limit exceeded, wait and retry
+        const waitTime = rateLimit.retryAfter || 1000 // Default 1 second
+        console.log(`Rate limit exceeded, waiting ${waitTime}ms before batch ${batchIndex + 1}`)
+        await new Promise(resolve => setTimeout(resolve, waitTime))
       }
       
-      try {
-        await executeWorkflow(campaign.workflow, contact, userId, campaignIdInt)
-        successCount++
-      } catch (error) {
-        failCount++
-        console.error(`Error executing workflow for contact ${contact.phone}:`, error)
+      // Execute all contacts in this batch in parallel
+      const results = await Promise.allSettled(
+        batch.map(contact => 
+          executeWorkflow(campaign.workflow, contact, userId, campaignIdInt)
+            .then(() => ({ success: true, contact }))
+            .catch(error => {
+              console.error(`Error executing workflow for contact ${contact.phone}:`, error)
+              return { success: false, contact, error }
+            })
+        )
+      )
+      
+      // Count successes and failures
+      results.forEach(result => {
+        if (result.status === 'fulfilled' && result.value.success) {
+          successCount++
+        } else {
+          failCount++
+        }
+      })
+      
+      // Small delay between batches to respect rate limits
+      // 100 contacts per batch, ~20 messages/second = ~5 seconds per batch
+      // We'll wait 50ms between batches to allow rate limit to recover
+      if (batchIndex < batches.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 50))
       }
     }
     
