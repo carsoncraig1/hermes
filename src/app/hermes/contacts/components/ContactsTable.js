@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import {
   createColumnHelper,
   flexRender,
@@ -635,6 +635,9 @@ export default function ContactsTable({ initialContacts }) {
   const [editingContact, setEditingContact] = useState(null);
   const [rowSelection, setRowSelection] = useState({});
   const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const actionsMenuRef = useRef(null);
 
   // Save column order to localStorage
   useEffect(() => {
@@ -645,6 +648,20 @@ export default function ContactsTable({ initialContacts }) {
   useEffect(() => {
     localStorage.setItem('contactsVisibleFields', JSON.stringify(visibleFields));
   }, [visibleFields]);
+
+  // Close actions menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(event.target)) {
+        setShowActionsMenu(false);
+      }
+    };
+
+    if (showActionsMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showActionsMenu]);
 
   useEffect(() => {
     if (!Array.isArray(contacts)) {
@@ -848,6 +865,50 @@ export default function ContactsTable({ initialContacts }) {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (!confirm(`Are you sure you want to delete ${selectedContacts.length} contact(s)? This action cannot be undone.`)) {
+      return;
+    }
+
+    setActionLoading(true);
+    try {
+      for (const contact of selectedContacts) {
+        await deleteContact(contact.id);
+      }
+      // Refresh contacts
+      await handleSync();
+      setRowSelection({});
+      setShowActionsMenu(false);
+    } catch (error) {
+      console.error('Error deleting contacts:', error);
+      alert('Failed to delete some contacts');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkSubscribe = async (subscribe) => {
+    setActionLoading(true);
+    try {
+      for (const contact of selectedContacts) {
+        await updateContact({
+          id: contact.id,
+          phone: contact.phone,
+          subscribed: subscribe
+        });
+      }
+      // Refresh contacts
+      await handleSync();
+      setRowSelection({});
+      setShowActionsMenu(false);
+    } catch (error) {
+      console.error(`Error ${subscribe ? 'subscribing' : 'unsubscribing'} contacts:`, error);
+      alert(`Failed to ${subscribe ? 'subscribe' : 'unsubscribe'} some contacts`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const columns = useMemo(() => createColumns(columnOrder, rowSelection, setRowSelection, filteredContacts), [columnOrder, rowSelection, filteredContacts]);
   
   const visibleColumns = useMemo(() => 
@@ -885,6 +946,53 @@ export default function ContactsTable({ initialContacts }) {
     <div className={styles.tableContainer}>
       <div className={styles.tableHeader}>
         <div className={styles.tableControls}>
+          {selectedContacts.length > 0 && (
+            <div className={styles.actionsMenuContainer} ref={actionsMenuRef}>
+              <button 
+                className={styles.actionsButton}
+                onClick={() => setShowActionsMenu(!showActionsMenu)}
+                disabled={actionLoading}
+              >
+                Actions ({selectedContacts.length})
+                <span className={styles.chevron}>{showActionsMenu ? '▲' : '▼'}</span>
+              </button>
+              {showActionsMenu && (
+                <div className={styles.actionsDropdown}>
+                  <button
+                    className={styles.actionItem}
+                    onClick={() => {
+                      setShowBulkEdit(true);
+                      setShowActionsMenu(false);
+                    }}
+                    disabled={actionLoading}
+                  >
+                    ✏️ Bulk Edit
+                  </button>
+                  <button
+                    className={styles.actionItem}
+                    onClick={handleBulkDelete}
+                    disabled={actionLoading}
+                  >
+                    🗑️ Delete Selected
+                  </button>
+                  <button
+                    className={styles.actionItem}
+                    onClick={() => handleBulkSubscribe(true)}
+                    disabled={actionLoading}
+                  >
+                    ✓ Subscribe Selected
+                  </button>
+                  <button
+                    className={styles.actionItem}
+                    onClick={() => handleBulkSubscribe(false)}
+                    disabled={actionLoading}
+                  >
+                    ✗ Unsubscribe Selected
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           <div className={styles.filters}>
             <button 
               className={`${styles.syncButton} ${isSyncing ? styles.syncing : ''}`}
@@ -943,19 +1051,6 @@ export default function ContactsTable({ initialContacts }) {
             />
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            {selectedContacts.length > 0 && (
-              <>
-                <span className={styles.selectedCount}>
-                  {selectedContacts.length} selected
-                </span>
-                <button 
-                  className={styles.bulkEditButton}
-                  onClick={() => setShowBulkEdit(true)}
-                >
-                  ✏️ Bulk Edit
-                </button>
-              </>
-            )}
             <button 
               className={styles.addRecord}
               onClick={() => setShowCsvModal(true)}
