@@ -86,54 +86,92 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
     columnHelper.accessor('id', {
     header: 'ID',
     id: 'id',
+    cell: info => {
+      const value = String(info.getValue() || '');
+      return value.length > 10 ? value.substring(0, 10) + '...' : value;
+    }
   }),
   columnHelper.accessor('firstName', {
     header: 'First Name',
     id: 'firstName',
+    cell: info => {
+      const value = String(info.getValue() || '');
+      return value.length > 20 ? value.substring(0, 20) + '...' : value;
+    }
   }),
   columnHelper.accessor('lastName', {
     header: 'Last Name',
     id: 'lastName',
+    cell: info => {
+      const value = String(info.getValue() || '');
+      return value.length > 20 ? value.substring(0, 20) + '...' : value;
+    }
   }),
   columnHelper.accessor('phone', {
     header: 'Phone',
     id: 'phone',
+    cell: info => {
+      const value = String(info.getValue() || '');
+      return value.length > 15 ? value.substring(0, 15) + '...' : value;
+    }
   }),
   columnHelper.accessor('email', {
     header: 'Email',
     id: 'email',
+    cell: info => {
+      const value = String(info.getValue() || '');
+      return value.length > 30 ? value.substring(0, 30) + '...' : value;
+    }
   }),
   columnHelper.accessor('clickid', {
     header: 'Click IDs',
     id: 'clickid',
     cell: info => {
       const clickids = info.getValue() || [];
-      return Array.isArray(clickids) ? clickids.join(', ') : (clickids || 'null');
+      const value = Array.isArray(clickids) ? clickids.join(', ') : String(clickids || 'null');
+      return value.length > 30 ? value.substring(0, 30) + '...' : value;
     }
   }),
   columnHelper.accessor('source', {
     header: 'Source',
     id: 'source',
+    cell: info => {
+      const value = String(info.getValue() || '');
+      return value.length > 25 ? value.substring(0, 25) + '...' : value;
+    }
   }),
   columnHelper.accessor('age', {
     header: 'Age',
     id: 'age',
+    cell: info => {
+      const value = String(info.getValue() || '');
+      return value.length > 10 ? value.substring(0, 10) + '...' : value;
+    }
   }),
   columnHelper.accessor('ip', {
     header: 'IP',
     id: 'ip',
+    cell: info => {
+      const value = String(info.getValue() || '');
+      return value.length > 15 ? value.substring(0, 15) + '...' : value;
+    }
   }),
   columnHelper.accessor('useragent', {
     header: 'User Agent',
     id: 'useragent',
     cell: info => {
       const ua = info.getValue();
-      return ua ? (ua.length > 50 ? ua.substring(0, 50) + '...' : ua) : 'null';
+      const value = ua ? String(ua) : 'null';
+      return value.length > 40 ? value.substring(0, 40) + '...' : value;
     }
   }),
   columnHelper.accessor('referrer', {
     header: 'Referrer',
     id: 'referrer',
+    cell: info => {
+      const value = String(info.getValue() || '');
+      return value.length > 30 ? value.substring(0, 30) + '...' : value;
+    }
   }),
   columnHelper.accessor('subscribed', {
     header: 'Subscribed',
@@ -149,15 +187,9 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
     id: 'tags',
     cell: info => {
       const tags = info.getValue() || [];
-      return tags.length > 0 ? (
-        <div className={styles.tagContainer}>
-          {tags.map((tag) => (
-            <span key={tag.id} className={styles.tag}>
-              {tag.name}
-            </span>
-          ))}
-        </div>
-      ) : 'No tags';
+      if (tags.length === 0) return 'No tags';
+      const tagNames = tags.map(tag => tag.name).join(', ');
+      return tagNames.length > 30 ? tagNames.substring(0, 30) + '...' : tagNames;
     }
   }),
   columnHelper.accessor('createdAt', {
@@ -828,7 +860,8 @@ export default function ContactsTable({ initialContacts }) {
   const handleSync = async () => {
     setIsSyncing(true);
     try {
-      const freshContacts = await getContacts();
+      // Only refresh the visible contacts (20 most recent)
+      const freshContacts = await getContacts(20);
       setContacts(freshContacts);
       setFilteredContacts(freshContacts);
       setLastSynced(new Date());
@@ -1161,8 +1194,8 @@ export default function ContactsTable({ initialContacts }) {
         <CsvUploadModal
           onClose={() => setShowCsvModal(false)}
           onUploadComplete={async () => {
-            // Refresh contacts after CSV upload
-            const freshContacts = await getContacts();
+            // Refresh contacts after CSV upload (only visible contacts)
+            const freshContacts = await getContacts(20);
             setContacts(freshContacts);
             setFilteredContacts(freshContacts);
           }}

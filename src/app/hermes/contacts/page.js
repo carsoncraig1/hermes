@@ -6,7 +6,8 @@ export const dynamic = 'force-dynamic'
 
 export default async function Contacts() {
   try {
-    const contacts = await getContacts()
+    // Load only the most recent 20 contacts initially for faster page load
+    const contacts = await getContacts(20)
     
     return (
       <div className="dashboard-container">

@@ -11,7 +11,7 @@ async function getUserId() {
   return session.user.id
 }
 
-export async function getContacts() {
+export async function getContacts(limit = null) {
   try {
     const userId = await getUserId()
     console.log('Starting getContacts...');
@@ -23,7 +23,8 @@ export async function getContacts() {
       },
       include: {
         tags: true
-      }
+      },
+      ...(limit && { take: limit })
     });
     
     console.log(`Fetched ${contacts.length} contacts`);

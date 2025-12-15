@@ -229,13 +229,21 @@
 }
 
 .table td {
-  padding: 0.875rem 1.25rem;
+  padding: 0.5rem 1.25rem;
   border-bottom: 1px solid var(--border-primary);
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 0;
+  height: 2rem;
+  line-height: 1.5rem;
+  vertical-align: middle;
 }
 
 .table tr {
   transition: background var(--transition-fast);
+  height: 2rem;
 }
 
 .table tbody tr:hover {
@@ -367,8 +375,10 @@
 
 .tagContainer {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.25rem;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 .tag {
