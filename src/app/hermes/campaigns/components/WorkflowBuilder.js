@@ -267,25 +267,6 @@ const ActionNode = ({ data, selected, id, onDelete, availableShortlinks = [] }) 
               className={styles.nodeInput}
               onClick={(e) => e.stopPropagation()}
             />
-            {availableShortlinks.length > 0 && (
-              <div className={styles.shortlinkInsertContainer}>
-                <select
-                  onChange={handleShortlinkInsert}
-                  className={styles.shortlinkInsertButton}
-                  onClick={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  defaultValue=""
-                  title="Insert a shortlink into your message"
-                >
-                  <option value="">🔗 Insert Shortlink</option>
-                  {availableShortlinks.map(shortlink => (
-                    <option key={shortlink.id} value={shortlink.id}>
-                      {shortlink.nickname || `Shortlink #${shortlink.id}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
             <div 
               className={styles.messageDisplay}
               dangerouslySetInnerHTML={{ 
