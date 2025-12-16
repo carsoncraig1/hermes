@@ -15,10 +15,11 @@ const prisma = globalForPrisma.prisma ?? new PrismaClient({
   },
   log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
   // Connection pool configuration
-  // Defaults: connection_limit=10, pool_timeout=10s
-  // For production, configure via DATABASE_URL:
-  // postgresql://user:pass@host/db?connection_limit=20&pool_timeout=20
-  // Or use a connection pooler like PgBouncer
+  // Using DigitalOcean connection pooler (port 25061) with 22 backend connections
+  // Transaction pooling mode: connections released after each transaction
+  // This allows efficient connection reuse - Prisma can use up to connection_limit
+  // Set connection_limit=20 in DATABASE_URL to max out the pooler (leaving 2 for overhead)
+  // Example: postgresql://user:pass@host:25061/hermes-executor?sslmode=require&connection_limit=20&pool_timeout=20
 })
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma

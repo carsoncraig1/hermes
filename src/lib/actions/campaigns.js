@@ -371,8 +371,8 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
       throw new Error('No contacts found matching the selected criteria')
     }
     
-    // Calculate batches
-    const BATCH_SIZE = 5
+    // Calculate batches - optimize for rate limit (1200/min = 20/sec)
+    const BATCH_SIZE = 20 // Match rate limit: 20 messages/second
     const totalBatches = Math.ceil(firstPage.total / BATCH_SIZE)
     
     // Create job for tracking
@@ -427,6 +427,7 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
         }
         
         // Execute batch with retry
+        const batchStartTime = Date.now()
         const results = await Promise.allSettled(
           batch.map(contact =>
             retryWithBackoff(
@@ -458,29 +459,32 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
           }
         })
         
-        // Update job progress
-        await updateSendJobProgress(jobId, {
+        // Update job progress (async, don't wait)
+        updateSendJobProgress(jobId, {
           processedContacts,
           successCount,
           failCount,
           currentBatch
-        })
+        }).catch(() => {})
         
         // Batch campaign stats update (once per batch instead of per message)
         const batchSuccessCount = results.filter(r => r.status === 'fulfilled' && r.value.success).length
         if (batchSuccessCount > 0) {
-          await prisma.campaign.update({
+          prisma.campaign.update({
             where: { id: campaignIdInt },
             data: {
               messagesSent: { increment: batchSuccessCount },
               lastMessageSent: new Date()
             }
-          })
+          }).catch(() => {}) // Don't block on DB update
         }
         
-        // Delay between batches
-        if (i + BATCH_SIZE < validContacts.length || hasMore) {
-          await new Promise(resolve => setTimeout(resolve, 500))
+        // Dynamic delay: ensure we don't exceed 20 messages/second
+        // If batch took less than 1 second, wait the remainder
+        const batchDuration = Date.now() - batchStartTime
+        const minBatchTime = 1000 // 1 second for 20 messages = 20/sec
+        if (batchDuration < minBatchTime && (i + BATCH_SIZE < validContacts.length || hasMore)) {
+          await new Promise(resolve => setTimeout(resolve, minBatchTime - batchDuration))
         }
       }
       
@@ -958,8 +962,8 @@ export async function executeDedicatedSend(campaignId) {
       throw new Error('No contacts found for this campaign')
     }
     
-    // Calculate batches
-    const BATCH_SIZE = 5
+    // Calculate batches - optimize for rate limit (1200/min = 20/sec)
+    const BATCH_SIZE = 20 // Match rate limit: 20 messages/second
     const totalBatches = Math.ceil(firstPage.total / BATCH_SIZE)
     
     // Create job
@@ -1020,6 +1024,7 @@ export async function executeDedicatedSend(campaignId) {
         }
         
         // Execute batch with retry
+        const batchStartTime = Date.now()
         const results = await Promise.allSettled(
           batch.map(contact =>
             retryWithBackoff(
@@ -1061,28 +1066,31 @@ export async function executeDedicatedSend(campaignId) {
           }
         })
         
-        // Update job progress
-        await updateSendJobProgress(jobId, {
+        // Update job progress (async, don't wait)
+        updateSendJobProgress(jobId, {
           processedContacts,
           successCount,
           failCount,
           currentBatch
-        })
+        }).catch(() => {})
         
-        // Batch campaign stats update
+        // Batch campaign stats update (async, don't block)
         if (batchSuccessCount > 0) {
-          await prisma.campaign.update({
+          prisma.campaign.update({
             where: { id: campaignIdInt },
             data: {
               messagesSent: { increment: batchSuccessCount },
               lastMessageSent: new Date()
             }
-          })
+          }).catch(() => {}) // Don't block on DB update
         }
         
-        // Delay between batches
-        if (i + BATCH_SIZE < validContacts.length || hasMore) {
-          await new Promise(resolve => setTimeout(resolve, 500))
+        // Dynamic delay: ensure we don't exceed 20 messages/second
+        // If batch took less than 1 second, wait the remainder
+        const batchDuration = Date.now() - batchStartTime
+        const minBatchTime = 1000 // 1 second for 20 messages = 20/sec
+        if (batchDuration < minBatchTime && (i + BATCH_SIZE < validContacts.length || hasMore)) {
+          await new Promise(resolve => setTimeout(resolve, minBatchTime - batchDuration))
         }
       }
       
