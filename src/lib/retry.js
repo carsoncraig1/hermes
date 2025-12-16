@@ -1,5 +1,3 @@
-'use server'
-
 /**
  * Retry a function with exponential backoff
  * @param {Function} fn - Async function to retry

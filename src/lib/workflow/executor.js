@@ -482,7 +482,7 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
         workflow,
         currentNodeId: nodeId,
         delayMs
-      }).catch(err => {
+      }).catch(async (err) => {
         console.error('Error scheduling delayed action:', err);
         // Fallback: execute immediately
         await executeNode(nodeId);
