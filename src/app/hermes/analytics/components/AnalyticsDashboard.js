@@ -28,9 +28,29 @@ export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPe
     DIMENSIONS.NONE
   ]);
 
-  // Load dimension values on mount
+  // Load dimension values and breakdown data on mount
   useEffect(() => {
     getDimensionValues().then(setDimensionValues).catch(console.error);
+    
+    // Load breakdown data on initial mount
+    if (initialAnalytics) {
+      const startDate = dateRange.start ? new Date(dateRange.start) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const endDate = dateRange.end ? (() => {
+        const date = new Date(dateRange.end);
+        date.setHours(23, 59, 59, 999);
+        return date;
+      })() : new Date();
+
+      if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+        getBreakdownData({
+          dateRange: {
+            start: startDate,
+            end: endDate
+          }
+        }).then(setBreakdownData).catch(console.error);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const refreshData = async () => {
@@ -85,6 +105,7 @@ export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPe
     if (!isInitialMount) {
       refreshData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateRange.start, dateRange.end]);
 
   // Build breakdown tree from data
@@ -131,6 +152,35 @@ export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPe
 
   return (
     <div className={styles.analyticsContainer}>
+      {/* Date Range Selector - Controls entire page */}
+      <div className={styles.pageFilters}>
+        <div className={styles.filterGroup}>
+          <label>Date Range</label>
+          <div className={styles.dateInputs}>
+            <input
+              type="date"
+              value={dateRange.start}
+              onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+              className={styles.dateInput}
+            />
+            <span>to</span>
+            <input
+              type="date"
+              value={dateRange.end}
+              onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+              className={styles.dateInput}
+            />
+          </div>
+        </div>
+        <button
+          onClick={refreshData}
+          disabled={loading}
+          className={styles.refreshButton}
+        >
+          {loading ? 'Loading...' : '↻ Refresh'}
+        </button>
+      </div>
+
       {/* Summary Cards */}
       <div className={styles.metricsGrid}>
         <div className={styles.metricCard}>
@@ -148,20 +198,40 @@ export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPe
           </div>
         </div>
         <div className={styles.metricCard}>
-          <div className={styles.metricLabel}>Revenue Events</div>
-          <div className={styles.metricValue}>{formatNumber(analytics.revenueEventCount || 0)}</div>
+          <div className={styles.metricLabel}>Total Sends</div>
+          <div className={styles.metricValue}>{formatNumber(analytics.totalSends || 0)}</div>
         </div>
         <div className={styles.metricCard}>
           <div className={styles.metricLabel}>Total Clicks</div>
           <div className={styles.metricValue}>{formatNumber(analytics.totalClicks || 0)}</div>
         </div>
         <div className={styles.metricCard}>
-          <div className={styles.metricLabel}>Conversion Rate</div>
+          <div className={styles.metricLabel}>Clickthrough Rate</div>
           <div className={styles.metricValue}>
-            {analytics.totalClicks > 0 
-              ? `${(((analytics.revenueEventCount || 0) / analytics.totalClicks) * 100).toFixed(2)}%`
-              : '0%'}
+            {analytics.clickthroughRate ? `${analytics.clickthroughRate.toFixed(2)}%` : '0%'}
           </div>
+        </div>
+        <div className={styles.metricCard}>
+          <div className={styles.metricLabel}>CPC</div>
+          <div className={styles.metricValue}>
+            {analytics.cpc ? formatCurrency(analytics.cpc) : '$0.00'}
+          </div>
+        </div>
+        <div className={styles.metricCard}>
+          <div className={styles.metricLabel}>EPC</div>
+          <div className={styles.metricValue}>
+            {analytics.epc ? formatCurrency(analytics.epc) : '$0.00'}
+          </div>
+        </div>
+        <div className={styles.metricCard}>
+          <div className={styles.metricLabel}>CVR</div>
+          <div className={styles.metricValue}>
+            {analytics.cvr ? `${analytics.cvr.toFixed(2)}%` : '0%'}
+          </div>
+        </div>
+        <div className={styles.metricCard}>
+          <div className={styles.metricLabel}>Revenue Events</div>
+          <div className={styles.metricValue}>{formatNumber(analytics.revenueEventCount || 0)}</div>
         </div>
       </div>
 
@@ -174,27 +244,8 @@ export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPe
           </p>
         </div>
 
-        {/* Filters and Dimension Selectors */}
+        {/* Dimension Selectors */}
         <div className={styles.filtersSection}>
-          <div className={styles.filterGroup}>
-            <label>Date Range</label>
-            <div className={styles.dateInputs}>
-              <input
-                type="date"
-                value={dateRange.start}
-                onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                className={styles.dateInput}
-              />
-              <span>to</span>
-              <input
-                type="date"
-                value={dateRange.end}
-                onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                className={styles.dateInput}
-              />
-            </div>
-          </div>
-
           <DimensionSelector
             dimensions={dimensions}
             onChange={handleDimensionChange}
@@ -216,14 +267,6 @@ export default function AnalyticsDashboard({ initialAnalytics, initialCampaignPe
               level={3}
             />
           )}
-
-          <button
-            onClick={refreshData}
-            disabled={loading}
-            className={styles.refreshButton}
-          >
-            {loading ? 'Loading...' : '↻ Refresh'}
-          </button>
         </div>
 
         {/* Breakdown Table */}

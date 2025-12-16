@@ -4,6 +4,17 @@
   gap: 2rem;
 }
 
+.pageFilters {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-end;
+  padding: 1.5rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-lg);
+  flex-wrap: wrap;
+}
+
 .reportSection {
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);

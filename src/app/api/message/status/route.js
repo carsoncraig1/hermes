@@ -164,6 +164,7 @@ export async function POST(request) {
     }
 
     // Only log final status (delivered or failed) - one line per message
+    // Don't use serverLog here to avoid duplicate console output
     if (event_type === 'message.finalized' && (status === 'delivered' || status === 'delivery_failed' || status === 'sending_failed')) {
       if (status === 'delivered') {
         console.log(`✅ delivered to ${toNumber}`);
@@ -173,20 +174,6 @@ export async function POST(request) {
           : 'Message delivery failed';
         console.log(`❌ ${toNumber}: ${errorMsg}`);
       }
-      
-      // Also log to serverLog for persistence
-      const logMessage = status === 'delivered' 
-        ? `✅ delivered to ${toNumber}`
-        : `❌ ${toNumber}: ${errors.length > 0 ? errors.map(e => e.detail || e.title).join('; ') : 'Message delivery failed'}`;
-      const logMeta = {
-        messageId: telnyxMessageId,
-        to: toNumber,
-        status,
-        eventType: event_type,
-        cost: payload.cost,
-        direction: payload.direction
-      };
-      await serverLog(logMessage, status === 'delivered' ? 'info' : 'error', logMeta, user.id).catch(() => {});
     }
 
     return NextResponse.json({ success: true });

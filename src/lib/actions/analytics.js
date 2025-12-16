@@ -106,6 +106,14 @@ export async function getAnalytics(filters = {}) {
       }
     });
 
+    // Calculate additional metrics
+    const totalClicks = shortlinks.reduce((sum, s) => sum + s.clicks, 0);
+    const totalSends = totalMessages; // Total message sends
+    const clickthroughRate = totalSends > 0 ? (totalClicks / totalSends) * 100 : 0;
+    const cpc = totalClicks > 0 ? (totalCost / totalClicks) : 0; // Cost per click
+    const epc = totalClicks > 0 ? (totalRevenue / totalClicks) : 0; // Earnings per click
+    const cvr = totalClicks > 0 ? ((revenueEvents.length / totalClicks) * 100) : 0; // Conversion rate
+
     // Group by dimension if specified
     let groupedData = {};
     if (filters.groupBy) {
@@ -180,8 +188,13 @@ export async function getAnalytics(filters = {}) {
       deliveredMessages: deliveredMessages, // Only messages with status 'delivered'
       failedMessages: failedMessages, // Messages that failed to send or deliver
       shortlinks: shortlinks.length,
-      totalClicks: shortlinks.reduce((sum, s) => sum + s.clicks, 0),
+      totalClicks: totalClicks,
       totalOpens: shortlinks.reduce((sum, s) => sum + s.opens, 0),
+      totalSends: totalSends,
+      clickthroughRate: clickthroughRate,
+      cpc: cpc,
+      epc: epc,
+      cvr: cvr,
       groupedData,
       revenueEvents: revenueEventsClean, // Converted Decimal fields
       messages: messagesClean // Converted Decimal fields
