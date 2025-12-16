@@ -13,7 +13,7 @@ import { format } from 'date-fns';
 import styles from './ContactsTable.module.css';
 import AddContactModal from './AddContactModal';
 import CsvUploadModal from './CsvUploadModal';
-import { addContact, updateContact, deleteContact, getContacts } from '@/lib/actions/contacts';
+import { addContact, updateContact, deleteContact, getContacts, getContactsPaginated } from '@/lib/actions/contacts';
 import { ChevronDownIcon } from '@heroicons/react/24/solid';
 import EditContactModal from './EditContactModal';
 import BulkEditModal from './BulkEditModal';
@@ -682,6 +682,18 @@ export default function ContactsTable({ initialContacts }) {
   const [showFiltersMenu, setShowFiltersMenu] = useState(false);
   const [showFieldsMenu, setShowFieldsMenu] = useState(false);
   const [activeFilters, setActiveFilters] = useState({ subscribed: 'true' });
+  
+  // Pagination state
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('contactsPageSize');
+      return saved ? parseInt(saved, 10) : 20;
+    }
+    return 20;
+  });
+  const [totalContacts, setTotalContacts] = useState(initialContacts?.length || 0);
+  const [totalPages, setTotalPages] = useState(1);
   const defaultColumnOrder = [
     'id', 'firstName', 'lastName', 'phone', 'email', 'clickid', 
     'source', 'age', 'ip', 'useragent', 'referrer',
@@ -730,6 +742,11 @@ export default function ContactsTable({ initialContacts }) {
     localStorage.setItem('contactsColumnSizing', JSON.stringify(columnSizing));
   }, [columnSizing]);
 
+  // Save page size to localStorage
+  useEffect(() => {
+    localStorage.setItem('contactsPageSize', String(pageSize));
+  }, [pageSize]);
+
   // Close actions menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -744,23 +761,46 @@ export default function ContactsTable({ initialContacts }) {
     }
   }, [showActionsMenu]);
 
+  // Fetch paginated contacts when page, pageSize, filters, or search changes
+  useEffect(() => {
+    const fetchContacts = async () => {
+      setLoading(true);
+      try {
+        const filters = {
+          subscribed: activeFilters.subscribed,
+          search: searchQuery.trim() || undefined,
+        };
+        
+        const result = await getContactsPaginated(page, pageSize, filters);
+        setContacts(result.contacts);
+        // filteredContacts will be set by the level filter useEffect
+        setTotalContacts(result.total);
+        setTotalPages(result.totalPages);
+      } catch (error) {
+        console.error('Error fetching contacts:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchContacts();
+  }, [page, pageSize, activeFilters.subscribed, searchQuery]);
+
+  // Reset to page 0 when filters or search change
+  useEffect(() => {
+    setPage(0);
+  }, [activeFilters.subscribed, searchQuery]);
+
+  // Apply level filters client-side to current page
   useEffect(() => {
     if (!Array.isArray(contacts)) {
       setFilteredContacts([]);
       return;
     }
 
-    // Apply filters first
-    let filtered = contacts;
-    
-    // Apply subscribed filter
-    if (activeFilters.subscribed === 'true') {
-      filtered = filtered.filter(contact => contact.subscribed === true);
-    } else if (activeFilters.subscribed === 'false') {
-      filtered = filtered.filter(contact => contact.subscribed === false);
-    }
+    let filtered = [...contacts];
 
-    // Apply level filters (using the same logic as FilterMenu)
+    // Apply level filters (client-side on current page)
     if (activeFilters.level1?.field && activeFilters.level1?.value) {
       filtered = filtered.filter(contact => {
         return applyLevelFilter(contact, activeFilters.level1);
@@ -777,31 +817,8 @@ export default function ContactsTable({ initialContacts }) {
       });
     }
 
-    // Then apply search query
-    if (!searchQuery.trim()) {
-      setFilteredContacts(filtered);
-      return;
-    }
-
-    const query = searchQuery.toLowerCase();
-    const searchFiltered = filtered.filter(contact => {
-      return (
-        contact.firstName?.toLowerCase().includes(query) ||
-        contact.lastName?.toLowerCase().includes(query) ||
-        contact.phone?.toLowerCase().includes(query) ||
-        contact.email?.toLowerCase().includes(query) ||
-        (Array.isArray(contact.clickid) ? contact.clickid.join(' ').toLowerCase() : String(contact.clickid || '')).includes(query) ||
-        contact.source?.toLowerCase().includes(query) ||
-        contact.age?.toLowerCase().includes(query) ||
-        contact.ip?.toLowerCase().includes(query) ||
-        contact.useragent?.toLowerCase().includes(query) ||
-        contact.referrer?.toLowerCase().includes(query) ||
-        String(contact.subscribed).toLowerCase().includes(query) ||
-        contact.tags?.some(tag => tag.name.toLowerCase().includes(query))
-      );
-    });
-    setFilteredContacts(searchFiltered);
-  }, [searchQuery, contacts, activeFilters]);
+    setFilteredContacts(filtered);
+  }, [contacts, activeFilters.level1, activeFilters.level2, activeFilters.level3]);
 
   // Helper function to apply level filter (matches FilterMenu logic)
   const applyLevelFilter = (contact, filter) => {
@@ -884,10 +901,15 @@ export default function ContactsTable({ initialContacts }) {
   const handleSync = async () => {
     setIsSyncing(true);
     try {
-      // Only refresh the visible contacts (20 most recent)
-      const freshContacts = await getContacts(20);
-      setContacts(freshContacts);
-      setFilteredContacts(freshContacts);
+      const filters = {
+        subscribed: activeFilters.subscribed,
+        search: searchQuery.trim() || undefined,
+      };
+      const result = await getContactsPaginated(page, pageSize, filters);
+      setContacts(result.contacts);
+      setFilteredContacts(result.contacts);
+      setTotalContacts(result.total);
+      setTotalPages(result.totalPages);
       setLastSynced(new Date());
     } catch (error) {
       console.error('Error syncing contacts:', error);
@@ -902,8 +924,15 @@ export default function ContactsTable({ initialContacts }) {
     try {
       setLoading(true);
       await deleteContact(id);
-      setContacts(contacts.filter(contact => contact.id !== id));
-      setFilteredContacts(filteredContacts.filter(contact => contact.id !== id));
+      // Refresh current page
+      const filters = {
+        subscribed: activeFilters.subscribed,
+        search: searchQuery.trim() || undefined,
+      };
+      const result = await getContactsPaginated(page, pageSize, filters);
+      setContacts(result.contacts);
+      setTotalContacts(result.total);
+      setTotalPages(result.totalPages);
     } catch (error) {
       console.error('Error deleting contact:', error);
     } finally {
@@ -918,13 +947,16 @@ export default function ContactsTable({ initialContacts }) {
   const handleUpdate = async (updatedContact) => {
     try {
       setLoading(true);
-      const result = await updateContact(updatedContact);
-      setContacts(contacts.map(c => 
-        c.id === result.id ? result : c
-      ));
-      setFilteredContacts(filteredContacts.map(c => 
-        c.id === result.id ? result : c
-      ));
+      await updateContact(updatedContact);
+      // Refresh current page
+      const filters = {
+        subscribed: activeFilters.subscribed,
+        search: searchQuery.trim() || undefined,
+      };
+      const result = await getContactsPaginated(page, pageSize, filters);
+      setContacts(result.contacts);
+      setTotalContacts(result.total);
+      setTotalPages(result.totalPages);
       setEditingContact(null);
     } catch (error) {
       console.error('Error updating contact:', error);
@@ -936,9 +968,17 @@ export default function ContactsTable({ initialContacts }) {
   const handleAdd = async (newContact) => {
     try {
       setLoading(true);
-      const contact = await addContact(newContact);
-      setContacts([contact, ...contacts]);
-      setFilteredContacts([contact, ...filteredContacts]);
+      await addContact(newContact);
+      // Refresh and go to first page to see the new contact
+      setPage(0);
+      const filters = {
+        subscribed: activeFilters.subscribed,
+        search: searchQuery.trim() || undefined,
+      };
+      const result = await getContactsPaginated(0, pageSize, filters);
+      setContacts(result.contacts);
+      setTotalContacts(result.total);
+      setTotalPages(result.totalPages);
       setShowAddModal(false);
     } catch (error) {
       console.error('Error adding contact:', error);
@@ -1119,7 +1159,7 @@ export default function ContactsTable({ initialContacts }) {
               <ChevronDownIcon className={styles.chevron} />
             </button>
             <div className={styles.showing}>
-              Showing {contactsList.length} of {contacts.length}
+              Showing {contactsList.length} of {totalContacts}
             </div>
             
             <FilterMenu
@@ -1229,6 +1269,79 @@ export default function ContactsTable({ initialContacts }) {
         </table>
       </div>
 
+      {/* Pagination Controls */}
+      <div className={styles.pagination}>
+        <div className={styles.paginationInfo}>
+          <span>
+            Page {page + 1} of {totalPages} ({totalContacts} total)
+          </span>
+        </div>
+        <div className={styles.paginationControls}>
+          <button
+            className={styles.paginationButton}
+            onClick={() => setPage(0)}
+            disabled={page === 0 || loading}
+          >
+            «« First
+          </button>
+          <button
+            className={styles.paginationButton}
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            disabled={page === 0 || loading}
+          >
+            ‹ Prev
+          </button>
+          <span className={styles.pageInput}>
+            <input
+              type="number"
+              min="1"
+              max={totalPages}
+              value={page + 1}
+              onChange={(e) => {
+                const newPage = parseInt(e.target.value, 10) - 1;
+                if (newPage >= 0 && newPage < totalPages) {
+                  setPage(newPage);
+                }
+              }}
+              className={styles.pageNumberInput}
+            />
+            / {totalPages}
+          </span>
+          <button
+            className={styles.paginationButton}
+            onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+            disabled={page >= totalPages - 1 || loading}
+          >
+            Next ›
+          </button>
+          <button
+            className={styles.paginationButton}
+            onClick={() => setPage(totalPages - 1)}
+            disabled={page >= totalPages - 1 || loading}
+          >
+            Last »»
+          </button>
+        </div>
+        <div className={styles.pageSizeSelector}>
+          <label>Per page:</label>
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              setPageSize(parseInt(e.target.value, 10));
+              setPage(0);
+            }}
+            className={styles.pageSizeSelect}
+            disabled={loading}
+          >
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+            <option value={200}>200</option>
+          </select>
+        </div>
+      </div>
+
       {editingContact && (
         <EditContactModal
           contact={editingContact}
@@ -1248,10 +1361,16 @@ export default function ContactsTable({ initialContacts }) {
         <CsvUploadModal
           onClose={() => setShowCsvModal(false)}
           onUploadComplete={async () => {
-            // Refresh contacts after CSV upload (only visible contacts)
-            const freshContacts = await getContacts(20);
-            setContacts(freshContacts);
-            setFilteredContacts(freshContacts);
+            // Refresh current page after CSV upload
+            const filters = {
+              subscribed: activeFilters.subscribed,
+              search: searchQuery.trim() || undefined,
+            };
+            const result = await getContactsPaginated(page, pageSize, filters);
+            setContacts(result.contacts);
+            setFilteredContacts(result.contacts);
+            setTotalContacts(result.total);
+            setTotalPages(result.totalPages);
           }}
         />
       )}

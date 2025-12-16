@@ -723,3 +723,103 @@
   opacity: 0.3;
   cursor: not-allowed;
 }
+
+/* Pagination */
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.paginationInfo {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.paginationControls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.paginationButton {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+  padding: 0.5rem 0.875rem;
+  border-radius: var(--border-radius-md);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-family: var(--font-family);
+  transition: all var(--transition-fast);
+}
+
+.paginationButton:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  border-color: var(--border-secondary);
+  color: var(--text-primary);
+}
+
+.paginationButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pageInput {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.pageNumberInput {
+  width: 60px;
+  padding: 0.5rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  border-radius: var(--border-radius-md);
+  font-size: 0.875rem;
+  text-align: center;
+  font-family: var(--font-family);
+}
+
+.pageNumberInput:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.pageSizeSelector {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.pageSizeSelect {
+  padding: 0.5rem 0.875rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  border-radius: var(--border-radius-md);
+  font-size: 0.875rem;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.pageSizeSelect:hover {
+  border-color: var(--border-secondary);
+}
+
+.pageSizeSelect:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}

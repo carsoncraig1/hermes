@@ -35,6 +35,60 @@ export async function getContacts(limit = null) {
   }
 }
 
+export async function getContactsPaginated(page = 0, pageSize = 20, filters = {}) {
+  try {
+    const userId = await getUserId()
+    
+    // Build where clause
+    const where = { userId }
+    
+    // Apply subscribed filter if provided
+    if (filters.subscribed !== undefined) {
+      where.subscribed = filters.subscribed === 'true' || filters.subscribed === true
+    }
+    
+    // Apply search filter if provided
+    if (filters.search) {
+      const searchTerm = filters.search.toLowerCase()
+      where.OR = [
+        { firstName: { contains: searchTerm, mode: 'insensitive' } },
+        { lastName: { contains: searchTerm, mode: 'insensitive' } },
+        { email: { contains: searchTerm, mode: 'insensitive' } },
+        { phone: { contains: searchTerm, mode: 'insensitive' } },
+        { source: { contains: searchTerm, mode: 'insensitive' } },
+      ]
+    }
+    
+    // Get total count and contacts
+    const [contacts, total] = await Promise.all([
+      prisma.contact.findMany({
+        where,
+        orderBy: {
+          createdAt: 'desc'
+        },
+        include: {
+          tags: true
+        },
+        skip: page * pageSize,
+        take: pageSize,
+      }),
+      prisma.contact.count({ where })
+    ])
+    
+    return {
+      contacts,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+      hasMore: (page + 1) * pageSize < total
+    }
+  } catch (error) {
+    console.error('Error fetching paginated contacts:', error);
+    throw error;
+  }
+}
+
 export async function addContact(data) {
   try {
     const userId = await getUserId()
