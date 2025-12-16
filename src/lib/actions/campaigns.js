@@ -322,9 +322,8 @@ export async function getContactsForManualFire({ selectedTags = [], selectedSour
   }
 }
 
-// Execute manual fire workflow (with locking, job queue, pagination, retry, and batched stats)
+// Execute manual fire workflow (with job queue, pagination, retry, and batched stats)
 export async function executeManualFire(campaignId, { selectedTags = [], selectedSources = [], targetAllSubscribed = false }) {
-  const { acquireCampaignLock, releaseCampaignLock } = await import('@/lib/campaignLock')
   const { createSendJob, startSendJob, updateSendJobProgress, completeSendJob, failSendJob } = await import('@/lib/sendJob')
   const { checkRateLimit } = await import('@/lib/actions/messages')
   const { incrementRateLimitCache } = await import('@/lib/rateLimitCache')
@@ -333,18 +332,10 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
   const { executeWorkflow } = await import('@/lib/workflow/executor')
   
   let jobId = null
-  let campaignLockAcquired = false
   const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
   
   try {
     const userId = await getUserId()
-    
-    // Acquire campaign lock to prevent duplicate execution
-    const lockAcquired = await acquireCampaignLock(campaignIdInt, `manual-fire-${Date.now()}`)
-    if (!lockAcquired) {
-      throw new Error('Campaign is already being executed. Please wait for the current execution to complete.')
-    }
-    campaignLockAcquired = true
     
     // Verify ownership and get campaign
     const campaign = await prisma.campaign.findFirst({
@@ -519,10 +510,6 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
     }
     
     throw error
-  } finally {
-    if (campaignLockAcquired) {
-      await releaseCampaignLock(campaignIdInt).catch(() => {})
-    }
   }
 }
 
@@ -916,9 +903,8 @@ export async function getCampaignContactCount(campaignId) {
   }
 }
 
-// Execute a dedicated send campaign (with batching, locking, job queue, pagination, retry, and batched stats)
+// Execute a dedicated send campaign (with batching, job queue, pagination, retry, and batched stats)
 export async function executeDedicatedSend(campaignId) {
-  const { acquireCampaignLock, releaseCampaignLock } = await import('@/lib/campaignLock')
   const { createSendJob, startSendJob, updateSendJobProgress, completeSendJob, failSendJob } = await import('@/lib/sendJob')
   const { checkRateLimit } = await import('@/lib/actions/messages')
   const { incrementRateLimitCache } = await import('@/lib/rateLimitCache')
@@ -927,18 +913,10 @@ export async function executeDedicatedSend(campaignId) {
   const { sendMessage } = await import('@/lib/telnyx')
   
   let jobId = null
-  let campaignLockAcquired = false
   const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
   
   try {
     const userId = await getUserId()
-    
-    // Acquire campaign lock
-    const lockAcquired = await acquireCampaignLock(campaignIdInt, `dedicated-send-${Date.now()}`)
-    if (!lockAcquired) {
-      throw new Error('Campaign is already being executed. Please wait for the current execution to complete.')
-    }
-    campaignLockAcquired = true
     
     // Verify ownership and get campaign
     const campaign = await prisma.campaign.findFirst({
@@ -1125,9 +1103,5 @@ export async function executeDedicatedSend(campaignId) {
     }
     
     throw error
-  } finally {
-    if (campaignLockAcquired) {
-      await releaseCampaignLock(campaignIdInt).catch(() => {})
-    }
   }
 }

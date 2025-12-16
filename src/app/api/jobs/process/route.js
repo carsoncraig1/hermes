@@ -2,7 +2,6 @@
 
 import { getPendingJobs } from '@/lib/sendJob'
 import { processDelayedActions } from '@/lib/delayedWorkflow'
-import { cleanupExpiredLocks } from '@/lib/campaignLock'
 import { executeManualFire, executeDedicatedSend } from '@/lib/actions/campaigns'
 
 /**
@@ -23,9 +22,6 @@ export async function GET(request) {
   try {
     // Process delayed workflow actions
     await processDelayedActions()
-    
-    // Clean up expired campaign locks
-    await cleanupExpiredLocks()
     
     // Process pending send jobs (limit to 5 at a time)
     const pendingJobs = await getPendingJobs(5)
@@ -55,7 +51,6 @@ export async function GET(request) {
     return Response.json({
       success: true,
       delayedActionsProcessed: true,
-      locksCleaned: true,
       jobsProcessed: results.length,
       results
     })

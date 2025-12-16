@@ -1,19 +1,6 @@
 -- Migration: Add bulk send optimizations
 -- Run this SQL directly on your database
 
--- Create campaign_execution_locks table
-CREATE TABLE IF NOT EXISTS "campaign_execution_locks" (
-    "id" SERIAL PRIMARY KEY,
-    "campaignId" INTEGER NOT NULL,
-    "lockedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "expiresAt" TIMESTAMP(3) NOT NULL,
-    "lockedBy" TEXT,
-    CONSTRAINT "campaign_execution_locks_campaignId_key" UNIQUE ("campaignId"),
-    CONSTRAINT "campaign_execution_locks_campaignId_fkey" FOREIGN KEY ("campaignId") REFERENCES "campaigns"("id") ON DELETE CASCADE ON UPDATE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS "campaign_execution_locks_expiresAt_idx" ON "campaign_execution_locks"("expiresAt");
-
 -- Create send_jobs table
 CREATE TABLE IF NOT EXISTS "send_jobs" (
     "id" TEXT NOT NULL PRIMARY KEY,
