@@ -188,11 +188,14 @@ export async function lookupMessageClickCode(code) {
         select: {
           id: true,
           destination: true,
+          nickname: true,
           enabled: true,
           ogEnabled: true,
           ogImage: true,
           ogTitle: true,
-          ogDescription: true
+          ogDescription: true,
+          clicks: true,
+          opens: true
         }
       },
       message: {

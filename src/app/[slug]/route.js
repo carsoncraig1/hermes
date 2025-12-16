@@ -119,7 +119,10 @@ export async function GET(request, { params }) {
     const messageClickCode = await lookupMessageClickCode(code);
     
     if (!messageClickCode) {
-      console.log(`❌ Click code not found: ${code}`)
+      // Don't log robots.txt or other common bot requests
+      if (code !== 'robots.txt' && code !== 'sitemap.xml' && code !== 'sitemap.txt') {
+        console.log(`❌ Click code not found: ${code}`)
+      }
       redirect('https://lp.stockstotrade.com/algo-trader')
     }
     
@@ -150,7 +153,9 @@ export async function GET(request, { params }) {
         // Mark this specific MessageClickCode as opened (first time only)
         !messageClickCode.opened && markCodeAsOpened(code)
       ])
-      console.log(`👁️ Open (preview): ${code} → ${shortlink.destination} (${shortlink.opens + 1} opens) [contactId: ${contactId}, messageId: ${messageId}] [${userAgent.substring(0, 50)}...]`)
+      const openCount = (shortlink.opens ?? 0) + 1
+      const shortlinkName = shortlink.nickname || `Shortlink #${shortlink.id}`
+      console.log(`👁️ Open: ${shortlinkName} (${openCount} opens)`)
     } else {
       // Real user click - we have full message-level tracking!
       const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || null
@@ -178,7 +183,9 @@ export async function GET(request, { params }) {
         where: { id: shortlink.id },
         data: { clicks: { increment: 1 } }
       })
-      console.log(`✅ Click: ${code} → ${destinationWithHrms} (${shortlink.clicks + 1} clicks) [messageId: ${messageId}, contactId: ${contactId}, hrms: ${hrms}]`)
+      const clickCount = (shortlink.clicks ?? 0) + 1
+      const shortlinkName = shortlink.nickname || `Shortlink #${shortlink.id}`
+      console.log(`✅ Click: ${shortlinkName} (${clickCount} clicks)`)
     }
     
     // If OG preview is enabled, serve HTML with OG meta tags

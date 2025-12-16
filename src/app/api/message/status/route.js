@@ -63,8 +63,10 @@ export async function POST(request) {
     const completedAt = payload.completed_at || null;
     const errors = payload.errors || [];
 
-    // Log the webhook event for debugging
-    console.log(`[Telnyx Webhook] ${event_type} - Message ID: ${telnyxMessageId}, Status: ${status}, To: ${toNumber}`);
+    // Log the webhook event for debugging (condensed)
+    if (event_type === 'message.finalized') {
+      console.log(`📨 ${status === 'delivered' ? '✓' : status === 'delivery_failed' ? '✗' : '○'} ${toNumber} (${status})`)
+    }
 
     // Find the user by messaging profile ID
     const user = await prisma.user.findFirst({
@@ -167,8 +169,8 @@ export async function POST(request) {
       }
     }
 
-    // Log the status update to console for the user
-    const logMessage = `Message ${status}: ${toNumber}${telnyxMessageId ? ` (ID: ${telnyxMessageId})` : ''}`;
+    // Log the status update to console for the user (condensed)
+    const logMessage = `${status === 'delivered' ? '✓ Delivered' : status === 'sent' ? '→ Sent' : status === 'delivery_failed' ? '✗ Failed' : status}: ${toNumber}`;
     const logMeta = {
       messageId: telnyxMessageId,
       to: toNumber,
@@ -178,9 +180,7 @@ export async function POST(request) {
       direction: payload.direction
     };
 
-    await serverLog(logMessage, 'info', logMeta, user.id).catch(err => {
-      console.error('Error logging webhook event:', err);
-    });
+    await serverLog(logMessage, 'info', logMeta, user.id).catch(() => {});
 
     return NextResponse.json({ success: true });
   } catch (error) {
