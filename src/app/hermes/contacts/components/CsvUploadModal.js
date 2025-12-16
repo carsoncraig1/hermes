@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react';
 import styles from './AddContactModal.module.css';
-import { addContact } from '@/lib/actions/contacts';
+import { addContactsBatch } from '@/lib/actions/contacts';
 
 export default function CsvUploadModal({ onClose, onUploadComplete }) {
   const [file, setFile] = useState(null);
@@ -167,34 +167,24 @@ export default function CsvUploadModal({ onClose, onUploadComplete }) {
       }
 
       setProgress({ processed: 0, total: contacts.length, errors: [] });
-      const errors = [];
-      let successCount = 0;
 
-      // Upload contacts one by one (or in batches)
-      for (let i = 0; i < contacts.length; i++) {
-        try {
-          await addContact(contacts[i]);
-          successCount++;
-        } catch (error) {
-          errors.push({
-            row: i + 2, // +2 because header is row 1, and arrays are 0-indexed
-            contact: contacts[i],
-            error: error.message || 'Unknown error'
-          });
+      // Upload contacts in batches for better performance
+      const BATCH_SIZE = 50
+      const result = await addContactsBatch(
+        contacts, 
+        BATCH_SIZE,
+        // Progress callback - updates UI as batches complete
+        (processed, total, errors) => {
+          setProgress({ processed, total, errors })
         }
-        setProgress({ 
-          processed: i + 1, 
-          total: contacts.length, 
-          errors 
-        });
-      }
+      )
 
-      if (successCount > 0) {
-        alert(`Successfully uploaded ${successCount} contact(s).${errors.length > 0 ? ` ${errors.length} error(s).` : ''}`);
+      if (result.success > 0) {
+        alert(`Successfully uploaded ${result.success} contact(s).${result.failed > 0 ? ` ${result.failed} error(s).` : ''}`);
         onUploadComplete();
         onClose();
       } else {
-        alert(`Failed to upload contacts. ${errors.length} error(s).`);
+        alert(`Failed to upload contacts. ${result.failed} error(s).`);
       }
     } catch (error) {
       console.error('Error processing CSV:', error);
