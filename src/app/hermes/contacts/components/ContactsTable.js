@@ -9,7 +9,6 @@ import {
   getFilteredRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { createSelectColumn } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import styles from './ContactsTable.module.css';
 import AddContactModal from './AddContactModal';
@@ -21,48 +20,13 @@ import BulkEditModal from './BulkEditModal';
 
 const columnHelper = createColumnHelper();
 
-// Draggable column header component
-function DraggableColumnHeader({ header, column }) {
-  const [isDragging, setIsDragging] = useState(false);
-
-  const handleMouseDown = (e) => {
-    setIsDragging(true);
-    const startX = e.clientX;
-    const startOrder = column.getOrder();
-
-    const handleMouseMove = (e) => {
-      const deltaX = e.clientX - startX;
-      // Calculate column reordering logic here
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  };
-
-  return (
-    <th
-      className={styles.draggableHeader}
-      onMouseDown={handleMouseDown}
-      style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
-    >
-      <div className={styles.headerContent}>
-        <span className={styles.dragHandle}>⋮⋮</span>
-        {header}
-      </div>
-    </th>
-  );
-}
-
-const createColumns = (columnOrder = [], rowSelection, setRowSelection, filteredContacts) => {
+const createColumns = (columnOrder = [], rowSelection, setRowSelection, filteredContacts, columnSizing = {}) => {
   // Create select column for row selection
   const selectColumn = columnHelper.display({
     id: 'select',
+    size: 50,
+    minSize: 40,
+    maxSize: 60,
     header: ({ table }) => (
       <input
         type="checkbox"
@@ -86,6 +50,9 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
     columnHelper.accessor('id', {
     header: 'ID',
     id: 'id',
+    size: columnSizing.id || 120, // Default wider width for ID
+    minSize: 80,
+    maxSize: 300,
     cell: info => {
       const value = String(info.getValue() || '');
       return value.length > 10 ? value.substring(0, 10) + '...' : value;
@@ -94,6 +61,9 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
   columnHelper.accessor('firstName', {
     header: 'First Name',
     id: 'firstName',
+    size: columnSizing.firstName || 120,
+    minSize: 80,
+    maxSize: 300,
     cell: info => {
       const value = String(info.getValue() || '');
       return value.length > 20 ? value.substring(0, 20) + '...' : value;
@@ -102,6 +72,9 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
   columnHelper.accessor('lastName', {
     header: 'Last Name',
     id: 'lastName',
+    size: columnSizing.lastName || 120,
+    minSize: 80,
+    maxSize: 300,
     cell: info => {
       const value = String(info.getValue() || '');
       return value.length > 20 ? value.substring(0, 20) + '...' : value;
@@ -110,6 +83,9 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
   columnHelper.accessor('phone', {
     header: 'Phone',
     id: 'phone',
+    size: columnSizing.phone || 150,
+    minSize: 100,
+    maxSize: 300,
     cell: info => {
       const value = String(info.getValue() || '');
       return value.length > 15 ? value.substring(0, 15) + '...' : value;
@@ -118,6 +94,9 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
   columnHelper.accessor('email', {
     header: 'Email',
     id: 'email',
+    size: columnSizing.email || 200,
+    minSize: 120,
+    maxSize: 400,
     cell: info => {
       const value = String(info.getValue() || '');
       return value.length > 30 ? value.substring(0, 30) + '...' : value;
@@ -126,6 +105,9 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
   columnHelper.accessor('clickid', {
     header: 'Click IDs',
     id: 'clickid',
+    size: columnSizing.clickid || 150,
+    minSize: 100,
+    maxSize: 300,
     cell: info => {
       const clickids = info.getValue() || [];
       const value = Array.isArray(clickids) ? clickids.join(', ') : String(clickids || 'null');
@@ -135,6 +117,9 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
   columnHelper.accessor('source', {
     header: 'Source',
     id: 'source',
+    size: columnSizing.source || 120,
+    minSize: 80,
+    maxSize: 300,
     cell: info => {
       const value = String(info.getValue() || '');
       return value.length > 25 ? value.substring(0, 25) + '...' : value;
@@ -143,6 +128,9 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
   columnHelper.accessor('age', {
     header: 'Age',
     id: 'age',
+    size: columnSizing.age || 80,
+    minSize: 60,
+    maxSize: 150,
     cell: info => {
       const value = String(info.getValue() || '');
       return value.length > 10 ? value.substring(0, 10) + '...' : value;
@@ -151,6 +139,9 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
   columnHelper.accessor('ip', {
     header: 'IP',
     id: 'ip',
+    size: columnSizing.ip || 120,
+    minSize: 80,
+    maxSize: 200,
     cell: info => {
       const value = String(info.getValue() || '');
       return value.length > 15 ? value.substring(0, 15) + '...' : value;
@@ -159,6 +150,9 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
   columnHelper.accessor('useragent', {
     header: 'User Agent',
     id: 'useragent',
+    size: columnSizing.useragent || 250,
+    minSize: 150,
+    maxSize: 500,
     cell: info => {
       const ua = info.getValue();
       const value = ua ? String(ua) : 'null';
@@ -168,6 +162,9 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
   columnHelper.accessor('referrer', {
     header: 'Referrer',
     id: 'referrer',
+    size: columnSizing.referrer || 200,
+    minSize: 120,
+    maxSize: 400,
     cell: info => {
       const value = String(info.getValue() || '');
       return value.length > 30 ? value.substring(0, 30) + '...' : value;
@@ -176,15 +173,24 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
   columnHelper.accessor('subscribed', {
     header: 'Subscribed',
     id: 'subscribed',
+    size: columnSizing.subscribed || 100,
+    minSize: 80,
+    maxSize: 150,
   }),
   columnHelper.accessor('lastMessageSent', {
     header: 'Last Message',
     id: 'lastMessageSent',
+    size: columnSizing.lastMessageSent || 160,
+    minSize: 120,
+    maxSize: 250,
     cell: info => info.getValue() ? format(new Date(info.getValue()), 'yyyy-MM-dd HH:mm') : 'Never',
   }),
   columnHelper.accessor('tags', {
     header: 'Tags',
     id: 'tags',
+    size: columnSizing.tags || 150,
+    minSize: 100,
+    maxSize: 300,
     cell: info => {
       const tags = info.getValue() || [];
       if (tags.length === 0) return 'No tags';
@@ -195,11 +201,17 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
   columnHelper.accessor('createdAt', {
     header: 'Created At',
     id: 'createdAt',
+    size: columnSizing.createdAt || 160,
+    minSize: 120,
+    maxSize: 250,
     cell: info => format(new Date(info.getValue()), 'yyyy-MM-dd HH:mm'),
   }),
   columnHelper.accessor('updatedAt', {
     header: 'Updated At',
-      id: 'updatedAt',
+    id: 'updatedAt',
+    size: columnSizing.updatedAt || 160,
+    minSize: 120,
+    maxSize: 250,
     cell: info => format(new Date(info.getValue()), 'yyyy-MM-dd HH:mm'),
   }),
   ];
@@ -689,6 +701,13 @@ export default function ContactsTable({ initialContacts }) {
     }
     return defaultColumnOrder;
   });
+  const [columnSizing, setColumnSizing] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('contactsColumnSizing');
+      return saved ? JSON.parse(saved) : {};
+    }
+    return {};
+  });
   const [editingContact, setEditingContact] = useState(null);
   const [rowSelection, setRowSelection] = useState({});
   const [showBulkEdit, setShowBulkEdit] = useState(false);
@@ -705,6 +724,11 @@ export default function ContactsTable({ initialContacts }) {
   useEffect(() => {
     localStorage.setItem('contactsVisibleFields', JSON.stringify(visibleFields));
   }, [visibleFields]);
+
+  // Save column sizing to localStorage
+  useEffect(() => {
+    localStorage.setItem('contactsColumnSizing', JSON.stringify(columnSizing));
+  }, [columnSizing]);
 
   // Close actions menu when clicking outside
   useEffect(() => {
@@ -967,7 +991,7 @@ export default function ContactsTable({ initialContacts }) {
     }
   };
 
-  const columns = useMemo(() => createColumns(columnOrder, rowSelection, setRowSelection, filteredContacts), [columnOrder, rowSelection, filteredContacts]);
+  const columns = useMemo(() => createColumns(columnOrder, rowSelection, setRowSelection, filteredContacts, columnSizing), [columnOrder, rowSelection, filteredContacts, columnSizing]);
   
   const visibleColumns = useMemo(() => {
     // Always include select column first, then filter other columns
@@ -983,6 +1007,8 @@ export default function ContactsTable({ initialContacts }) {
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     enableRowSelection: true,
+    enableColumnResizing: true,
+    columnResizeMode: 'onChange',
     onRowSelectionChange: setRowSelection,
     getRowId: (row) => String(row.id),
     state: {
@@ -990,9 +1016,11 @@ export default function ContactsTable({ initialContacts }) {
       columnFilters,
       rowSelection,
       columnOrder: ['select', ...columnOrder.filter(f => visibleFields.includes(f))],
+      columnSizing,
     },
     onGlobalFilterChange: setGlobalFilter,
     onColumnFiltersChange: setColumnFilters,
+    onColumnSizingChange: setColumnSizing,
   });
 
   const selectedRows = table.getSelectedRowModel().rows;
@@ -1136,11 +1164,32 @@ export default function ContactsTable({ initialContacts }) {
             {table.getHeaderGroups().map(headerGroup => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map(header => (
-                  <th key={header.id} className={header.id === 'select' ? styles.checkboxCell : styles.draggableHeader}>
-                    {flexRender(header.column.columnDef.header, header.getContext())}
+                  <th 
+                    key={header.id} 
+                    className={header.id === 'select' ? styles.checkboxCell : styles.resizableHeader}
+                    style={{ 
+                      width: header.getSize(),
+                      position: 'relative'
+                    }}
+                  >
+                    <div className={styles.headerContent}>
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    </div>
+                    {header.id !== 'select' && (
+                      <div
+                        onMouseDown={header.getResizeHandler()}
+                        onTouchStart={header.getResizeHandler()}
+                        className={styles.resizeHandle}
+                        style={{
+                          cursor: 'col-resize',
+                          userSelect: 'none',
+                          touchAction: 'none',
+                        }}
+                      />
+                    )}
                   </th>
                 ))}
-                <th>Actions</th>
+                <th className={styles.actionsHeader}>Actions</th>
               </tr>
             ))}
           </thead>
@@ -1150,7 +1199,12 @@ export default function ContactsTable({ initialContacts }) {
               return (
                 <tr key={row.id}>
                   {row.getVisibleCells().map(cell => (
-                    <td key={cell.id} className={cell.column.id === 'select' ? styles.checkboxCell : ''} data-column={cell.column.id}>
+                    <td 
+                      key={cell.id} 
+                      className={cell.column.id === 'select' ? styles.checkboxCell : ''} 
+                      data-column={cell.column.id}
+                      style={{ width: cell.column.getSize() }}
+                    >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}

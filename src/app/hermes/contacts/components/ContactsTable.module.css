@@ -217,6 +217,7 @@
 .table th {
   background: var(--bg-tertiary);
   padding: 0.875rem 1.25rem;
+  padding-right: 0.5rem;
   text-align: left;
   color: var(--text-muted);
   font-weight: 500;
@@ -226,6 +227,7 @@
   border-bottom: 1px solid var(--border-primary);
   white-space: nowrap;
   position: relative;
+  overflow: visible;
 }
 
 .table td {
@@ -235,10 +237,10 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 0;
   height: 2rem;
   line-height: 1.5rem;
   vertical-align: middle;
+  position: relative;
 }
 
 .table tr {
@@ -646,31 +648,45 @@
   min-width: 150px;
 }
 
-/* Draggable column headers */
-.draggableHeader {
+/* Resizable column headers */
+.resizableHeader {
   position: relative;
-  cursor: grab;
   user-select: none;
-}
-
-.draggableHeader:active {
-  cursor: grabbing;
 }
 
 .headerContent {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  padding-right: 0.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.dragHandle {
-  opacity: 0.3;
-  font-size: 0.875rem;
-  cursor: grab;
+.resizeHandle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: transparent;
+  cursor: col-resize;
+  z-index: 1;
+  transition: background 0.2s;
 }
 
-.dragHandle:hover {
-  opacity: 0.6;
+.resizeHandle:hover {
+  background: var(--accent-orange);
+}
+
+.resizeHandle:active {
+  background: var(--accent-orange);
+  width: 2px;
+}
+
+.actionsHeader {
+  width: 120px;
+  min-width: 120px;
 }
 
 /* Field order controls */
