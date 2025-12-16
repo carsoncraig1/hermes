@@ -1,7 +1,11 @@
-import { redirect } from 'next/navigation'
-
 export default function Home() {
-  redirect('/hermes/dashboard')
-  // Next.js requires a return statement even though redirect will handle the navigation
-  return null
+  return (
+    <div style={{
+      width: '100vw',
+      height: '100vh',
+      backgroundColor: '#FFFFFF',
+      margin: 0,
+      padding: 0
+    }} />
+  )
 } 
