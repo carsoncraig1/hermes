@@ -242,6 +242,7 @@ const FILTER_OPERATORS = [
   { id: 'startsWith', label: 'Starts With' },
   { id: 'endsWith', label: 'Ends With' },
   { id: 'notEquals', label: 'Not Equals' },
+  { id: 'doesNotContain', label: 'Does Not Contain' },
 ];
 
 // Date operators
@@ -342,6 +343,14 @@ function FilterMenu({ isOpen, onClose, filters, setFilters, contacts, setFiltere
 
     if (field === 'tags' && Array.isArray(contact.tags)) {
       const searchValue = value.toLowerCase();
+      // For "doesNotContain", check that NO tags contain the value
+      if (operator === 'doesNotContain') {
+        return !contact.tags.some(tag => {
+          const tagName = tag.name.toLowerCase();
+          return tagName.includes(searchValue);
+        });
+      }
+      // For other operators, check if at least one tag matches
       return contact.tags.some(tag => {
         const tagName = tag.name.toLowerCase();
         switch (operator) {
@@ -843,6 +852,14 @@ export default function ContactsTable({ initialContacts }) {
 
     if (field === 'tags' && Array.isArray(contact.tags)) {
       const searchValue = value.toLowerCase();
+      // For "doesNotContain", check that NO tags contain the value
+      if (operator === 'doesNotContain') {
+        return !contact.tags.some(tag => {
+          const tagName = tag.name.toLowerCase();
+          return tagName.includes(searchValue);
+        });
+      }
+      // For other operators, check if at least one tag matches
       return contact.tags.some(tag => {
         const tagName = tag.name.toLowerCase();
         switch (operator) {
