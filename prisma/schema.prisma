@@ -15,33 +15,36 @@ datasource db {
 // ============================================
 
 model User {
-  id                  String    @id @default(cuid())
-  name                String?
-  email               String    @unique
-  emailVerified       DateTime?
-  image               String?
-  password            String?   // For credentials provider (hashed)
-  apiKey              String?   @unique // Hermes API key for external API access
-  standardOptOutText  String?   // Standard opt-out language to append to messages
-  telnyxApiKey        String?   // Telnyx API key for SMS sending
-  telnyxPhoneNumber   String?   // Telnyx phone number to use as sender
+  id                       String    @id @default(cuid())
+  name                     String?
+  email                    String    @unique
+  emailVerified            DateTime?
+  image                    String?
+  password                 String? // For credentials provider (hashed)
+  apiKey                   String?   @unique // Hermes API key for external API access
+  standardOptOutText       String? // Standard opt-out language to append to messages
+  telnyxApiKey             String? // Telnyx API key for SMS sending
+  telnyxPhoneNumber        String? // Telnyx phone number to use as sender
   telnyxMessagingProfileId String? // Telnyx messaging profile ID
-  autoUnsubscribeOnFailure Boolean @default(true) // Automatically unsubscribe contacts on delivery failures
-  
+  autoUnsubscribeOnFailure Boolean   @default(true) // Automatically unsubscribe contacts on delivery failures
+
   // Relations to app data
-  accounts            Account[]
-  sessions            Session[]
-  contacts            Contact[]
-  campaigns           Campaign[]
-  tags                Tag[]
-  shortlinks          Shortlink[]
-  consoleLogs         ConsoleLog[]
-  messages            Message[]
-  revenueEvents       RevenueEvent[]
-  messageClickCodes   MessageClickCode[]
-  
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  accounts               Account[]
+  sessions               Session[]
+  contacts               Contact[]
+  campaigns              Campaign[]
+  tags                   Tag[]
+  shortlinks             Shortlink[]
+  consoleLogs            ConsoleLog[]
+  messages               Message[]
+  revenueEvents          RevenueEvent[]
+  messageClickCodes      MessageClickCode[]
+  sendJobs               SendJob[]
+  delayedWorkflowActions DelayedWorkflowAction[]
+  rateLimitCache         RateLimitCache?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("users")
 }
@@ -103,109 +106,113 @@ model Tag {
 }
 
 model Contact {
-  id              Int       @id @default(autoincrement())
-  userId          String
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  firstName       String?
-  lastName        String?
-  email           String?
-  phone           String    // Required - used for deduplication
-  clickid         String[]  @default([]) // Array of click IDs
-  source          String?   // Changed from tag to source
-  age             String?
-  ip              String?
-  useragent       String?
-  referrer        String?
-  subscribed      Boolean?
-  unsubscribeReason String? // Reason for unsubscription: "STOP", "delivery_failed", "sending_failed", "manual", etc.
-  lastMessageSent DateTime?
-  tags            Tag[]
-  messages        Message[]
-  messageClickCodes MessageClickCode[]
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                     Int                     @id @default(autoincrement())
+  userId                 String
+  user                   User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName              String?
+  lastName               String?
+  email                  String?
+  phone                  String // Required - used for deduplication
+  clickid                String[]                @default([]) // Array of click IDs
+  source                 String? // Changed from tag to source
+  age                    String?
+  ip                     String?
+  useragent              String?
+  referrer               String?
+  subscribed             Boolean?
+  unsubscribeReason      String? // Reason for unsubscription: "STOP", "delivery_failed", "sending_failed", "manual", etc.
+  lastMessageSent        DateTime?
+  tags                   Tag[]
+  messages               Message[]
+  messageClickCodes      MessageClickCode[]
+  delayedWorkflowActions DelayedWorkflowAction[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 
   @@map("contacts")
 }
 
 model Campaign {
-  id              Int              @id @default(autoincrement())
-  userId          String
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name            String
-  message         String           @default("") // Legacy field, kept for backward compatibility
-  workflow        Json?            // Workflow definition (nodes, edges, etc.)
-  enabled         Boolean          @default(true)
-  messagesSent    Int              @default(0) // Total number of messages sent
-  totalRevenue    Decimal          @default(0) @db.Decimal(10, 2) // Total revenue from this campaign
-  shortlinks      Shortlink[]
-  messages        Message[]
-  revenueEvents   RevenueEvent[]
-  lastMessageSent DateTime?
-  targets         CampaignTarget[] // Legacy targeting, kept for backward compatibility
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id                    Int                     @id @default(autoincrement())
+  userId                String
+  user                  User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                  String
+  message               String                  @default("") // Legacy field, kept for backward compatibility
+  workflow              Json? // Workflow definition (nodes, edges, etc.)
+  enabled               Boolean                 @default(true)
+  messagesSent          Int                     @default(0) // Total number of messages sent
+  totalRevenue          Decimal                 @default(0) @db.Decimal(10, 2) // Total revenue from this campaign
+  shortlinks            Shortlink[]
+  messages              Message[]
+  revenueEvents         RevenueEvent[]
+  lastMessageSent       DateTime?
+  targets               CampaignTarget[] // Legacy targeting, kept for backward compatibility
+  executionLocks        CampaignExecutionLock[]
+  sendJobs              SendJob[]
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  DelayedWorkflowAction DelayedWorkflowAction[]
 
   @@map("campaigns")
 }
 
 model CampaignTarget {
-  id          Int       @id @default(autoincrement())
-  campaign    Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  id          Int      @id @default(autoincrement())
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   campaignId  Int
-  targetType  String    // Either "TAG", "SOURCE", or "ALL_SUBSCRIBED"
-  tagId       Int?      // Only used when targetType is "TAG"
-  tag         Tag?      @relation(fields: [tagId], references: [id])
-  sourceValue String?   // Only used when targetType is "SOURCE"
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  targetType  String // Either "TAG", "SOURCE", or "ALL_SUBSCRIBED"
+  tagId       Int? // Only used when targetType is "TAG"
+  tag         Tag?     @relation(fields: [tagId], references: [id])
+  sourceValue String? // Only used when targetType is "SOURCE"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@map("campaign_targets")
 }
 
 model Shortlink {
-  id            Int       @id @default(autoincrement())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  nickname      String?   // Optional nickname for the shortlink (used for identification in UI)
-  destination   String
-  clicks        Int       @default(0) // Counter for total clicks
-  opens         Int       @default(0)  // Tracks preview fetches from messaging apps
-  enabled       Boolean   @default(true)
-  campaign      Campaign? @relation(fields: [campaignId], references: [id])
-  campaignId    Int?
+  id                Int                @id @default(autoincrement())
+  userId            String
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nickname          String? // Optional nickname for the shortlink (used for identification in UI)
+  destination       String
+  clicks            Int                @default(0) // Counter for total clicks
+  opens             Int                @default(0) // Tracks preview fetches from messaging apps
+  enabled           Boolean            @default(true)
+  campaign          Campaign?          @relation(fields: [campaignId], references: [id])
+  campaignId        Int?
   // OG Preview fields
-  ogEnabled     Boolean   @default(false)
-  ogImage       String?
-  ogTitle       String?
-  ogDescription String?
-  revenueEvents RevenueEvent[]
-  clickRecords  ShortlinkClick[] // Individual click tracking with unique HRMS
+  ogEnabled         Boolean            @default(false)
+  ogImage           String?
+  ogTitle           String?
+  ogDescription     String?
+  revenueEvents     RevenueEvent[]
+  clickRecords      ShortlinkClick[] // Individual click tracking with unique HRMS
   messageClickCodes MessageClickCode[] // Click codes for messages containing this shortlink
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   @@map("shortlinks")
 }
 
 model MessageClickCode {
-  id            Int            @id @default(autoincrement())
-  code          String         @unique // 5-6 character alphanumeric code (base62)
-  shortlinkId   Int
-  shortlink     Shortlink      @relation(fields: [shortlinkId], references: [id], onDelete: Cascade)
-  messageId     String
-  message       Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  contactId     Int?
-  contact       Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  userId        String
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  clicked       Boolean        @default(false) // Whether this code has been clicked
-  clickedAt      DateTime?     // When the code was first clicked
-  opened         Boolean        @default(false) // Whether this code has been opened (preview fetched by bot)
-  openedAt       DateTime?     // When the code was first opened (preview fetched)
-  expiresAt      DateTime      // Code expires after 30 days
+  id              Int              @id @default(autoincrement())
+  code            String           @unique // 5-6 character alphanumeric code (base62)
+  shortlinkId     Int
+  shortlink       Shortlink        @relation(fields: [shortlinkId], references: [id], onDelete: Cascade)
+  messageId       String
+  message         Message          @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  contactId       Int?
+  contact         Contact?         @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clicked         Boolean          @default(false) // Whether this code has been clicked
+  clickedAt       DateTime? // When the code was first clicked
+  opened          Boolean          @default(false) // Whether this code has been opened (preview fetched by bot)
+  openedAt        DateTime? // When the code was first opened (preview fetched)
+  expiresAt       DateTime // Code expires after 30 days
   shortlinkClicks ShortlinkClick[] // Clicks that used this code
-  createdAt     DateTime       @default(now())
+  createdAt       DateTime         @default(now())
 
   @@index([code]) // Primary lookup index
   @@index([shortlinkId, createdAt])
@@ -216,19 +223,19 @@ model MessageClickCode {
 }
 
 model ShortlinkClick {
-  id                Int            @id @default(autoincrement())
-  shortlinkId       Int
-  shortlink         Shortlink      @relation(fields: [shortlinkId], references: [id], onDelete: Cascade)
-  messageId         String?        // Link to the specific message that contained this shortlink
-  message           Message?       @relation(fields: [messageId], references: [id], onDelete: SetNull)
-  messageClickCodeId Int?          // Link to the MessageClickCode that was used
+  id                 Int               @id @default(autoincrement())
+  shortlinkId        Int
+  shortlink          Shortlink         @relation(fields: [shortlinkId], references: [id], onDelete: Cascade)
+  messageId          String? // Link to the specific message that contained this shortlink
+  message            Message?          @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  messageClickCodeId Int? // Link to the MessageClickCode that was used
   messageClickCode   MessageClickCode? @relation(fields: [messageClickCodeId], references: [id], onDelete: SetNull)
-  hrms              String         @unique // Unique tracking parameter for this specific click
-  userAgent         String?        // User agent string for analytics
-  ipAddress         String?        // IP address for analytics
-  referrer          String?        // Referrer URL
-  revenueEvents     RevenueEvent[] // Revenue events attributed to this click
-  createdAt         DateTime       @default(now())
+  hrms               String            @unique // Unique tracking parameter for this specific click
+  userAgent          String? // User agent string for analytics
+  ipAddress          String? // IP address for analytics
+  referrer           String? // Referrer URL
+  revenueEvents      RevenueEvent[] // Revenue events attributed to this click
+  createdAt          DateTime          @default(now())
 
   @@index([shortlinkId, createdAt])
   @@index([messageId, createdAt])
@@ -241,9 +248,9 @@ model ConsoleLog {
   id        Int      @id @default(autoincrement())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  level     String   // info, warn, error, debug
+  level     String // info, warn, error, debug
   message   String   @db.Text
-  meta      Json?    // Additional metadata
+  meta      Json? // Additional metadata
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
@@ -251,40 +258,40 @@ model ConsoleLog {
 }
 
 model Message {
-  id                String    @id @default(cuid())
-  userId            String
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  telnyxMessageId   String?   @unique // Message ID from Telnyx API
-  contactId         Int?
-  contact           Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  campaignId        Int?
-  campaign          Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  telnyxMessageId String?   @unique // Message ID from Telnyx API
+  contactId       Int?
+  contact         Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  campaignId      Int?
+  campaign        Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
   // Message details
-  from              String    // Sender phone number
-  to                String    // Recipient phone number
-  text              String    @db.Text // Message content
-  type              String    @default("SMS") // SMS or MMS
-  parts             Int       @default(1) // Number of message parts (for concatenated messages)
-  
+  from  String // Sender phone number
+  to    String // Recipient phone number
+  text  String @db.Text // Message content
+  type  String @default("SMS") // SMS or MMS
+  parts Int    @default(1) // Number of message parts (for concatenated messages)
+
   // Status tracking
-  status            String    @default("queued") // queued, sending, sent, delivered, sending_failed, delivery_failed, delivery_unconfirmed
-  direction         String    @default("outbound") // outbound or inbound
-  
+  status    String @default("queued") // queued, sending, sent, delivered, sending_failed, delivery_failed, delivery_unconfirmed
+  direction String @default("outbound") // outbound or inbound
+
   // Cost tracking
-  costAmount        Decimal?  @db.Decimal(10, 4) // Cost in USD
-  costCurrency      String    @default("USD")
-  
+  costAmount   Decimal? @db.Decimal(10, 4) // Cost in USD
+  costCurrency String   @default("USD")
+
   // Timestamps
-  sentAt            DateTime?
-  deliveredAt       DateTime?
-  failedAt          DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  failedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
   // Additional metadata
-  telnyxMetadata    Json?     // Store full Telnyx response for debugging
-  errorMessage      String?   @db.Text // Error message if failed
+  telnyxMetadata    Json? // Store full Telnyx response for debugging
+  errorMessage      String?            @db.Text // Error message if failed
   messageClickCodes MessageClickCode[] // Click codes generated for shortlinks in this message
   shortlinkClicks   ShortlinkClick[] // Clicks on shortlinks in this message
 
@@ -297,20 +304,20 @@ model Message {
 }
 
 model RevenueEvent {
-  id            Int            @id @default(autoincrement())
-  userId        String
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  hrms          String         // Tracking parameter from shortlink click
-  shortlinkId   Int?
-  shortlink     Shortlink?     @relation(fields: [shortlinkId], references: [id], onDelete: SetNull)
-  shortlinkClickId Int?        // Link to the specific click that generated this revenue
+  id               Int             @id @default(autoincrement())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hrms             String // Tracking parameter from shortlink click
+  shortlinkId      Int?
+  shortlink        Shortlink?      @relation(fields: [shortlinkId], references: [id], onDelete: SetNull)
+  shortlinkClickId Int? // Link to the specific click that generated this revenue
   shortlinkClick   ShortlinkClick? @relation(fields: [shortlinkClickId], references: [id], onDelete: SetNull)
-  campaignId    Int?
-  campaign      Campaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  payout        Decimal        @db.Decimal(10, 2) // Revenue amount
-  currency      String         @default("USD")
-  metadata      Json?          // Additional tracking data
-  createdAt     DateTime       @default(now())
+  campaignId       Int?
+  campaign         Campaign?       @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  payout           Decimal         @db.Decimal(10, 2) // Revenue amount
+  currency         String          @default("USD")
+  metadata         Json? // Additional tracking data
+  createdAt        DateTime        @default(now())
 
   @@index([userId, createdAt])
   @@index([hrms])
@@ -320,3 +327,83 @@ model RevenueEvent {
   @@map("revenue_events")
 }
 
+// Campaign execution lock to prevent duplicate sends
+model CampaignExecutionLock {
+  id         Int      @id @default(autoincrement())
+  campaignId Int
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lockedAt   DateTime @default(now())
+  expiresAt  DateTime // Lock expires after 1 hour
+  lockedBy   String? // Process/instance identifier
+
+  @@unique([campaignId]) // Only one lock per campaign
+  @@index([expiresAt]) // For cleanup of expired locks
+  @@map("campaign_execution_locks")
+}
+
+// Background job queue for long-running sends
+model SendJob {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaignId        Int
+  campaign          Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  jobType           String // "dedicated_send" or "manual_fire"
+  status            String    @default("pending") // pending, processing, completed, failed, cancelled
+  totalContacts     Int       @default(0)
+  processedContacts Int       @default(0)
+  successCount      Int       @default(0)
+  failCount         Int       @default(0)
+  currentBatch      Int       @default(0)
+  totalBatches      Int       @default(0)
+  metadata          Json? // Additional job data (selectedTags, selectedSources, etc.)
+  errorMessage      String?   @db.Text
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([userId, status])
+  @@index([campaignId, status])
+  @@index([status, createdAt])
+  @@map("send_jobs")
+}
+
+// Delayed workflow actions (replaces setTimeout)
+model DelayedWorkflowAction {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaignId    Int?
+  campaign      Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId     Int
+  contact       Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  workflow      Json // Workflow definition
+  currentNodeId String // Node ID to execute when delay expires
+  executeAt     DateTime // When to execute this action
+  status        String    @default("pending") // pending, processing, completed, failed, cancelled
+  retryCount    Int       @default(0)
+  errorMessage  String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, executeAt]) // For finding actions ready to execute
+  @@index([contactId])
+  @@index([campaignId])
+  @@map("delayed_workflow_actions")
+}
+
+// Rate limit cache for optimization
+model RateLimitCache {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  minuteCount Int      @default(0)
+  hourCount   Int      @default(0)
+  lastUpdated DateTime @default(now())
+  expiresAt   DateTime // Cache expires after 10 seconds
+
+  @@unique([userId]) // One cache entry per user
+  @@index([expiresAt]) // For cleanup
+  @@map("rate_limit_cache")
+}

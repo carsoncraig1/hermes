@@ -131,7 +131,7 @@ export async function getMessageStats() {
 }
 
 /**
- * Check rate limits for a user
+ * Check rate limits for a user (optimized with caching)
  * 
  * Rate limits based on Telnyx documentation:
  * - Long Code: 6 messages/minute/number (recommended: ~200 messages/day for deliverability)
@@ -145,43 +145,48 @@ export async function getMessageStats() {
  * @param {string} userId - User ID
  * @param {number} maxMessagesPerMinute - Maximum messages per minute (default: 1200 for toll-free)
  * @param {number} maxMessagesPerHour - Maximum messages per hour (default: 30000)
+ * @param {boolean} useCache - Whether to use cache (default: true)
  * @returns {Promise<Object>} - Rate limit check result
  */
-export async function checkRateLimit(userId, maxMessagesPerMinute = 1200, maxMessagesPerHour = 30000) {
+export async function checkRateLimit(userId, maxMessagesPerMinute = 1200, maxMessagesPerHour = 30000, useCache = true) {
   const now = new Date();
-  const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
-  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  
+  let recentMinute, recentHour;
+  
+  if (useCache) {
+    // Use cached rate limit data
+    const { getCachedRateLimit } = await import('@/lib/rateLimitCache');
+    const cached = await getCachedRateLimit(userId);
+    recentMinute = cached.minuteCount;
+    recentHour = cached.hourCount;
+  } else {
+    // Calculate fresh (for critical checks)
+    const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
-  // Count messages sent in the last minute
-  const recentMinute = await prisma.message.count({
-    where: {
-      userId,
-      direction: 'outbound',
-      createdAt: {
-        gte: oneMinuteAgo
-      },
-      status: {
-        not: 'sending_failed' // Don't count failed messages
-      }
-    }
-  });
-
-  // Count messages sent in the last hour
-  const recentHour = await prisma.message.count({
-    where: {
-      userId,
-      direction: 'outbound',
-      createdAt: {
-        gte: oneHourAgo
-      },
-      status: {
-        not: 'sending_failed'
-      }
-    }
-  });
+    [recentMinute, recentHour] = await Promise.all([
+      prisma.message.count({
+        where: {
+          userId,
+          direction: 'outbound',
+          createdAt: { gte: oneMinuteAgo },
+          status: { not: 'sending_failed' }
+        }
+      }),
+      prisma.message.count({
+        where: {
+          userId,
+          direction: 'outbound',
+          createdAt: { gte: oneHourAgo },
+          status: { not: 'sending_failed' }
+        }
+      })
+    ]);
+  }
 
   const withinMinuteLimit = recentMinute < maxMessagesPerMinute;
   const withinHourLimit = recentHour < maxMessagesPerHour;
+  const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
 
   return {
     allowed: withinMinuteLimit && withinHourLimit,

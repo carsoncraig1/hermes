@@ -322,155 +322,203 @@ export async function getContactsForManualFire({ selectedTags = [], selectedSour
   }
 }
 
-// Execute manual fire workflow
+// Execute manual fire workflow (with locking, job queue, pagination, retry, and batched stats)
 export async function executeManualFire(campaignId, { selectedTags = [], selectedSources = [], targetAllSubscribed = false }) {
+  const { acquireCampaignLock, releaseCampaignLock } = await import('@/lib/campaignLock')
+  const { createSendJob, startSendJob, updateSendJobProgress, completeSendJob, failSendJob } = await import('@/lib/sendJob')
+  const { checkRateLimit } = await import('@/lib/actions/messages')
+  const { incrementRateLimitCache } = await import('@/lib/rateLimitCache')
+  const { retryWithBackoff, isRetryableError } = await import('@/lib/retry')
+  const { getContactsForManualFirePaginated } = await import('@/lib/contactPagination')
+  const { executeWorkflow } = await import('@/lib/workflow/executor')
+  
+  let jobId = null
+  let campaignLockAcquired = false
+  
   try {
     const userId = await getUserId()
-    
-    // Ensure campaignId is an integer
     const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
+    
+    // Acquire campaign lock to prevent duplicate execution
+    const lockAcquired = await acquireCampaignLock(campaignIdInt, `manual-fire-${Date.now()}`)
+    if (!lockAcquired) {
+      throw new Error('Campaign is already being executed. Please wait for the current execution to complete.')
+    }
+    campaignLockAcquired = true
     
     // Verify ownership and get campaign
     const campaign = await prisma.campaign.findFirst({
       where: { id: campaignIdInt, userId },
-      select: {
-        id: true,
-        name: true,
-        workflow: true
-      }
+      select: { id: true, name: true, workflow: true }
     })
     
-    if (!campaign) {
-      throw new Error('Campaign not found')
-    }
+    if (!campaign) throw new Error('Campaign not found')
+    if (!campaign.workflow) throw new Error('Campaign is not a workflow campaign')
     
-    if (!campaign.workflow) {
-      throw new Error('Campaign is not a workflow campaign')
-    }
-    
-    // Verify it's a manual fire workflow
     const triggerNode = campaign.workflow.nodes?.find(node => node.type === 'trigger')
     if (!triggerNode || triggerNode.data?.triggerType !== 'manualFire') {
       throw new Error('Campaign is not a manual fire workflow')
     }
     
-    // Get contacts based on selection
-    const contacts = await getContactsForManualFire({
-      selectedTags,
-      selectedSources,
-      targetAllSubscribed
-    })
+    // Get total contact count (first page to get total)
+    const firstPage = await getContactsForManualFirePaginated(
+      { selectedTags, selectedSources, targetAllSubscribed },
+      0,
+      1
+    )
     
-    if (contacts.length === 0) {
+    if (firstPage.total === 0) {
       throw new Error('No contacts found matching the selected criteria')
     }
     
-    // Import workflow executor
-    const { executeWorkflow } = await import('@/lib/workflow/executor')
+    // Calculate batches
+    const BATCH_SIZE = 5
+    const totalBatches = Math.ceil(firstPage.total / BATCH_SIZE)
     
-    // Log manual fire start
+    // Create job for tracking
+    const job = await createSendJob({
+      userId,
+      campaignId: campaignIdInt,
+      jobType: 'manual_fire',
+      totalContacts: firstPage.total,
+      totalBatches,
+      metadata: { selectedTags, selectedSources, targetAllSubscribed }
+    })
+    jobId = job.id
+    
+    await startSendJob(jobId)
+    
     await serverLog(
-      `Manual fire started: "${campaign.name}" to ${contacts.length} contacts`,
+      `Manual fire started: "${campaign.name}" to ${firstPage.total} contacts (Job: ${jobId})`,
       'info',
-      {
-        campaignId: campaignIdInt,
-        campaignName: campaign.name,
-        contactsCount: contacts.length,
-        selectedTags,
-        selectedSources,
-        targetAllSubscribed
-      },
+      { campaignId: campaignIdInt, campaignName: campaign.name, contactsCount: firstPage.total, jobId },
       userId
-    ).catch(err => console.error('Error logging manual fire start:', err))
+    ).catch(() => {})
     
     let successCount = 0
     let failCount = 0
+    let processedContacts = 0
+    let currentBatch = 0
     
-    // Filter out invalid contacts
-    const validContacts = contacts.filter(contact => contact.phone && contact.subscribed)
+    // Process contacts in pages
+    let page = 0
+    let hasMore = true
     
-    // Process contacts in parallel batches with rate limiting
-    // Batch size: 5 contacts at a time to prevent database connection pool exhaustion
-    // Each workflow execution opens multiple DB connections (rate limit check, logging, message sending)
-    // With 5 contacts, we're sending ~5 messages per batch, well under rate limits
-    // Rate limit: 1200 messages/minute = 20 messages/second
-    const BATCH_SIZE = 5
-    const batches = []
-    for (let i = 0; i < validContacts.length; i += BATCH_SIZE) {
-      batches.push(validContacts.slice(i, i + BATCH_SIZE))
-    }
-    
-    // Import rate limit checker
-    const { checkRateLimit } = await import('@/lib/actions/messages')
-    
-    // Process batches sequentially, but contacts within each batch in parallel
-    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-      const batch = batches[batchIndex]
-      
-      // Check rate limit before processing batch
-      const rateLimit = await checkRateLimit(userId)
-      if (!rateLimit.allowed) {
-        // If rate limit exceeded, wait and retry
-        const waitTime = rateLimit.retryAfter || 1000 // Default 1 second
-        console.log(`Rate limit exceeded, waiting ${waitTime}ms before batch ${batchIndex + 1}`)
-        await new Promise(resolve => setTimeout(resolve, waitTime))
-      }
-      
-      // Execute all contacts in this batch in parallel
-      const results = await Promise.allSettled(
-        batch.map(contact => 
-          executeWorkflow(campaign.workflow, contact, userId, campaignIdInt)
-            .then(() => ({ success: true, contact }))
-            .catch(error => {
-              console.error(`Error executing workflow for contact ${contact.phone}:`, error)
-              return { success: false, contact, error }
-            })
-        )
+    while (hasMore) {
+      const { contacts, hasMore: more } = await getContactsForManualFirePaginated(
+        { selectedTags, selectedSources, targetAllSubscribed },
+        page,
+        1000 // Load 1000 contacts per page
       )
       
-      // Count successes and failures
-      results.forEach(result => {
-        if (result.status === 'fulfilled' && result.value.success) {
-          successCount++
-        } else {
-          failCount++
-        }
-      })
+      hasMore = more
+      const validContacts = contacts.filter(c => c.phone && c.subscribed)
       
-      // Delay between batches to:
-      // 1. Allow database connections to close and be reused
-      // 2. Respect rate limits (5 contacts per batch = ~0.25 seconds at 20 msg/sec)
-      // 3. Prevent overwhelming the database connection pool
-      if (batchIndex < batches.length - 1) {
-        // Wait 500ms between batches to allow connections to close and rate limit to recover
-        // This gives the database time to close connections from the previous batch
-        await new Promise(resolve => setTimeout(resolve, 500))
+      // Process in batches
+      for (let i = 0; i < validContacts.length; i += BATCH_SIZE) {
+        const batch = validContacts.slice(i, i + BATCH_SIZE)
+        currentBatch++
+        
+        // Check rate limit
+        const rateLimit = await checkRateLimit(userId, 1200, 30000, true)
+        if (!rateLimit.allowed) {
+          const waitTime = rateLimit.retryAfter || 1000
+          await new Promise(resolve => setTimeout(resolve, waitTime))
+        }
+        
+        // Execute batch with retry
+        const results = await Promise.allSettled(
+          batch.map(contact =>
+            retryWithBackoff(
+              () => executeWorkflow(campaign.workflow, contact, userId, campaignIdInt),
+              {
+                maxRetries: 3,
+                initialDelay: 1000,
+                shouldRetry: isRetryableError
+              }
+            )
+              .then(() => {
+                incrementRateLimitCache(userId).catch(() => {})
+                return { success: true, contact }
+              })
+              .catch(error => {
+                console.error(`Error executing workflow for contact ${contact.phone}:`, error)
+                return { success: false, contact, error }
+              })
+          )
+        )
+        
+        // Count results
+        results.forEach(result => {
+          processedContacts++
+          if (result.status === 'fulfilled' && result.value.success) {
+            successCount++
+          } else {
+            failCount++
+          }
+        })
+        
+        // Update job progress
+        await updateSendJobProgress(jobId, {
+          processedContacts,
+          successCount,
+          failCount,
+          currentBatch
+        })
+        
+        // Batch campaign stats update (once per batch instead of per message)
+        const batchSuccessCount = results.filter(r => r.status === 'fulfilled' && r.value.success).length
+        if (batchSuccessCount > 0) {
+          await prisma.campaign.update({
+            where: { id: campaignIdInt },
+            data: {
+              messagesSent: { increment: batchSuccessCount },
+              lastMessageSent: new Date()
+            }
+          })
+        }
+        
+        // Delay between batches
+        if (i + BATCH_SIZE < validContacts.length || hasMore) {
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
       }
+      
+      page++
     }
     
-    // Log manual fire completion
+    await completeSendJob(jobId, {
+      processedContacts,
+      successCount: processedContacts - failCount,
+      failCount
+    })
+    
     await serverLog(
-      `Manual fire completed: "${campaign.name}" - ${successCount} executed, ${failCount} failed`,
-      successCount > 0 && failCount === 0 ? 'info' : failCount > 0 ? 'warn' : 'error',
-      {
-        campaignId: campaignIdInt,
-        campaignName: campaign.name,
-        totalContacts: contacts.length,
-        successCount,
-        failCount
-      },
+      `Manual fire completed: "${campaign.name}" - ${processedContacts - failCount} executed, ${failCount} failed`,
+      failCount === 0 ? 'info' : 'warn',
+      { campaignId: campaignIdInt, campaignName: campaign.name, totalContacts: firstPage.total, successCount: processedContacts - failCount, failCount, jobId },
       userId
-    ).catch(err => console.error('Error logging manual fire completion:', err))
+    ).catch(() => {})
     
     return {
       success: true,
-      totalContacts: contacts.length,
-      successCount,
-      failCount
+      totalContacts: firstPage.total,
+      successCount: processedContacts - failCount,
+      failCount,
+      jobId
     }
   } catch (error) {
     console.error('Error executing manual fire:', error)
+    
+    if (jobId) {
+      await failSendJob(jobId, error.message).catch(() => {})
+    }
+    
     throw error
+  } finally {
+    if (campaignLockAcquired) {
+      await releaseCampaignLock(campaignId).catch(() => {})
+    }
   }
 }
 
@@ -864,13 +912,29 @@ export async function getCampaignContactCount(campaignId) {
   }
 }
 
-// Execute a dedicated send campaign
+// Execute a dedicated send campaign (with batching, locking, job queue, pagination, retry, and batched stats)
 export async function executeDedicatedSend(campaignId) {
+  const { acquireCampaignLock, releaseCampaignLock } = await import('@/lib/campaignLock')
+  const { createSendJob, startSendJob, updateSendJobProgress, completeSendJob, failSendJob } = await import('@/lib/sendJob')
+  const { checkRateLimit } = await import('@/lib/actions/messages')
+  const { incrementRateLimitCache } = await import('@/lib/rateLimitCache')
+  const { retryWithBackoff, isRetryableError } = await import('@/lib/retry')
+  const { getCampaignContactsPaginated } = await import('@/lib/contactPagination')
+  const { sendMessage } = await import('@/lib/telnyx')
+  
+  let jobId = null
+  let campaignLockAcquired = false
+  
   try {
     const userId = await getUserId()
-    
-    // Ensure campaignId is an integer
     const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
+    
+    // Acquire campaign lock
+    const lockAcquired = await acquireCampaignLock(campaignIdInt, `dedicated-send-${Date.now()}`)
+    if (!lockAcquired) {
+      throw new Error('Campaign is already being executed. Please wait for the current execution to complete.')
+    }
+    campaignLockAcquired = true
     
     // Verify ownership and get campaign
     const campaign = await prisma.campaign.findFirst({
@@ -884,116 +948,178 @@ export async function executeDedicatedSend(campaignId) {
       }
     })
     
-    if (!campaign) {
-      throw new Error('Campaign not found')
-    }
+    if (!campaign) throw new Error('Campaign not found')
+    if (campaign.workflow) throw new Error('Cannot execute workflow campaigns as dedicated send')
+    if (!campaign.message) throw new Error('Campaign has no message')
     
-    if (campaign.workflow) {
-      throw new Error('Cannot execute workflow campaigns as dedicated send')
-    }
-    
-    if (!campaign.message) {
-      throw new Error('Campaign has no message')
-    }
-    
-    // Get all contacts for this campaign
-    const contacts = await getCampaignContacts(campaignIdInt)
-    
-    if (contacts.length === 0) {
+    // Get total contact count
+    const firstPage = await getCampaignContactsPaginated(campaignIdInt, 0, 1)
+    if (firstPage.total === 0) {
       throw new Error('No contacts found for this campaign')
     }
     
-    // Log dedicated send start
+    // Calculate batches
+    const BATCH_SIZE = 5
+    const totalBatches = Math.ceil(firstPage.total / BATCH_SIZE)
+    
+    // Create job
+    const job = await createSendJob({
+      userId,
+      campaignId: campaignIdInt,
+      jobType: 'dedicated_send',
+      totalContacts: firstPage.total,
+      totalBatches
+    })
+    jobId = job.id
+    
+    await startSendJob(jobId)
+    
     await serverLog(
-      `Dedicated send started: "${campaign.name}" to ${contacts.length} contacts`,
+      `Dedicated send started: "${campaign.name}" to ${firstPage.total} contacts (Job: ${jobId})`,
       'info',
-      {
-        campaignId: campaignIdInt,
-        campaignName: campaign.name,
-        contactsCount: contacts.length
-      },
+      { campaignId: campaignIdInt, campaignName: campaign.name, contactsCount: firstPage.total, jobId },
       userId
-    ).catch(err => console.error('Error logging dedicated send start:', err))
+    ).catch(() => {})
     
-    // Import sendMessage from telnyx
-    const { sendMessage } = await import('@/lib/telnyx')
-    
-    // Get user's standard opt-out text if set
+    // Get user's standard opt-out text
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { standardOptOutText: true }
     })
     
-    // Build the message with opt-out text if available
     let messageText = campaign.message
     if (user?.standardOptOutText) {
       messageText = `${campaign.message}\n\n${user.standardOptOutText}`
     }
     
-    // Send messages to all contacts
     let successCount = 0
     let failCount = 0
+    let processedContacts = 0
+    let currentBatch = 0
     
-    for (const contact of contacts) {
-      if (!contact.phone) {
-        failCount++
-        continue
-      }
+    // Process contacts in pages
+    let page = 0
+    let hasMore = true
+    
+    while (hasMore) {
+      const { contacts, hasMore: more } = await getCampaignContactsPaginated(campaignIdInt, page, 1000)
+      hasMore = more
       
-      try {
-        const result = await sendMessage({
-          to: contact.phone,
-          text: messageText,
-          userId: userId, // Pass userId so it uses user's Telnyx settings
-          contactId: contact.id,
-          campaignId: campaignIdInt
+      const validContacts = contacts.filter(c => c.phone && c.subscribed)
+      
+      // Process in batches
+      for (let i = 0; i < validContacts.length; i += BATCH_SIZE) {
+        const batch = validContacts.slice(i, i + BATCH_SIZE)
+        currentBatch++
+        
+        // Check rate limit
+        const rateLimit = await checkRateLimit(userId, 1200, 30000, true)
+        if (!rateLimit.allowed) {
+          const waitTime = rateLimit.retryAfter || 1000
+          await new Promise(resolve => setTimeout(resolve, waitTime))
+        }
+        
+        // Execute batch with retry
+        const results = await Promise.allSettled(
+          batch.map(contact =>
+            retryWithBackoff(
+              () => sendMessage({
+                to: contact.phone,
+                text: messageText,
+                userId,
+                contactId: contact.id,
+                campaignId: campaignIdInt
+              }),
+              {
+                maxRetries: 3,
+                initialDelay: 1000,
+                shouldRetry: isRetryableError
+              }
+            )
+              .then(result => {
+                incrementRateLimitCache(userId).catch(() => {})
+                return { success: result.success, contact }
+              })
+              .catch(error => {
+                console.error(`Error sending to ${contact.phone}:`, error)
+                return { success: false, contact, error }
+              })
+          )
+        )
+        
+        // Count results
+        const batchSuccessCount = results.filter(r => 
+          r.status === 'fulfilled' && r.value.success
+        ).length
+        
+        results.forEach(result => {
+          processedContacts++
+          if (result.status === 'fulfilled' && result.value.success) {
+            successCount++
+          } else {
+            failCount++
+          }
         })
         
-        if (result.success) {
-          successCount++
-        } else {
-          failCount++
-          console.error(`Failed to send to ${contact.phone}:`, result.error)
+        // Update job progress
+        await updateSendJobProgress(jobId, {
+          processedContacts,
+          successCount,
+          failCount,
+          currentBatch
+        })
+        
+        // Batch campaign stats update
+        if (batchSuccessCount > 0) {
+          await prisma.campaign.update({
+            where: { id: campaignIdInt },
+            data: {
+              messagesSent: { increment: batchSuccessCount },
+              lastMessageSent: new Date()
+            }
+          })
         }
-      } catch (error) {
-        failCount++
-        console.error(`Error sending to ${contact.phone}:`, error)
+        
+        // Delay between batches
+        if (i + BATCH_SIZE < validContacts.length || hasMore) {
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
       }
+      
+      page++
     }
     
-    // Update campaign stats
-    await prisma.campaign.update({
-      where: { id: campaignIdInt },
-      data: {
-        messagesSent: {
-          increment: successCount
-        },
-        lastMessageSent: new Date()
-      }
+    await completeSendJob(jobId, {
+      processedContacts,
+      successCount,
+      failCount
     })
     
-    // Log dedicated send completion
     await serverLog(
       `Dedicated send completed: "${campaign.name}" - ${successCount} sent, ${failCount} failed`,
-      successCount > 0 && failCount === 0 ? 'info' : failCount > 0 ? 'warn' : 'error',
-      {
-        campaignId: campaignIdInt,
-        campaignName: campaign.name,
-        totalContacts: contacts.length,
-        successCount,
-        failCount
-      },
+      failCount === 0 ? 'info' : 'warn',
+      { campaignId: campaignIdInt, campaignName: campaign.name, totalContacts: firstPage.total, successCount, failCount, jobId },
       userId
-    ).catch(err => console.error('Error logging dedicated send completion:', err))
+    ).catch(() => {})
     
     return {
       success: true,
-      totalContacts: contacts.length,
+      totalContacts: firstPage.total,
       successCount,
-      failCount
+      failCount,
+      jobId
     }
   } catch (error) {
     console.error('Error executing dedicated send:', error)
+    
+    if (jobId) {
+      await failSendJob(jobId, error.message).catch(() => {})
+    }
+    
     throw error
+  } finally {
+    if (campaignLockAcquired) {
+      await releaseCampaignLock(campaignId).catch(() => {})
+    }
   }
 }

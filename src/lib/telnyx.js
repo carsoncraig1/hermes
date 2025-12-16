@@ -158,8 +158,8 @@ export async function sendMessage({
       }
     }
 
-    // Check rate limits
-    const rateLimit = await checkRateLimit(finalUserId);
+    // Check rate limits (use cache for performance)
+    const rateLimit = await checkRateLimit(finalUserId, 1200, 30000, true);
     if (!rateLimit.allowed) {
       // Log rate limit hit
       await serverLog(
@@ -343,6 +343,10 @@ export async function sendMessage({
         // Continue even if DB record creation fails - message was sent
       }
     }
+    
+    // Invalidate rate limit cache after successful send
+    const { invalidateRateLimitCache } = await import('@/lib/rateLimitCache');
+    invalidateRateLimitCache(finalUserId).catch(() => {});
     
     // Log successful message send
     await serverLog(

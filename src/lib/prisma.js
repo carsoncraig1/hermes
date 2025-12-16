@@ -2,16 +2,23 @@ import { PrismaClient } from '@prisma/client'
 
 const globalForPrisma = global
 
+// Configure connection pool explicitly to prevent exhaustion
+// Connection pool settings via DATABASE_URL query params or explicit config
+const connectionUrl = process.env.DATABASE_URL || ''
+const hasPoolConfig = connectionUrl.includes('connection_limit') || connectionUrl.includes('pool_timeout')
+
 const prisma = globalForPrisma.prisma ?? new PrismaClient({
   datasources: {
     db: {
-      url: process.env.DATABASE_URL
+      url: connectionUrl
     }
   },
   log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-  // Configure connection pool to prevent exhaustion
-  // Limit concurrent connections per instance
-  // Note: This is a workaround - proper solution would be connection pooling service
+  // Connection pool configuration
+  // Defaults: connection_limit=10, pool_timeout=10s
+  // For production, configure via DATABASE_URL:
+  // postgresql://user:pass@host/db?connection_limit=20&pool_timeout=20
+  // Or use a connection pooler like PgBouncer
 })
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma

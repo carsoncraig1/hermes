@@ -466,16 +466,27 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
   const visited = new Set();
   const scheduledNodes = new Map(); // Track scheduled node executions
   
-  // Process node immediately or schedule it
+  // Process node immediately (delays are now handled via database)
   const processNode = async (nodeId, delayMs = 0) => {
     if (visited.has(nodeId)) return;
     
-    // If there's a delay, schedule it asynchronously (non-blocking)
+    // Delays are now handled via database in delay node case
+    // This delayMs parameter is kept for backward compatibility but should be 0
     if (delayMs > 0) {
-      const timeoutId = setTimeout(async () => {
+      // For non-delay nodes that somehow have a delay, use database scheduling
+      const { scheduleDelayedWorkflowAction } = await import('@/lib/delayedWorkflow');
+      await scheduleDelayedWorkflowAction({
+        userId,
+        campaignId,
+        contactId: contact.id,
+        workflow,
+        currentNodeId: nodeId,
+        delayMs
+      }).catch(err => {
+        console.error('Error scheduling delayed action:', err);
+        // Fallback: execute immediately
         await executeNode(nodeId);
-      }, delayMs);
-      scheduledNodes.set(nodeId, timeoutId);
+      });
       return;
     }
     
@@ -588,11 +599,25 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
           userId
         ).catch(err => console.error('Error logging delay:', err));
         
-        // Schedule next nodes with the delay
+        // Schedule delayed workflow actions (persisted in database instead of setTimeout)
         const delayEdges = graph.get(nodeId) || [];
+        const { scheduleDelayedWorkflowAction } = await import('@/lib/delayedWorkflow');
+        
         for (const edge of delayEdges) {
           if (!visited.has(edge.target)) {
-            await processNode(edge.target, delayMs);
+            // Schedule delayed action in database
+            await scheduleDelayedWorkflowAction({
+              userId,
+              campaignId,
+              contactId: contact.id,
+              workflow,
+              currentNodeId: edge.target,
+              delayMs
+            }).catch(err => {
+              console.error('Error scheduling delayed workflow action:', err);
+              // Fallback: continue immediately if scheduling fails
+              processNode(edge.target, 0);
+            });
           }
         }
         
