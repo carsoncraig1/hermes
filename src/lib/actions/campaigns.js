@@ -396,18 +396,18 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
     let hasMore = true
     
     while (hasMore) {
-      const { contacts, hasMore: more } = await getContactsForManualFirePaginated(
+      let { contacts, hasMore: more } = await getContactsForManualFirePaginated(
         { selectedTags, selectedSources, targetAllSubscribed },
         page,
         1000 // Load 1000 contacts per page
       )
       
       hasMore = more
-      const validContacts = contacts.filter(c => c.phone && c.subscribed)
+      let validContacts = contacts.filter(c => c.phone && c.subscribed)
       
       // Process in batches
       for (let i = 0; i < validContacts.length; i += BATCH_SIZE) {
-        const batch = validContacts.slice(i, i + BATCH_SIZE)
+        let batch = validContacts.slice(i, i + BATCH_SIZE)
         currentBatch++
         
         // Check rate limit
@@ -419,7 +419,7 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
         
         // Execute batch with retry
         const batchStartTime = Date.now()
-        const results = await Promise.allSettled(
+        let results = await Promise.allSettled(
           batch.map(contact =>
             retryWithBackoff(
               () => executeWorkflow(campaign.workflow, contact, userId, campaignIdInt),
@@ -470,6 +470,10 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
           }).catch(() => {}) // Don't block on DB update
         }
         
+        // Explicit memory cleanup after batch processing
+        batch = null
+        results = null
+        
         // Dynamic delay: ensure we don't exceed 20 messages/second
         // If batch took less than 1 second, wait the remainder
         const batchDuration = Date.now() - batchStartTime
@@ -478,6 +482,10 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
           await new Promise(resolve => setTimeout(resolve, minBatchTime - batchDuration))
         }
       }
+      
+      // Clear page data from memory after processing all batches
+      contacts = null
+      validContacts = null
       
       page++
     }
@@ -984,14 +992,14 @@ export async function executeDedicatedSend(campaignId) {
     let hasMore = true
     
     while (hasMore) {
-      const { contacts, hasMore: more } = await getCampaignContactsPaginated(campaignIdInt, page, 1000)
+      let { contacts, hasMore: more } = await getCampaignContactsPaginated(campaignIdInt, page, 1000)
       hasMore = more
       
-      const validContacts = contacts.filter(c => c.phone && c.subscribed)
+      let validContacts = contacts.filter(c => c.phone && c.subscribed)
       
       // Process in batches
       for (let i = 0; i < validContacts.length; i += BATCH_SIZE) {
-        const batch = validContacts.slice(i, i + BATCH_SIZE)
+        let batch = validContacts.slice(i, i + BATCH_SIZE)
         currentBatch++
         
         // Check rate limit
@@ -1003,7 +1011,7 @@ export async function executeDedicatedSend(campaignId) {
         
         // Execute batch with retry
         const batchStartTime = Date.now()
-        const results = await Promise.allSettled(
+        let results = await Promise.allSettled(
           batch.map(contact =>
             retryWithBackoff(
               () => sendMessage({
@@ -1063,6 +1071,10 @@ export async function executeDedicatedSend(campaignId) {
           }).catch(() => {}) // Don't block on DB update
         }
         
+        // Explicit memory cleanup after batch processing
+        batch = null
+        results = null
+        
         // Dynamic delay: ensure we don't exceed 20 messages/second
         // If batch took less than 1 second, wait the remainder
         const batchDuration = Date.now() - batchStartTime
@@ -1071,6 +1083,10 @@ export async function executeDedicatedSend(campaignId) {
           await new Promise(resolve => setTimeout(resolve, minBatchTime - batchDuration))
         }
       }
+      
+      // Clear page data from memory after processing all batches
+      contacts = null
+      validContacts = null
       
       page++
     }
