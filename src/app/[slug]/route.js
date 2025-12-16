@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
-import { createClickWithHrms, appendHrmsToUrl } from '@/lib/revenue'
+import { createClickWithHrms, appendHrmsToUrl, generateHrms } from '@/lib/revenue'
 import { lookupMessageClickCode, markCodeAsClicked, markCodeAsOpened } from '@/lib/messageClickCodes'
 
 // Bot/crawler User-Agent patterns for link preview fetching
@@ -158,34 +158,84 @@ export async function GET(request, { params }) {
       console.log(`👁️ Open: ${shortlinkName} (${openCount} opens)`)
     } else {
       // Real user click - we have full message-level tracking!
+      // Use atomic transaction to ensure one click per code, prevent race conditions
       const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || null
       const referrer = request.headers.get('referer') || null
       
-      // Mark code as clicked (first time only)
-      if (!messageClickCode.clicked) {
-        await markCodeAsClicked(code);
-      }
-      
-      // Generate unique HRMS for this specific click
-      hrms = await createClickWithHrms(
-        shortlink.id,
-        messageId,
-        contactId,
-        messageClickCodeId,
-        userAgent,
-        ipAddress,
-        referrer
-      );
-      destinationWithHrms = appendHrmsToUrl(shortlink.destination, hrms)
-      
-      // Increment click counter
-      await prisma.shortlink.update({
-        where: { id: shortlink.id },
-        data: { clicks: { increment: 1 } }
+      // Atomic transaction: check if clicked, mark as clicked, increment counter, create record - all or nothing
+      const clickResult = await prisma.$transaction(async (tx) => {
+        // Re-fetch the messageClickCode within transaction to get latest state
+        const currentCode = await tx.messageClickCode.findUnique({
+          where: { code },
+          select: { clicked: true, id: true }
+        })
+        
+        // If already clicked, return early - don't count this as a click
+        if (!currentCode || currentCode.clicked) {
+          return { isNewClick: false, hrms: null }
+        }
+        
+        // Mark as clicked (atomic update)
+        await tx.messageClickCode.update({
+          where: { code },
+          data: {
+            clicked: true,
+            clickedAt: new Date()
+          }
+        })
+        
+        // Generate unique HRMS for this specific click
+        const shortlinkForHrms = await tx.shortlink.findUnique({
+          where: { id: shortlink.id },
+          select: { userId: true, campaignId: true }
+        })
+        
+        if (!shortlinkForHrms) {
+          throw new Error('Shortlink not found')
+        }
+        
+        const hrms = generateHrms(shortlinkForHrms.userId, shortlink.id)
+        
+        // Create click record with unique HRMS (atomic)
+        await tx.shortlinkClick.create({
+          data: {
+            shortlinkId: shortlink.id,
+            messageId,
+            messageClickCodeId: currentCode.id,
+            hrms,
+            userAgent,
+            ipAddress,
+            referrer
+          }
+        })
+        
+        // Increment shortlink click counter (atomic)
+        await tx.shortlink.update({
+          where: { id: shortlink.id },
+          data: { clicks: { increment: 1 } }
+        })
+        
+        return { isNewClick: true, hrms }
       })
-      const clickCount = (shortlink.clicks ?? 0) + 1
-      const shortlinkName = shortlink.nickname || `Shortlink #${shortlink.id}`
-      console.log(`✅ Click: ${shortlinkName} (${clickCount} clicks)`)
+      
+      // Only proceed if this was a new click
+      if (clickResult.isNewClick && clickResult.hrms) {
+        hrms = clickResult.hrms
+        destinationWithHrms = appendHrmsToUrl(shortlink.destination, hrms)
+        
+        // Get updated click count for logging
+        const updatedShortlink = await prisma.shortlink.findUnique({
+          where: { id: shortlink.id },
+          select: { clicks: true, nickname: true }
+        })
+        const clickCount = updatedShortlink?.clicks ?? 0
+        const shortlinkName = updatedShortlink?.nickname || `Shortlink #${shortlink.id}`
+        console.log(`✅ Click: ${shortlinkName} (${clickCount} clicks)`)
+      } else {
+        // Code was already clicked - this is a refresh/retry, don't count it
+        // Still redirect to destination but without HRMS tracking
+        destinationWithHrms = shortlink.destination
+      }
     }
     
     // If OG preview is enabled, serve HTML with OG meta tags
