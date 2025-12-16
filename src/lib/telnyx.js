@@ -7,6 +7,7 @@ import { validateMessage } from '@/lib/messageUtils';
 import { checkRateLimit, createMessageRecord } from '@/lib/actions/messages';
 import { createMessageClickCodes } from '@/lib/messageClickCodes';
 import { serverLog } from '@/lib/serverLogger';
+import { parseDeliveryError } from '@/lib/errorParsing';
 
 /**
  * Normalize phone number to E.164 format for Telnyx
@@ -382,18 +383,20 @@ export async function sendMessage({
     let errorDetails = null;
     
     // Try to extract error details from various possible locations in Telnyx SDK error structure
+    let errorCode = null;
     if (error.raw?.errors && Array.isArray(error.raw.errors) && error.raw.errors.length > 0) {
       // Telnyx SDK error structure: error.raw.errors[0]
       const firstError = error.raw.errors[0];
       errorDetails = error.raw;
       errorMessage = firstError.detail || firstError.title || firstError.message || errorMessage;
+      errorCode = firstError.code;
       console.error('Telnyx error details:', JSON.stringify(error.raw, null, 2));
     } else if (error.response?.data) {
       // Alternative error response structure
       errorDetails = error.response.data;
-      errorMessage = error.response.data?.errors?.[0]?.detail || 
-                     error.response.data?.errors?.[0]?.title || 
-                     error.message || errorMessage;
+      const firstError = error.response.data?.errors?.[0];
+      errorMessage = firstError?.detail || firstError?.title || error.message || errorMessage;
+      errorCode = firstError?.code;
       console.error('Telnyx error response:', JSON.stringify(error.response.data, null, 2));
     } else if (error.message) {
       errorMessage = error.message;
@@ -420,6 +423,59 @@ export async function sendMessage({
     const loggedTo = errorNormalizedTo || (typeof normalizedTo !== 'undefined' ? normalizedTo : null) || to || 'unknown';
     const loggedProfileId = errorSettings?.messagingProfileId || (typeof settings !== 'undefined' ? settings?.messagingProfileId : null) || 'unknown';
     
+    // Check if this is a 40310 error (invalid 'to' address) and auto-unsubscribe if enabled
+    const isInvalidNumberError = String(errorCode) === '40310';
+    if (isInvalidNumberError && contactId && finalUserId) {
+      try {
+        // Get user's auto-unsubscribe setting
+        const user = await prisma.user.findUnique({
+          where: { id: finalUserId },
+          select: { autoUnsubscribeOnFailure: true }
+        });
+
+        if (user?.autoUnsubscribeOnFailure !== false) {
+          // Parse the error to confirm it's an invalid number
+          const errorParsed = parseDeliveryError(errorDetails?.errors || errorMessage);
+          
+          if (errorParsed.isInvalidNumber || errorCode === '40310') {
+            // Unsubscribe the contact
+            const updateResult = await prisma.contact.updateMany({
+              where: {
+                id: contactId,
+                userId: finalUserId
+              },
+              data: {
+                subscribed: false,
+                unsubscribeReason: 'invalid_number'
+              }
+            });
+
+            if (updateResult.count > 0) {
+              const logMessage = `Auto-unsubscribed contact ${loggedTo} due to invalid number (40310 error)`;
+              const logMeta = {
+                contactId,
+                phone: loggedTo,
+                status: 'sending_failed',
+                unsubscribeReason: 'invalid_number',
+                errorParsed: { ...errorParsed, errorCode: '40310' },
+                errorDetails: errorDetails?.errors?.[0] || errorDetails,
+                telnyxRequestId: errorDetails?.requestId || error.requestId
+              };
+              
+              await serverLog(logMessage, 'warn', logMeta, finalUserId).catch(err => {
+                console.error('Error logging auto-unsubscribe:', err);
+              });
+              
+              console.log(`[Auto-Unsubscribe] User ${finalUserId}: Unsubscribed contact ${loggedTo} (${contactId}) - Reason: invalid_number (40310)`);
+            }
+          }
+        }
+      } catch (unsubscribeError) {
+        console.error('Error auto-unsubscribing contact on 40310 error:', unsubscribeError);
+        // Continue processing even if unsubscribe fails
+      }
+    }
+
     // Log message send failure
     await serverLog(
       `Failed to send message to ${loggedTo}: ${errorMessage}`,
