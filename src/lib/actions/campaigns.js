@@ -334,10 +334,10 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
   
   let jobId = null
   let campaignLockAcquired = false
+  const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
   
   try {
     const userId = await getUserId()
-    const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
     
     // Acquire campaign lock to prevent duplicate execution
     const lockAcquired = await acquireCampaignLock(campaignIdInt, `manual-fire-${Date.now()}`)
@@ -521,7 +521,7 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
     throw error
   } finally {
     if (campaignLockAcquired) {
-      await releaseCampaignLock(campaignId).catch(() => {})
+      await releaseCampaignLock(campaignIdInt).catch(() => {})
     }
   }
 }
@@ -928,10 +928,10 @@ export async function executeDedicatedSend(campaignId) {
   
   let jobId = null
   let campaignLockAcquired = false
+  const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
   
   try {
     const userId = await getUserId()
-    const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
     
     // Acquire campaign lock
     const lockAcquired = await acquireCampaignLock(campaignIdInt, `dedicated-send-${Date.now()}`)
@@ -1127,7 +1127,7 @@ export async function executeDedicatedSend(campaignId) {
     throw error
   } finally {
     if (campaignLockAcquired) {
-      await releaseCampaignLock(campaignId).catch(() => {})
+      await releaseCampaignLock(campaignIdInt).catch(() => {})
     }
   }
 }
