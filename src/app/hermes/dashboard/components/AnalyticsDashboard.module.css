@@ -125,6 +125,40 @@
   color: var(--accent-orange);
 }
 
+.refreshButton {
+  padding: 0.625rem 1rem;
+  background: var(--accent-orange);
+  border: 1px solid var(--accent-orange);
+  border-radius: var(--border-radius-md);
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  outline: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.refreshButton:hover:not(:disabled) {
+  background: var(--accent-orange-hover);
+  border-color: var(--accent-orange-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.refreshButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.refreshIcon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
 .statsGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

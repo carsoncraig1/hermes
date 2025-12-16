@@ -77,6 +77,13 @@ export async function getAnalytics(filters = {}) {
     const totalRevenue = revenueEvents.reduce((sum, event) => sum + parseFloat(event.payout.toString()), 0);
     const totalCost = messages.reduce((sum, msg) => sum + (msg.costAmount ? parseFloat(msg.costAmount.toString()) : 0), 0);
     const roas = totalCost > 0 ? (totalRevenue / totalCost) : 0;
+    
+    // Count messages by status (only count delivered messages as delivered)
+    const totalMessages = messages.length;
+    const deliveredMessages = messages.filter(msg => msg.status === 'delivered').length;
+    const failedMessages = messages.filter(msg => 
+      msg.status === 'sending_failed' || msg.status === 'delivery_failed'
+    ).length;
 
     // Get shortlink click data
     const shortlinks = await prisma.shortlink.findMany({
@@ -169,7 +176,9 @@ export async function getAnalytics(filters = {}) {
       totalCost,
       roas,
       revenueEventCount: revenueEvents.length,
-      totalMessages: messages.length,
+      totalMessages: totalMessages,
+      deliveredMessages: deliveredMessages, // Only messages with status 'delivered'
+      failedMessages: failedMessages, // Messages that failed to send or deliver
       shortlinks: shortlinks.length,
       totalClicks: shortlinks.reduce((sum, s) => sum + s.clicks, 0),
       totalOpens: shortlinks.reduce((sum, s) => sum + s.opens, 0),

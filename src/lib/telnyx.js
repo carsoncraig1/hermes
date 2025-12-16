@@ -349,22 +349,7 @@ export async function sendMessage({
     const { invalidateRateLimitCache } = await import('@/lib/rateLimitCache');
     invalidateRateLimitCache(finalUserId).catch(() => {});
     
-    // Log successful message send
-    await serverLog(
-      `Message sent successfully to ${normalizedTo}`,
-      'info',
-      {
-        messageId: telnyxMessageId,
-        contactId,
-        campaignId,
-        from: fromNumber,
-        to: normalizedTo,
-        status: initialStatus,
-        cost: costAmount,
-        parts: validation.parts
-      },
-      finalUserId
-    ).catch(err => console.error('Error logging message send:', err));
+    // Don't log here - final status will be logged by webhook handler
     
     return { 
       success: true, 
@@ -376,8 +361,6 @@ export async function sendMessage({
       rateLimit
     };
   } catch (error) {
-    console.error('Error sending message:', error);
-    
     // Handle Telnyx API errors more specifically
     let errorMessage = 'Failed to send message';
     let errorDetails = null;
@@ -390,14 +373,12 @@ export async function sendMessage({
       errorDetails = error.raw;
       errorMessage = firstError.detail || firstError.title || firstError.message || errorMessage;
       errorCode = firstError.code;
-      console.error('Telnyx error details:', JSON.stringify(error.raw, null, 2));
     } else if (error.response?.data) {
       // Alternative error response structure
       errorDetails = error.response.data;
       const firstError = error.response.data?.errors?.[0];
       errorMessage = firstError?.detail || firstError?.title || error.message || errorMessage;
       errorCode = firstError?.code;
-      console.error('Telnyx error response:', JSON.stringify(error.response.data, null, 2));
     } else if (error.message) {
       errorMessage = error.message;
     }
@@ -451,6 +432,7 @@ export async function sendMessage({
             });
 
             if (updateResult.count > 0) {
+              // Log auto-unsubscribe to serverLog for persistence (no console log - already logged with error)
               const logMessage = `Auto-unsubscribed contact ${loggedTo} due to invalid number (40310 error)`;
               const logMeta = {
                 contactId,
@@ -462,11 +444,7 @@ export async function sendMessage({
                 telnyxRequestId: errorDetails?.requestId || error.requestId
               };
               
-              await serverLog(logMessage, 'warn', logMeta, finalUserId).catch(err => {
-                console.error('Error logging auto-unsubscribe:', err);
-              });
-              
-              console.log(`[Auto-Unsubscribe] User ${finalUserId}: Unsubscribed contact ${loggedTo} (${contactId}) - Reason: invalid_number (40310)`);
+              await serverLog(logMessage, 'warn', logMeta, finalUserId).catch(() => {});
             }
           }
         }
@@ -476,7 +454,10 @@ export async function sendMessage({
       }
     }
 
-    // Log message send failure
+    // Log message send failure (simple one-line format)
+    console.log(`❌ ${loggedTo}: ${errorMessage}`);
+    
+    // Also log to serverLog for persistence (but keep it simple)
     await serverLog(
       `Failed to send message to ${loggedTo}: ${errorMessage}`,
       'error',
@@ -490,7 +471,7 @@ export async function sendMessage({
         telnyxRequestId: errorDetails?.requestId || error.requestId
       },
       finalUserId
-    ).catch(err => console.error('Error logging message failure:', err));
+    ).catch(() => {});
     
     // Update existing message record to failed status, or create one if it doesn't exist
     if (finalUserId) {

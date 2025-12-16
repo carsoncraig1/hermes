@@ -8,6 +8,7 @@ export default function AnalyticsDashboard() {
   const [analytics, setAnalytics] = useState(null);
   const [campaignStatus, setCampaignStatus] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [dateRange, setDateRange] = useState('30d');
   const [customDateRange, setCustomDateRange] = useState(false);
   const [startDate, setStartDate] = useState(() => {
@@ -23,8 +24,12 @@ export default function AnalyticsDashboard() {
     loadAnalytics();
   }, [dateRange, startDate, endDate, customDateRange]);
 
-  const loadAnalytics = async () => {
-    setLoading(true);
+  const loadAnalytics = async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     try {
       let start, end;
       
@@ -67,7 +72,12 @@ export default function AnalyticsDashboard() {
       console.error('Error loading analytics:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const handleRefresh = () => {
+    loadAnalytics(true);
   };
 
   const formatCurrency = (amount) => {
@@ -135,6 +145,21 @@ export default function AnalyticsDashboard() {
             className={styles.customDateButton}
           >
             {customDateRange ? 'Preset' : 'Custom'}
+          </button>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing || loading}
+            className={styles.refreshButton}
+            title="Refresh analytics"
+          >
+            <span className={styles.refreshIcon} style={{ 
+              display: 'inline-block',
+              transform: refreshing ? 'rotate(360deg)' : 'rotate(0deg)',
+              transition: refreshing ? 'transform 0.6s linear' : 'none'
+            }}>
+              🔄
+            </span>
+            {refreshing ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
       </div>
@@ -212,10 +237,12 @@ export default function AnalyticsDashboard() {
           <div className={styles.statContent}>
             <div className={styles.statLabel}>Delivered</div>
             <div className={`${styles.statValue} ${styles.success}`}>
-              {formatNumber(analytics.totalMessages)}
+              {formatNumber(analytics.deliveredMessages || 0)}
             </div>
             <div className={styles.statSubtext}>
-              Messages delivered
+              {analytics.failedMessages > 0 
+                ? `${analytics.failedMessages} failed`
+                : 'Messages delivered'}
             </div>
           </div>
         </div>

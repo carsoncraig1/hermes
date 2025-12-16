@@ -63,10 +63,7 @@ export async function POST(request) {
     const completedAt = payload.completed_at || null;
     const errors = payload.errors || [];
 
-    // Log the webhook event for debugging (condensed)
-    if (event_type === 'message.finalized') {
-      console.log(`📨 ${status === 'delivered' ? '✓' : status === 'delivery_failed' ? '✗' : '○'} ${toNumber} (${status})`)
-    }
+    // Only log final status (delivered or failed), not intermediate "sent" status
 
     // Find the user by messaging profile ID
     const user = await prisma.user.findFirst({
@@ -146,6 +143,7 @@ export async function POST(request) {
           });
 
           if (updateResult.count > 0) {
+            // Log auto-unsubscribe to serverLog for persistence (no console log - already logged with error)
             const logMessage = `Auto-unsubscribed contact ${toNumber} due to ${status} (${unsubscribeReason})`;
             const logMeta = {
               contactId: messageRecord.contactId,
@@ -156,11 +154,7 @@ export async function POST(request) {
               messageId: telnyxMessageId
             };
             
-            await serverLog(logMessage, 'warn', logMeta, user.id).catch(err => {
-              console.error('Error logging auto-unsubscribe:', err);
-            });
-            
-            console.log(`[Auto-Unsubscribe] User ${user.id}: Unsubscribed contact ${toNumber} (${messageRecord.contactId}) - Reason: ${unsubscribeReason}`);
+            await serverLog(logMessage, 'warn', logMeta, user.id).catch(() => {});
           }
         }
       } catch (unsubscribeError) {
@@ -169,18 +163,31 @@ export async function POST(request) {
       }
     }
 
-    // Log the status update to console for the user (condensed)
-    const logMessage = `${status === 'delivered' ? '✓ Delivered' : status === 'sent' ? '→ Sent' : status === 'delivery_failed' ? '✗ Failed' : status}: ${toNumber}`;
-    const logMeta = {
-      messageId: telnyxMessageId,
-      to: toNumber,
-      status,
-      eventType: event_type,
-      cost: payload.cost,
-      direction: payload.direction
-    };
-
-    await serverLog(logMessage, 'info', logMeta, user.id).catch(() => {});
+    // Only log final status (delivered or failed) - one line per message
+    if (event_type === 'message.finalized' && (status === 'delivered' || status === 'delivery_failed' || status === 'sending_failed')) {
+      if (status === 'delivered') {
+        console.log(`✅ delivered to ${toNumber}`);
+      } else {
+        const errorMsg = errors.length > 0 
+          ? errors.map(e => e.detail || e.title).join('; ')
+          : 'Message delivery failed';
+        console.log(`❌ ${toNumber}: ${errorMsg}`);
+      }
+      
+      // Also log to serverLog for persistence
+      const logMessage = status === 'delivered' 
+        ? `✅ delivered to ${toNumber}`
+        : `❌ ${toNumber}: ${errors.length > 0 ? errors.map(e => e.detail || e.title).join('; ') : 'Message delivery failed'}`;
+      const logMeta = {
+        messageId: telnyxMessageId,
+        to: toNumber,
+        status,
+        eventType: event_type,
+        cost: payload.cost,
+        direction: payload.direction
+      };
+      await serverLog(logMessage, status === 'delivered' ? 'info' : 'error', logMeta, user.id).catch(() => {});
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
