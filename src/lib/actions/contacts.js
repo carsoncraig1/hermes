@@ -59,6 +59,70 @@ export async function getContactsPaginated(page = 0, pageSize = 20, filters = {}
       ]
     }
     
+    // Apply tag filters server-side
+    // Check each level filter for tag filters
+    const tagFilters = []
+    if (filters.level1?.field === 'tags' && filters.level1?.value) {
+      tagFilters.push(filters.level1)
+    }
+    if (filters.level2?.field === 'tags' && filters.level2?.value) {
+      tagFilters.push(filters.level2)
+    }
+    if (filters.level3?.field === 'tags' && filters.level3?.value) {
+      tagFilters.push(filters.level3)
+    }
+    
+    // Apply the first tag filter (most common use case - can enhance later for multiple)
+    if (tagFilters.length > 0) {
+      const tagFilter = tagFilters[0] // Use first tag filter
+      const searchValue = tagFilter.value.toLowerCase()
+      const operator = tagFilter.operator || 'contains'
+      
+      if (operator === 'doesNotContain') {
+        // Exclude contacts that have any tag containing the search value
+        where.NOT = {
+          tags: {
+            some: {
+              name: { contains: searchValue, mode: 'insensitive' }
+            }
+          }
+        }
+      } else if (operator === 'contains') {
+        // Include contacts that have at least one tag containing the search value
+        where.tags = {
+          some: {
+            name: { contains: searchValue, mode: 'insensitive' }
+          }
+        }
+      } else if (operator === 'equals') {
+        where.tags = {
+          some: {
+            name: { equals: searchValue, mode: 'insensitive' }
+          }
+        }
+      } else if (operator === 'startsWith') {
+        where.tags = {
+          some: {
+            name: { startsWith: searchValue, mode: 'insensitive' }
+          }
+        }
+      } else if (operator === 'endsWith') {
+        where.tags = {
+          some: {
+            name: { endsWith: searchValue, mode: 'insensitive' }
+          }
+        }
+      } else if (operator === 'notEquals') {
+        where.NOT = {
+          tags: {
+            some: {
+              name: { equals: searchValue, mode: 'insensitive' }
+            }
+          }
+        }
+      }
+    }
+    
     // Get total count and contacts
     const [contacts, total] = await Promise.all([
       prisma.contact.findMany({

@@ -778,11 +778,14 @@ export default function ContactsTable({ initialContacts }) {
         const filters = {
           subscribed: activeFilters.subscribed,
           search: searchQuery.trim() || undefined,
+          level1: activeFilters.level1,
+          level2: activeFilters.level2,
+          level3: activeFilters.level3,
         };
         
         const result = await getContactsPaginated(page, pageSize, filters);
         setContacts(result.contacts);
-        // filteredContacts will be set by the level filter useEffect
+        setFilteredContacts(result.contacts); // Server already filtered, so use directly
         setTotalContacts(result.total);
         setTotalPages(result.totalPages);
       } catch (error) {
@@ -793,14 +796,14 @@ export default function ContactsTable({ initialContacts }) {
     };
 
     fetchContacts();
-  }, [page, pageSize, activeFilters.subscribed, searchQuery]);
+  }, [page, pageSize, activeFilters.subscribed, searchQuery, activeFilters.level1, activeFilters.level2, activeFilters.level3]);
 
   // Reset to page 0 when filters or search change
   useEffect(() => {
     setPage(0);
-  }, [activeFilters.subscribed, searchQuery]);
+  }, [activeFilters.subscribed, searchQuery, activeFilters.level1, activeFilters.level2, activeFilters.level3]);
 
-  // Apply level filters client-side to current page
+  // Apply level filters client-side to current page (for non-tag filters that aren't server-side yet)
   useEffect(() => {
     if (!Array.isArray(contacts)) {
       setFilteredContacts([]);
@@ -809,24 +812,34 @@ export default function ContactsTable({ initialContacts }) {
 
     let filtered = [...contacts];
 
-    // Apply level filters (client-side on current page)
-    if (activeFilters.level1?.field && activeFilters.level1?.value) {
-      filtered = filtered.filter(contact => {
-        return applyLevelFilter(contact, activeFilters.level1);
-      });
-    }
-    if (activeFilters.level2?.field && activeFilters.level2?.value) {
-      filtered = filtered.filter(contact => {
-        return applyLevelFilter(contact, activeFilters.level2);
-      });
-    }
-    if (activeFilters.level3?.field && activeFilters.level3?.value) {
-      filtered = filtered.filter(contact => {
-        return applyLevelFilter(contact, activeFilters.level3);
-      });
-    }
+    // Only apply client-side filtering for non-tag fields (tag filtering is now server-side)
+    // This is a fallback for other field types that aren't yet server-side
+    const hasNonTagFilters = 
+      (activeFilters.level1?.field && activeFilters.level1?.value && activeFilters.level1?.field !== 'tags') ||
+      (activeFilters.level2?.field && activeFilters.level2?.value && activeFilters.level2?.field !== 'tags') ||
+      (activeFilters.level3?.field && activeFilters.level3?.value && activeFilters.level3?.field !== 'tags');
 
-    setFilteredContacts(filtered);
+    if (hasNonTagFilters) {
+      if (activeFilters.level1?.field && activeFilters.level1?.value && activeFilters.level1?.field !== 'tags') {
+        filtered = filtered.filter(contact => {
+          return applyLevelFilter(contact, activeFilters.level1);
+        });
+      }
+      if (activeFilters.level2?.field && activeFilters.level2?.value && activeFilters.level2?.field !== 'tags') {
+        filtered = filtered.filter(contact => {
+          return applyLevelFilter(contact, activeFilters.level2);
+        });
+      }
+      if (activeFilters.level3?.field && activeFilters.level3?.value && activeFilters.level3?.field !== 'tags') {
+        filtered = filtered.filter(contact => {
+          return applyLevelFilter(contact, activeFilters.level3);
+        });
+      }
+      setFilteredContacts(filtered);
+    } else {
+      // No client-side filtering needed, use server-filtered results directly
+      setFilteredContacts(contacts);
+    }
   }, [contacts, activeFilters.level1, activeFilters.level2, activeFilters.level3]);
 
   // Helper function to apply level filter (matches FilterMenu logic)
