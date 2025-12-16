@@ -213,10 +213,9 @@ export async function addContact(data) {
  * Processes contacts in batches for better performance
  * @param {Array} contactsData - Array of contact data objects
  * @param {number} batchSize - Number of contacts to process per batch (default: 50)
- * @param {Function} onProgress - Optional callback for progress updates (processed, total, errors)
  * @returns {Promise<{success: number, failed: number, errors: Array}>}
  */
-export async function addContactsBatch(contactsData, batchSize = 50, onProgress = null) {
+export async function addContactsBatch(contactsData, batchSize = 50) {
   try {
     const userId = await getUserId()
     let successCount = 0
@@ -344,11 +343,6 @@ export async function addContactsBatch(contactsData, batchSize = 50, onProgress 
             error: batchError.message || 'Batch processing error'
           })
         })
-      }
-      
-      // Call progress callback after each batch
-      if (onProgress) {
-        onProgress(Math.min(i + batchSize, contactsData.length), contactsData.length, errors)
       }
     }
     

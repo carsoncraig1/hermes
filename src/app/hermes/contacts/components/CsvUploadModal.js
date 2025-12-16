@@ -170,21 +170,33 @@ export default function CsvUploadModal({ onClose, onUploadComplete }) {
 
       // Upload contacts in batches for better performance
       const BATCH_SIZE = 50
-      const result = await addContactsBatch(
-        contacts, 
-        BATCH_SIZE,
-        // Progress callback - updates UI as batches complete
-        (processed, total, errors) => {
-          setProgress({ processed, total, errors })
-        }
-      )
+      let totalSuccess = 0
+      let totalFailed = 0
+      let allErrors = []
+      
+      // Process batches sequentially to show progress
+      for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
+        const batch = contacts.slice(i, i + BATCH_SIZE)
+        const result = await addContactsBatch(batch, BATCH_SIZE)
+        
+        totalSuccess += result.success
+        totalFailed += result.failed
+        allErrors = [...allErrors, ...result.errors]
+        
+        // Update progress after each batch
+        setProgress({ 
+          processed: Math.min(i + BATCH_SIZE, contacts.length), 
+          total: contacts.length, 
+          errors: allErrors 
+        })
+      }
 
-      if (result.success > 0) {
-        alert(`Successfully uploaded ${result.success} contact(s).${result.failed > 0 ? ` ${result.failed} error(s).` : ''}`);
+      if (totalSuccess > 0) {
+        alert(`Successfully uploaded ${totalSuccess} contact(s).${totalFailed > 0 ? ` ${totalFailed} error(s).` : ''}`);
         onUploadComplete();
         onClose();
       } else {
-        alert(`Failed to upload contacts. ${result.failed} error(s).`);
+        alert(`Failed to upload contacts. ${totalFailed} error(s).`);
       }
     } catch (error) {
       console.error('Error processing CSV:', error);
