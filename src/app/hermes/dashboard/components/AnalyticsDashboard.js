@@ -9,7 +9,7 @@ export default function AnalyticsDashboard() {
   const [campaignStatus, setCampaignStatus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [dateRange, setDateRange] = useState('30d');
+  const [dateRange, setDateRange] = useState('today');
   const [customDateRange, setCustomDateRange] = useState(false);
   const [startDate, setStartDate] = useState(() => {
     const date = new Date();
@@ -41,6 +41,13 @@ export default function AnalyticsDashboard() {
         start = new Date();
         
         switch (dateRange) {
+          case 'today':
+            start.setHours(0, 0, 0, 0);
+            break;
+          case '3d':
+            start.setDate(end.getDate() - 3);
+            start.setHours(0, 0, 0, 0);
+            break;
           case '7d':
             start.setDate(end.getDate() - 7);
             break;
@@ -118,6 +125,8 @@ export default function AnalyticsDashboard() {
               }}
               className={styles.dateRangeSelect}
             >
+              <option value="today">Today</option>
+              <option value="3d">Last 3 days</option>
               <option value="7d">Last 7 days</option>
               <option value="30d">Last 30 days</option>
               <option value="90d">Last 90 days</option>
