@@ -27,7 +27,6 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
   const [scheduleRedirect, setScheduleRedirect] = useState(false)
   const [scheduleDate, setScheduleDate] = useState('')
   const [scheduleTime, setScheduleTime] = useState('')
-  const [scheduleMinute, setScheduleMinute] = useState('00')
   const [scheduledDestination, setScheduledDestination] = useState('')
   const [existingScheduledRedirects, setExistingScheduledRedirects] = useState([])
 
@@ -94,7 +93,7 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
         }
         
         // Validate scheduled time is in the future
-        const scheduledDateTime = new Date(`${scheduleDate}T${scheduleTime}:${scheduleMinute}`)
+        const scheduledDateTime = new Date(`${scheduleDate}T${scheduleTime}`)
         if (scheduledDateTime <= new Date()) {
           alert('Scheduled time must be in the future')
           setLoading(false)
@@ -117,7 +116,7 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
       
       // Create scheduled redirect if enabled
       if (scheduleRedirect) {
-        const scheduledDateTime = new Date(`${scheduleDate}T${scheduleTime}:${scheduleMinute}`)
+        const scheduledDateTime = new Date(`${scheduleDate}T${scheduleTime}`)
         await createScheduledRedirect({
           shortlinkId: shortlink.id,
           newDestination: scheduledDestination,
@@ -404,26 +403,12 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
                     />
                   </div>
 
-                  <div className={styles.formGroup} style={{ flex: '0 0 80px' }}>
-                    <label>Minute</label>
-                    <select
-                      value={scheduleMinute}
-                      onChange={(e) => setScheduleMinute(e.target.value)}
-                      className={styles.input}
-                      required={scheduleRedirect}
-                    >
-                      {Array.from({ length: 60 }, (_, i) => {
-                        const val = String(i).padStart(2, '0')
-                        return <option key={val} value={val}>{val}</option>
-                      })}
-                    </select>
-                  </div>
                 </div>
 
                 {scheduleDate && scheduleTime && (
                   <div className={styles.schedulePreview}>
                     <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                      Redirect will change on {new Date(`${scheduleDate}T${scheduleTime}:${scheduleMinute}`).toLocaleString()} ({Intl.DateTimeFormat().resolvedOptions().timeZone})
+                      Redirect will change on {new Date(`${scheduleDate}T${scheduleTime}`).toLocaleString()} ({Intl.DateTimeFormat().resolvedOptions().timeZone})
                     </small>
                   </div>
                 )}

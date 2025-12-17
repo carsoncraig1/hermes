@@ -27,7 +27,6 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
   const [scheduleRedirect, setScheduleRedirect] = useState(false)
   const [scheduleDate, setScheduleDate] = useState('')
   const [scheduleTime, setScheduleTime] = useState('')
-  const [scheduleMinute, setScheduleMinute] = useState('00')
   const [scheduledDestination, setScheduledDestination] = useState('')
 
   useEffect(() => {
@@ -94,7 +93,7 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
         }
         
         // Validate scheduled time is in the future
-        const scheduledDateTime = new Date(`${scheduleDate}T${scheduleTime}:${scheduleMinute}`)
+        const scheduledDateTime = new Date(`${scheduleDate}T${scheduleTime}`)
         if (scheduledDateTime <= new Date()) {
           alert('Scheduled time must be in the future')
           setLoading(false)
@@ -117,7 +116,7 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
       
       // Create scheduled redirect if enabled
       if (scheduleRedirect && shortlink.id) {
-        const scheduledDateTime = new Date(`${scheduleDate}T${scheduleTime}:${scheduleMinute}`)
+        const scheduledDateTime = new Date(`${scheduleDate}T${scheduleTime}`)
         await createScheduledRedirect({
           shortlinkId: shortlink.id,
           newDestination: scheduledDestination,
@@ -250,6 +249,29 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
               </div>
 
               <div className={styles.formGroup}>
+                <label htmlFor="nickname">Nickname (Optional)</label>
+                <input
+                  id="nickname"
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => {
+                    const valueWithoutSpaces = e.target.value.replace(/\s/g, '');
+                    setNickname(valueWithoutSpaces);
+                  }}
+                  onPaste={(e) => {
+                    e.preventDefault();
+                    const pastedText = e.clipboardData.getData('text').replace(/\s/g, '');
+                    setNickname(pastedText);
+                  }}
+                  placeholder="Enter a friendly name (no spaces allowed)"
+                  className={styles.input}
+                />
+                <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+                  Spaces are not allowed in nicknames
+                </small>
+              </div>
+
+              <div className={styles.formGroup}>
                 <label htmlFor="destination">Destination URL</label>
                 <input
                   id="destination"
@@ -330,27 +352,12 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
                       required={scheduleRedirect}
                     />
                   </div>
-
-                  <div className={styles.formGroup} style={{ flex: '0 0 80px' }}>
-                    <label>Minute</label>
-                    <select
-                      value={scheduleMinute}
-                      onChange={(e) => setScheduleMinute(e.target.value)}
-                      className={styles.input}
-                      required={scheduleRedirect}
-                    >
-                      {Array.from({ length: 60 }, (_, i) => {
-                        const val = String(i).padStart(2, '0')
-                        return <option key={val} value={val}>{val}</option>
-                      })}
-                    </select>
-                  </div>
                 </div>
 
                 {scheduleDate && scheduleTime && (
                   <div className={styles.schedulePreview}>
                     <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                      Redirect will change on {new Date(`${scheduleDate}T${scheduleTime}:${scheduleMinute}`).toLocaleString()} ({Intl.DateTimeFormat().resolvedOptions().timeZone})
+                      Redirect will change on {new Date(`${scheduleDate}T${scheduleTime}`).toLocaleString()} ({Intl.DateTimeFormat().resolvedOptions().timeZone})
                     </small>
                   </div>
                 )}
