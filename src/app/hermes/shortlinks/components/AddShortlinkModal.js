@@ -288,6 +288,9 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
                 />
                 <span>Schedule Redirect Change</span>
               </label>
+              <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.5rem', display: 'block' }}>
+                Times are interpreted in your local timezone ({Intl.DateTimeFormat().resolvedOptions().timeZone})
+              </small>
             </div>
 
             {scheduleRedirect && (
@@ -347,7 +350,7 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
                 {scheduleDate && scheduleTime && (
                   <div className={styles.schedulePreview}>
                     <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                      Redirect will change on {new Date(`${scheduleDate}T${scheduleTime}:${scheduleMinute}`).toLocaleString()}
+                      Redirect will change on {new Date(`${scheduleDate}T${scheduleTime}:${scheduleMinute}`).toLocaleString()} ({Intl.DateTimeFormat().resolvedOptions().timeZone})
                     </small>
                   </div>
                 )}

@@ -361,6 +361,9 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
                 />
                 <span>Schedule Redirect Change</span>
               </label>
+              <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.5rem', display: 'block' }}>
+                Times are interpreted in your local timezone ({Intl.DateTimeFormat().resolvedOptions().timeZone})
+              </small>
             </div>
 
             {scheduleRedirect && (
@@ -420,7 +423,7 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
                 {scheduleDate && scheduleTime && (
                   <div className={styles.schedulePreview}>
                     <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                      Redirect will change on {new Date(`${scheduleDate}T${scheduleTime}:${scheduleMinute}`).toLocaleString()}
+                      Redirect will change on {new Date(`${scheduleDate}T${scheduleTime}:${scheduleMinute}`).toLocaleString()} ({Intl.DateTimeFormat().resolvedOptions().timeZone})
                     </small>
                   </div>
                 )}
@@ -440,7 +443,7 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
                         {redirect.newDestination}
                       </div>
                       <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                        Scheduled: {new Date(redirect.scheduledAt).toLocaleString()} • Status: {redirect.status}
+                        Scheduled: {new Date(redirect.scheduledAt).toLocaleString()} ({Intl.DateTimeFormat().resolvedOptions().timeZone}) • Status: {redirect.status}
                       </div>
                     </div>
                     {redirect.status === 'pending' && (
