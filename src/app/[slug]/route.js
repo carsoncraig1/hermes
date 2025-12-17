@@ -114,13 +114,12 @@ export async function GET(request, { params }) {
   const isBot = isBotRequest(userAgent)
   
   try {
-    // Check if this is a legacy shortlink (3 characters) or dynamic (5-6 characters)
-    const isLegacySlug = code.length === 3 && /^[a-zA-Z0-9]{3}$/.test(code)
-    
     let shortlink = null
     let messageClickCode = null
+    const isLegacySlug = code.length === 3
     
-    if (isLegacySlug) {
+    // Simple logic: 3 characters = legacy slug, anything else = dynamic
+    if (code.length === 3) {
       // Legacy shortlink: lookup by slug
       shortlink = await prisma.shortlink.findUnique({
         where: { slug: code.toLowerCase() },
@@ -135,6 +134,7 @@ export async function GET(request, { params }) {
       })
       
       if (!shortlink) {
+        // Not found - hit fallback
         const knownPaths = ['robots.txt', 'sitemap.xml', 'sitemap.txt', 'hermes', 'api', 'favicon.ico']
         if (!knownPaths.includes(code)) {
           console.log(`❌ Legacy shortlink not found: ${code}`)
@@ -142,7 +142,7 @@ export async function GET(request, { params }) {
         redirect('https://lp.stockstotrade.com/algo-trader')
       }
       
-      // Check if legacy shortlink is enabled
+      // Check if enabled
       if (!shortlink.enabled) {
         console.log(`❌ Legacy shortlink disabled: ${code}`)
         redirect('https://lp.stockstotrade.com/algo-trader')
@@ -152,7 +152,7 @@ export async function GET(request, { params }) {
       messageClickCode = await lookupMessageClickCode(code);
       
       if (!messageClickCode) {
-        // Don't log known paths or common bot requests
+        // Not found - hit fallback
         const knownPaths = ['robots.txt', 'sitemap.xml', 'sitemap.txt', 'hermes', 'api', 'favicon.ico']
         if (!knownPaths.includes(code)) {
           console.log(`❌ Click code not found: ${code}`)
@@ -173,7 +173,7 @@ export async function GET(request, { params }) {
     let hrms = null
     let destinationWithHrms = shortlink.destination
     
-    if (isLegacySlug) {
+    if (code.length === 3) {
       // Legacy shortlink: simpler tracking (no MessageClickCode, no HRMS)
       if (isBot) {
         // Bot prefetch = "open"
@@ -196,10 +196,11 @@ export async function GET(request, { params }) {
             data: { clicks: { increment: 1 } }
           })
           
-          // Create click record (no HRMS for legacy)
+          // Create click record (no HRMS for legacy shortlinks)
           await tx.shortlinkClick.create({
             data: {
               shortlinkId: shortlink.id,
+              hrms: null, // Legacy shortlinks don't use HRMS
               userAgent,
               ipAddress,
               referrer

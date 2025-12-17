@@ -253,7 +253,7 @@ model ShortlinkClick {
   message            Message?          @relation(fields: [messageId], references: [id], onDelete: SetNull)
   messageClickCodeId Int? // Link to the MessageClickCode that was used
   messageClickCode   MessageClickCode? @relation(fields: [messageClickCodeId], references: [id], onDelete: SetNull)
-  hrms               String            @unique // Unique tracking parameter for this specific click
+  hrms               String?           @unique // Unique tracking parameter for this specific click (optional for legacy shortlinks)
   userAgent          String? // User agent string for analytics
   ipAddress          String? // IP address for analytics
   referrer           String? // Referrer URL
