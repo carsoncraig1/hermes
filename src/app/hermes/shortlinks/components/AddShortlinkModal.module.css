@@ -373,3 +373,85 @@ body:has(.sidebar.collapsed) .modalOverlay {
 .uploadGroup input[type="url"] {
   flex: 1;
 }
+
+/* Schedule Row */
+.scheduleRow {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.schedulePreview {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--border-primary);
+}
+
+/* Existing Scheduled Redirects */
+.existingScheduled {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-primary);
+}
+
+.scheduledItem {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-md);
+  margin-bottom: 0.5rem;
+}
+
+.cancelScheduledButton {
+  background: var(--error);
+  border: none;
+  color: white;
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: all var(--transition-fast);
+}
+
+.cancelScheduledButton:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  padding: 0.75rem 1.25rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: var(--font-family);
+  transition: all var(--transition-fast);
+  margin-bottom: -1px;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.tab.activeTab {
+  color: var(--accent-orange);
+  border-bottom-color: var(--accent-orange);
+}

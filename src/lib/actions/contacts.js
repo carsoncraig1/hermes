@@ -11,21 +11,37 @@ async function getUserId() {
   return session.user.id
 }
 
-export async function getContacts(limit = null) {
+export async function getContacts(limit = 100, includeTags = false) {
   try {
     const userId = await getUserId()
     console.log('Starting getContacts...');
     
-    const contacts = await prisma.contact.findMany({
+    // Use a reasonable default limit to avoid Prisma bind variable limits
+    // When including tags, each contact-tag relationship creates bind variables
+    // With many contacts and tags, this can exceed PostgreSQL's 32767 bind variable limit
+    const safeLimit = limit || 100;
+    
+    const queryOptions = {
       where: { userId },
       orderBy: {
         createdAt: 'desc'
       },
-      include: {
-        tags: true
-      },
-      ...(limit && { take: limit })
-    });
+      take: safeLimit
+    };
+    
+    // Only include tags if explicitly requested to avoid bind variable issues
+    if (includeTags) {
+      queryOptions.include = {
+        tags: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      };
+    }
+    
+    const contacts = await prisma.contact.findMany(queryOptions);
     
     console.log(`Fetched ${contacts.length} contacts`);
     return contacts;

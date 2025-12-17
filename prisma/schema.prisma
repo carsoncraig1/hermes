@@ -42,6 +42,7 @@ model User {
   sendJobs               SendJob[]
   delayedWorkflowActions DelayedWorkflowAction[]
   rateLimitCache         RateLimitCache?
+  scheduledShortlinkRedirects ScheduledShortlinkRedirect[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -173,7 +174,9 @@ model Shortlink {
   id                Int                @id @default(autoincrement())
   userId            String
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type              String              @default("dynamic") // "dynamic" or "legacy"
   nickname          String? // Optional nickname for the shortlink (used for identification in UI)
+  slug              String?             @unique // 3-character slug for legacy shortlinks (e.g., "abc")
   destination       String
   clicks            Int                @default(0) // Counter for total clicks
   opens             Int                @default(0) // Tracks preview fetches from messaging apps
@@ -191,7 +194,28 @@ model Shortlink {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
+  scheduledRedirects ScheduledShortlinkRedirect[] // Scheduled redirect changes
+  @@index([slug]) // Index for legacy shortlink lookups
   @@map("shortlinks")
+}
+
+// Scheduled shortlink redirect changes
+model ScheduledShortlinkRedirect {
+  id            Int       @id @default(autoincrement())
+  shortlinkId   Int
+  shortlink     Shortlink @relation(fields: [shortlinkId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  newDestination String   @db.Text
+  scheduledAt   DateTime  // When to change the redirect
+  status        String    @default("pending") // pending, completed, cancelled
+  executedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, scheduledAt]) // For finding redirects ready to execute
+  @@index([shortlinkId])
+  @@map("scheduled_shortlink_redirects")
 }
 
 model MessageClickCode {

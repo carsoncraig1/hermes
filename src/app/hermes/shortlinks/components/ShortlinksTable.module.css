@@ -311,3 +311,42 @@
   background: var(--bg-tertiary) !important;
   transform: none;
 }
+
+/* Type Badge */
+.typeBadge {
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+}
+
+.legacyBadge {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.dynamicBadge {
+  background: var(--accent-orange-muted);
+  color: var(--accent-orange);
+  border: 1px solid rgba(255, 107, 0, 0.3);
+}
+
+.slugCode {
+  font-family: var(--font-mono);
+  background: var(--bg-tertiary);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--border-radius-sm);
+  font-size: 0.8125rem;
+  color: var(--accent-orange);
+  border: 1px solid var(--border-primary);
+}
+
+.codeHint {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-style: italic;
+}

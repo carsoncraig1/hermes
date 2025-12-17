@@ -18,7 +18,21 @@ export async function getShortlinks() {
     const shortlinks = await prisma.shortlink.findMany({
       where: { userId },
       include: {
-        campaign: true
+        campaign: {
+          select: {
+            id: true,
+            name: true,
+            userId: true,
+            message: true,
+            workflow: true,
+            enabled: true,
+            messagesSent: true,
+            lastMessageSent: true,
+            createdAt: true,
+            updatedAt: true
+            // Exclude totalRevenue to avoid Decimal issues
+          }
+        }
       },
       orderBy: {
         createdAt: 'desc'
@@ -35,12 +49,24 @@ export async function addShortlink(data) {
   try {
     const userId = await getUserId()
     
+    // For legacy shortlinks, check if slug is already taken
+    if (data.type === 'legacy' && data.slug) {
+      const existing = await prisma.shortlink.findUnique({
+        where: { slug: data.slug.toLowerCase() }
+      })
+      if (existing) {
+        throw new Error(`Slug "${data.slug}" is already taken. Please choose a different one.`)
+      }
+    }
+    
     const shortlink = await prisma.shortlink.create({
       data: {
         userId,
+        type: data.type || 'dynamic',
         nickname: data.nickname || null,
+        slug: data.slug ? data.slug.toLowerCase() : null,
         destination: data.destination,
-        enabled: true,
+        enabled: data.enabled !== undefined ? data.enabled : true,
         campaignId: data.campaignId || null,
         ogEnabled: data.ogEnabled ?? false,
         ogImage: data.ogImage || null,
@@ -48,17 +74,34 @@ export async function addShortlink(data) {
         ogDescription: data.ogDescription || null
       },
       include: {
-        campaign: true
+        campaign: {
+          select: {
+            id: true,
+            name: true,
+            userId: true,
+            message: true,
+            workflow: true,
+            enabled: true,
+            messagesSent: true,
+            lastMessageSent: true,
+            createdAt: true,
+            updatedAt: true
+            // Exclude totalRevenue to avoid Decimal issues
+          }
+        }
       }
     })
     return shortlink
   } catch (error) {
     console.error('Error adding shortlink:', error)
-    throw new Error('Failed to add shortlink')
+    if (error.code === 'P2002') {
+      throw new Error('This slug is already taken. Please choose a different one.')
+    }
+    throw new Error(error.message || 'Failed to add shortlink')
   }
 }
 
-export async function updateShortlink({ id, nickname, destination, campaignId, ogEnabled, ogImage, ogTitle, ogDescription }) {
+export async function updateShortlink({ id, nickname, slug, destination, enabled, campaignId, ogEnabled, ogImage, ogTitle, ogDescription }) {
   try {
     const userId = await getUserId()
     
@@ -70,24 +113,67 @@ export async function updateShortlink({ id, nickname, destination, campaignId, o
       throw new Error('Shortlink not found')
     }
     
+    // For legacy shortlinks, check if slug is already taken (if changing)
+    if (slug && existing.type === 'legacy' && slug !== existing.slug) {
+      const slugTaken = await prisma.shortlink.findUnique({
+        where: { slug: slug.toLowerCase() }
+      })
+      if (slugTaken && slugTaken.id !== id) {
+        throw new Error(`Slug "${slug}" is already taken. Please choose a different one.`)
+      }
+    }
+    
+    const updateData = {
+      nickname: nickname || null,
+      destination,
+      ogEnabled: ogEnabled ?? false,
+      ogImage: ogImage || null,
+      ogTitle: ogTitle || null,
+      ogDescription: ogDescription || null
+    }
+    
+    // Only update slug for legacy shortlinks
+    if (existing.type === 'legacy' && slug) {
+      updateData.slug = slug.toLowerCase()
+    }
+    
+    // Only update enabled for legacy shortlinks
+    if (existing.type === 'legacy' && enabled !== undefined) {
+      updateData.enabled = enabled
+    }
+    
+    // Only update campaignId for dynamic shortlinks
+    if (existing.type === 'dynamic') {
+      updateData.campaignId = campaignId || null
+    }
+    
     const shortlink = await prisma.shortlink.update({
       where: { id },
-      data: {
-        nickname: nickname || null,
-        destination,
-        campaignId: campaignId || null, // Allow removing campaign association
-        ogEnabled: ogEnabled ?? false,
-        ogImage: ogImage || null,
-        ogTitle: ogTitle || null,
-        ogDescription: ogDescription || null
-      },
+      data: updateData,
       include: {
-        campaign: true
+        campaign: {
+          select: {
+            id: true,
+            name: true,
+            userId: true,
+            message: true,
+            workflow: true,
+            enabled: true,
+            messagesSent: true,
+            lastMessageSent: true,
+            createdAt: true,
+            updatedAt: true
+            // Exclude totalRevenue to avoid Decimal issues
+          }
+        }
       }
     })
     return shortlink
   } catch (error) {
     console.error('Error updating shortlink:', error)
+    if (error.code === 'P2002') {
+      throw new Error('This slug is already taken. Please choose a different one.')
+    }
     throw error
   }
 }
@@ -130,7 +216,21 @@ export async function toggleShortlinkStatus(id, enabled) {
       where: { id },
       data: { enabled },
       include: {
-        campaign: true
+        campaign: {
+          select: {
+            id: true,
+            name: true,
+            userId: true,
+            message: true,
+            workflow: true,
+            enabled: true,
+            messagesSent: true,
+            lastMessageSent: true,
+            createdAt: true,
+            updatedAt: true
+            // Exclude totalRevenue to avoid Decimal issues
+          }
+        }
       }
     })
     return shortlink

@@ -143,18 +143,8 @@ export async function POST(request) {
           });
 
           if (updateResult.count > 0) {
-            // Log auto-unsubscribe to serverLog for persistence (no console log - already logged with error)
-            const logMessage = `Auto-unsubscribed contact ${toNumber} due to ${status} (${unsubscribeReason})`;
-            const logMeta = {
-              contactId: messageRecord.contactId,
-              phone: toNumber,
-              status,
-              unsubscribeReason,
-              errorParsed,
-              messageId: telnyxMessageId
-            };
-            
-            await serverLog(logMessage, 'warn', logMeta, user.id).catch(() => {});
+            // Simple one-line log for auto-unsubscribe (error already logged above)
+            console.log(`⚠️ Auto-unsubscribed: ${toNumber} (${unsubscribeReason})`);
           }
         }
       } catch (unsubscribeError) {

@@ -132,7 +132,9 @@ export default function ShortlinksTable({ initialShortlinks }) {
         <table className={styles.table}>
           <thead>
             <tr>
+              <th>Type</th>
               <th>Nickname</th>
+              <th>Slug/Code</th>
               <th>Destination</th>
               <th>Campaign</th>
               <th>Opens</th>
@@ -145,7 +147,19 @@ export default function ShortlinksTable({ initialShortlinks }) {
           <tbody>
             {filteredShortlinks.map((link) => (
               <tr key={link.id}>
+                <td>
+                  <span className={`${styles.typeBadge} ${link.type === 'legacy' ? styles.legacyBadge : styles.dynamicBadge}`}>
+                    {link.type === 'legacy' ? 'Legacy' : 'Dynamic'}
+                  </span>
+                </td>
                 <td>{link.nickname || `Shortlink #${link.id}`}</td>
+                <td>
+                  {link.type === 'legacy' ? (
+                    <code className={styles.slugCode}>txt.cx/{link.slug}</code>
+                  ) : (
+                    <span className={styles.codeHint}>Per-message code</span>
+                  )}
+                </td>
                 <td>{link.destination}</td>
                 <td>
                   {link.campaign?.name ? (

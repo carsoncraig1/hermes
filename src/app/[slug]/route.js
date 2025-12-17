@@ -114,127 +114,207 @@ export async function GET(request, { params }) {
   const isBot = isBotRequest(userAgent)
   
   try {
-    // Lookup MessageClickCode by code (5-6 alphanumeric characters)
-    // Codes are globally unique, so we can lookup directly
-    const messageClickCode = await lookupMessageClickCode(code);
+    // Check if this is a legacy shortlink (3 characters) or dynamic (5-6 characters)
+    const isLegacySlug = code.length === 3 && /^[a-zA-Z0-9]{3}$/.test(code)
     
-    if (!messageClickCode) {
-      // Don't log robots.txt or other common bot requests
-      if (code !== 'robots.txt' && code !== 'sitemap.xml' && code !== 'sitemap.txt') {
-        console.log(`❌ Click code not found: ${code}`)
+    let shortlink = null
+    let messageClickCode = null
+    
+    if (isLegacySlug) {
+      // Legacy shortlink: lookup by slug
+      shortlink = await prisma.shortlink.findUnique({
+        where: { slug: code.toLowerCase() },
+        include: {
+          campaign: {
+            select: {
+              id: true,
+              name: true
+            }
+          }
+        }
+      })
+      
+      if (!shortlink) {
+        const knownPaths = ['robots.txt', 'sitemap.xml', 'sitemap.txt', 'hermes', 'api', 'favicon.ico']
+        if (!knownPaths.includes(code)) {
+          console.log(`❌ Legacy shortlink not found: ${code}`)
+        }
+        redirect('https://lp.stockstotrade.com/algo-trader')
       }
-      redirect('https://lp.stockstotrade.com/algo-trader')
-    }
-    
-    const shortlink = messageClickCode.shortlink;
-    
-    // Check if shortlink is enabled
-    if (!shortlink.enabled) {
-      console.log(`❌ Shortlink disabled: ${code}`)
-      redirect('https://lp.stockstotrade.com/algo-trader')
+      
+      // Check if legacy shortlink is enabled
+      if (!shortlink.enabled) {
+        console.log(`❌ Legacy shortlink disabled: ${code}`)
+        redirect('https://lp.stockstotrade.com/algo-trader')
+      }
+    } else {
+      // Dynamic shortlink: lookup MessageClickCode by code (5-6 alphanumeric characters)
+      messageClickCode = await lookupMessageClickCode(code);
+      
+      if (!messageClickCode) {
+        // Don't log known paths or common bot requests
+        const knownPaths = ['robots.txt', 'sitemap.xml', 'sitemap.txt', 'hermes', 'api', 'favicon.ico']
+        if (!knownPaths.includes(code)) {
+          console.log(`❌ Click code not found: ${code}`)
+        }
+        redirect('https://lp.stockstotrade.com/algo-trader')
+      }
+      
+      shortlink = messageClickCode.shortlink;
+      
+      // Check if shortlink is enabled
+      if (!shortlink.enabled) {
+        console.log(`❌ Shortlink disabled: ${code}`)
+        redirect('https://lp.stockstotrade.com/algo-trader')
+      }
     }
     
     // Track opens (bot/preview fetches) vs clicks (real users)
     let hrms = null
     let destinationWithHrms = shortlink.destination
-    const messageId = messageClickCode.messageId;
-    const contactId = messageClickCode.contactId;
-    const messageClickCodeId = messageClickCode.id;
     
-    if (isBot) {
-      // Bot prefetch = "open" (user saw the preview in their messages)
-      // Don't generate HRMS for bot requests
-      // Update both the shortlink global counter and the specific MessageClickCode
-      await Promise.all([
-        prisma.shortlink.update({
+    if (isLegacySlug) {
+      // Legacy shortlink: simpler tracking (no MessageClickCode, no HRMS)
+      if (isBot) {
+        // Bot prefetch = "open"
+        await prisma.shortlink.update({
           where: { id: shortlink.id },
           data: { opens: { increment: 1 } }
-        }),
-        // Mark this specific MessageClickCode as opened (first time only)
-        !messageClickCode.opened && markCodeAsOpened(code)
-      ])
-      const openCount = (shortlink.opens ?? 0) + 1
-      const shortlinkName = shortlink.nickname || `Shortlink #${shortlink.id}`
-      console.log(`👁️ Open: ${shortlinkName} (${openCount} opens)`)
-    } else {
-      // Real user click - we have full message-level tracking!
-      // Use atomic transaction to ensure one click per code, prevent race conditions
-      const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || null
-      const referrer = request.headers.get('referer') || null
-      
-      // Atomic transaction: check if clicked, mark as clicked, increment counter, create record - all or nothing
-      const clickResult = await prisma.$transaction(async (tx) => {
-        // Re-fetch the messageClickCode within transaction to get latest state
-        const currentCode = await tx.messageClickCode.findUnique({
-          where: { code },
-          select: { clicked: true, id: true }
+        })
+        const openCount = (shortlink.opens ?? 0) + 1
+        const shortlinkName = shortlink.nickname || shortlink.slug || `Shortlink #${shortlink.id}`
+        console.log(`👁️ Open: ${shortlinkName} (${openCount} opens)`)
+      } else {
+        // Real user click - simple increment
+        const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || null
+        const referrer = request.headers.get('referer') || null
+        
+        await prisma.$transaction(async (tx) => {
+          // Increment click counter
+          await tx.shortlink.update({
+            where: { id: shortlink.id },
+            data: { clicks: { increment: 1 } }
+          })
+          
+          // Create click record (no HRMS for legacy)
+          await tx.shortlinkClick.create({
+            data: {
+              shortlinkId: shortlink.id,
+              userAgent,
+              ipAddress,
+              referrer
+            }
+          })
         })
         
-        // If already clicked, return early - don't count this as a click
-        if (!currentCode || currentCode.clicked) {
-          return { isNewClick: false, hrms: null }
-        }
-        
-        // Mark as clicked (atomic update)
-        await tx.messageClickCode.update({
-          where: { code },
-          data: {
-            clicked: true,
-            clickedAt: new Date()
-          }
-        })
-        
-        // Generate unique HRMS for this specific click
-        const shortlinkForHrms = await tx.shortlink.findUnique({
-          where: { id: shortlink.id },
-          select: { userId: true, campaignId: true }
-        })
-        
-        if (!shortlinkForHrms) {
-          throw new Error('Shortlink not found')
-        }
-        
-        const hrms = generateHrms(shortlinkForHrms.userId, shortlink.id)
-        
-        // Create click record with unique HRMS (atomic)
-        await tx.shortlinkClick.create({
-          data: {
-            shortlinkId: shortlink.id,
-            messageId,
-            messageClickCodeId: currentCode.id,
-            hrms,
-            userAgent,
-            ipAddress,
-            referrer
-          }
-        })
-        
-        // Increment shortlink click counter (atomic)
-        await tx.shortlink.update({
-          where: { id: shortlink.id },
-          data: { clicks: { increment: 1 } }
-        })
-        
-        return { isNewClick: true, hrms }
-      })
-      
-      // Only proceed if this was a new click
-      if (clickResult.isNewClick && clickResult.hrms) {
-        hrms = clickResult.hrms
-        destinationWithHrms = appendHrmsToUrl(shortlink.destination, hrms)
-        
-        // Get updated click count for logging
         const updatedShortlink = await prisma.shortlink.findUnique({
           where: { id: shortlink.id },
-          select: { clicks: true, nickname: true }
+          select: { clicks: true, nickname: true, slug: true }
         })
         const clickCount = updatedShortlink?.clicks ?? 0
-        const shortlinkName = updatedShortlink?.nickname || `Shortlink #${shortlink.id}`
+        const shortlinkName = updatedShortlink?.nickname || updatedShortlink?.slug || `Shortlink #${shortlink.id}`
         console.log(`✅ Click: ${shortlinkName} (${clickCount} clicks)`)
+      }
+    } else {
+      // Dynamic shortlink: full message-level tracking with HRMS
+      const messageId = messageClickCode.messageId;
+      const contactId = messageClickCode.contactId;
+      const messageClickCodeId = messageClickCode.id;
+      
+      if (isBot) {
+        // Bot prefetch = "open" (user saw the preview in their messages)
+        // Don't generate HRMS for bot requests
+        await Promise.all([
+          prisma.shortlink.update({
+            where: { id: shortlink.id },
+            data: { opens: { increment: 1 } }
+          }),
+          // Mark this specific MessageClickCode as opened (first time only)
+          !messageClickCode.opened && markCodeAsOpened(code)
+        ])
+        const openCount = (shortlink.opens ?? 0) + 1
+        const shortlinkName = shortlink.nickname || `Shortlink #${shortlink.id}`
+        console.log(`👁️ Open: ${shortlinkName} (${openCount} opens)`)
       } else {
-        // Code was already clicked - this is a refresh/retry, don't count it
-        // Still redirect to destination but without HRMS tracking
-        destinationWithHrms = shortlink.destination
+        // Real user click - we have full message-level tracking!
+        // Use atomic transaction to ensure one click per code, prevent race conditions
+        const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || null
+        const referrer = request.headers.get('referer') || null
+        
+        // Atomic transaction: check if clicked, mark as clicked, increment counter, create record - all or nothing
+        const clickResult = await prisma.$transaction(async (tx) => {
+          // Re-fetch the messageClickCode within transaction to get latest state
+          const currentCode = await tx.messageClickCode.findUnique({
+            where: { code },
+            select: { clicked: true, id: true }
+          })
+          
+          // If already clicked, return early - don't count this as a click
+          if (!currentCode || currentCode.clicked) {
+            return { isNewClick: false, hrms: null }
+          }
+          
+          // Mark as clicked (atomic update)
+          await tx.messageClickCode.update({
+            where: { code },
+            data: {
+              clicked: true,
+              clickedAt: new Date()
+            }
+          })
+          
+          // Generate unique HRMS for this specific click
+          const shortlinkForHrms = await tx.shortlink.findUnique({
+            where: { id: shortlink.id },
+            select: { userId: true, campaignId: true }
+          })
+          
+          if (!shortlinkForHrms) {
+            throw new Error('Shortlink not found')
+          }
+          
+          const hrms = generateHrms(shortlinkForHrms.userId, shortlink.id)
+          
+          // Create click record with unique HRMS (atomic)
+          await tx.shortlinkClick.create({
+            data: {
+              shortlinkId: shortlink.id,
+              messageId,
+              messageClickCodeId: currentCode.id,
+              hrms,
+              userAgent,
+              ipAddress,
+              referrer
+            }
+          })
+          
+          // Increment shortlink click counter (atomic)
+          await tx.shortlink.update({
+            where: { id: shortlink.id },
+            data: { clicks: { increment: 1 } }
+          })
+          
+          return { isNewClick: true, hrms }
+        })
+        
+        // Only proceed if this was a new click
+        if (clickResult.isNewClick && clickResult.hrms) {
+          hrms = clickResult.hrms
+          destinationWithHrms = appendHrmsToUrl(shortlink.destination, hrms)
+          
+          // Get updated click count for logging
+          const updatedShortlink = await prisma.shortlink.findUnique({
+            where: { id: shortlink.id },
+            select: { clicks: true, nickname: true }
+          })
+          const clickCount = updatedShortlink?.clicks ?? 0
+          const shortlinkName = updatedShortlink?.nickname || `Shortlink #${shortlink.id}`
+          console.log(`✅ Click: ${shortlinkName} (${clickCount} clicks)`)
+        } else {
+          // Code was already clicked - this is a refresh/retry, don't count it
+          // Still redirect to destination but without HRMS tracking
+          destinationWithHrms = shortlink.destination
+        }
       }
     }
     

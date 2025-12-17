@@ -432,19 +432,8 @@ export async function sendMessage({
             });
 
             if (updateResult.count > 0) {
-              // Log auto-unsubscribe to serverLog for persistence (no console log - already logged with error)
-              const logMessage = `Auto-unsubscribed contact ${loggedTo} due to invalid number (40310 error)`;
-              const logMeta = {
-                contactId,
-                phone: loggedTo,
-                status: 'sending_failed',
-                unsubscribeReason: 'invalid_number',
-                errorParsed: { ...errorParsed, errorCode: '40310' },
-                errorDetails: errorDetails?.errors?.[0] || errorDetails,
-                telnyxRequestId: errorDetails?.requestId || error.requestId
-              };
-              
-              await serverLog(logMessage, 'warn', logMeta, finalUserId).catch(() => {});
+              // Simple one-line log for auto-unsubscribe (error already logged above)
+              console.log(`⚠️ Auto-unsubscribed: ${loggedTo} (invalid number)`);
             }
           }
         }
@@ -455,23 +444,8 @@ export async function sendMessage({
     }
 
     // Log message send failure (simple one-line format)
+    // Don't use serverLog here to avoid duplicate verbose console output
     console.log(`❌ ${loggedTo}: ${errorMessage}`);
-    
-    // Also log to serverLog for persistence (but keep it simple)
-    await serverLog(
-      `Failed to send message to ${loggedTo}: ${errorMessage}`,
-      'error',
-      {
-        contactId,
-        campaignId,
-        from: loggedFrom,
-        to: loggedTo,
-        error: errorMessage,
-        errorDetails: errorDetails?.errors?.[0] || errorDetails,
-        telnyxRequestId: errorDetails?.requestId || error.requestId
-      },
-      finalUserId
-    ).catch(() => {});
     
     // Update existing message record to failed status, or create one if it doesn't exist
     if (finalUserId) {
