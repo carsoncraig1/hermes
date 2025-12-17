@@ -99,36 +99,44 @@ body:has(.sidebar.collapsed) .modalOverlay {
   box-shadow: 0 0 0 3px var(--accent-orange-muted);
 }
 
-.tagsGrid {
+.tagsButtonGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
 
-.tagLabel {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: var(--border-radius-sm);
-  cursor: pointer;
-  color: var(--text-secondary);
-  transition: all var(--transition-fast);
-  border: 1px solid transparent;
-}
-
-.tagLabel:hover {
+.tagButton {
   background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-md);
+  padding: 0.75rem 1rem;
   color: var(--text-primary);
-  border-color: var(--border-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: center;
+  font-family: var(--font-family);
 }
 
-.checkbox {
-  margin: 0;
-  accent-color: var(--accent-orange);
-  width: 1rem;
-  height: 1rem;
+.tagButton:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-secondary);
+  transform: translateY(-1px);
+}
+
+.tagButtonSelected {
+  background: var(--accent-orange);
+  border-color: var(--accent-orange);
+  color: var(--bg-primary);
+}
+
+.tagButtonSelected:hover {
+  background: var(--accent-orange);
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
 }
 
 .emptyState {
@@ -265,5 +273,67 @@ body:has(.sidebar.collapsed) .modalOverlay {
   font-size: 0.8125rem;
   margin-bottom: 0.5rem;
   font-weight: 500;
+}
+
+/* Tag Operation Selector */
+.tagOperationSelector {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--border-primary);
+}
+
+.tagOperationSelector label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.tagOperationSelector input[type="radio"] {
+  margin: 0;
+  accent-color: var(--accent-orange);
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+/* Existing Tags Section */
+.existingTagsSection {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--border-primary);
+}
+
+.existingTagsLabel {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.existingTagsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.existingTag {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  border: 1px solid var(--border-primary);
 }
 

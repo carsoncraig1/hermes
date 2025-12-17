@@ -366,9 +366,17 @@ function FilterMenu({ isOpen, onClose, filters, setFilters, contacts, setFiltere
 
     // Handle date fields
     if (field === 'createdAt' || field === 'updatedAt' || field === 'lastMessageSent') {
-      if (!contactValue) return false;
-      const contactDate = new Date(contactValue);
       const filterDate = new Date(value);
+      
+      // For "before" operator on lastMessageSent, include null values (never messaged)
+      if (field === 'lastMessageSent' && operator === 'before') {
+        return !contactValue || new Date(contactValue) < filterDate;
+      }
+      
+      // For other operators or fields, null values don't match
+      if (!contactValue) return false;
+      
+      const contactDate = new Date(contactValue);
       
       switch (operator) {
         case 'equals':
@@ -888,9 +896,17 @@ export default function ContactsTable({ initialContacts }) {
 
     // Handle date fields
     if (field === 'createdAt' || field === 'updatedAt' || field === 'lastMessageSent') {
-      if (!contactValue) return false;
-      const contactDate = new Date(contactValue);
       const filterDate = new Date(value);
+      
+      // For "before" operator on lastMessageSent, include null values (never messaged)
+      if (field === 'lastMessageSent' && operator === 'before') {
+        return !contactValue || new Date(contactValue) < filterDate;
+      }
+      
+      // For other operators or fields, null values don't match
+      if (!contactValue) return false;
+      
+      const contactDate = new Date(contactValue);
       
       switch (operator) {
         case 'equals':

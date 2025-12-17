@@ -65,6 +65,10 @@ export default function Sidebar() {
           <span>👥</span>
           <span>Contacts</span>
         </a>
+        <a href="/hermes/bulk-tagging" className={`nav-item ${pathname === '/hermes/bulk-tagging' ? 'active' : ''}`} title="Tagging">
+          <span>🏷️</span>
+          <span>Tagging</span>
+        </a>
         <a href="/hermes/settings" className={`nav-item ${pathname === '/hermes/settings' ? 'active' : ''}`} title="Settings">
           <span>⚙️</span>
           <span>Settings</span>

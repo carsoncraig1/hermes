@@ -107,6 +107,19 @@ export async function POST(request) {
 
         const updatedMessage = await updateMessageRecord(telnyxMessageId, updateData);
         
+        // Update Contact.lastMessageSent when message is delivered or sent
+        if (updatedMessage.contactId && (status === 'delivered' || status === 'sent' || status === 'sending')) {
+          try {
+            await prisma.contact.update({
+              where: { id: updatedMessage.contactId },
+              data: { lastMessageSent: new Date() }
+            });
+          } catch (err) {
+            console.error('Error updating contact lastMessageSent:', err);
+            // Don't fail the whole operation if this update fails
+          }
+        }
+        
         // Get contactId from the updated message record
         messageRecord = {
           contactId: updatedMessage.contactId,

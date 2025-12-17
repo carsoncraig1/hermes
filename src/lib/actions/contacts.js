@@ -379,25 +379,57 @@ export async function updateContact(data) {
     
     // Verify ownership
     const existing = await prisma.contact.findFirst({
-      where: { id: data.id, userId }
+      where: { id: data.id, userId },
+      include: { tags: true }
     })
     if (!existing) {
       throw new Error('Contact not found')
     }
     
-    // Handle tags update
-    const tagConnections = await Promise.all(
-      (data.tags || []).map(async (tagName) => {
-        const tag = await prisma.tag.upsert({
-          where: { 
-            name_userId: { name: tagName, userId }
-          },
-          update: {},
-          create: { name: tagName, userId }
-        });
-        return { id: tag.id };
-      })
-    );
+    // Handle tags update - support add, remove, or replace operations
+    let tagUpdate = undefined;
+    if (data.tags !== undefined) {
+      const tagOperation = data.tagOperation || 'replace'; // 'add', 'remove', or 'replace'
+      
+      // Get existing tag IDs
+      const existingTagIds = existing.tags.map(tag => tag.id);
+      const existingTagNames = existing.tags.map(tag => tag.name);
+      
+      // Upsert all tags mentioned in the update
+      const tagConnections = await Promise.all(
+        (data.tags || []).map(async (tagName) => {
+          const tag = await prisma.tag.upsert({
+            where: { 
+              name_userId: { name: tagName, userId }
+            },
+            update: {},
+            create: { name: tagName, userId }
+          });
+          return { id: tag.id };
+        })
+      );
+      
+      const newTagIds = tagConnections.map(tc => tc.id);
+      
+      if (tagOperation === 'add') {
+        // Merge existing tags with new tags (avoid duplicates)
+        const allTagIds = [...new Set([...existingTagIds, ...newTagIds])];
+        tagUpdate = {
+          set: allTagIds.map(id => ({ id }))
+        };
+      } else if (tagOperation === 'remove') {
+        // Remove specified tags from existing tags
+        const remainingTagIds = existingTagIds.filter(id => !newTagIds.includes(id));
+        tagUpdate = {
+          set: remainingTagIds.map(id => ({ id }))
+        };
+      } else {
+        // Default: replace (set to new tags only)
+        tagUpdate = {
+          set: newTagIds.map(id => ({ id }))
+        };
+      }
+    }
 
     // Handle clickid - support both array and single value
     let clickidArray = []
@@ -420,10 +452,7 @@ export async function updateContact(data) {
       useragent: data.useragent !== undefined ? (data.useragent || null) : undefined,
       referrer: data.referrer !== undefined ? (data.referrer || null) : undefined,
       subscribed: data.subscribed,
-      tags: {
-        set: [], // Clear existing tags
-        connect: tagConnections // Connect new tags
-      }
+      ...(tagUpdate && { tags: tagUpdate })
     };
 
     // If unsubscribing, set unsubscribe reason to "manual"

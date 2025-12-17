@@ -1,0 +1,138 @@
+.filterBuilder {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.filterSection {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.filterItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.filterItem label {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.subscribedSelect {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-md);
+  padding: 0.75rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-family: var(--font-family);
+  transition: all var(--transition-fast);
+  max-width: 200px;
+}
+
+.subscribedSelect:focus {
+  outline: none;
+  border-color: var(--accent-orange);
+  box-shadow: 0 0 0 3px var(--accent-orange-muted);
+}
+
+.filterLevel {
+  margin-top: 0.5rem;
+}
+
+.filterRow {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.fieldSelect,
+.operatorSelect,
+.valueInput {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-md);
+  padding: 0.75rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-family: var(--font-family);
+  transition: all var(--transition-fast);
+}
+
+.fieldSelect {
+  flex: 2;
+  min-width: 150px;
+}
+
+.operatorSelect {
+  flex: 1;
+  min-width: 120px;
+}
+
+.valueInput {
+  flex: 2;
+  min-width: 150px;
+}
+
+.fieldSelect:focus,
+.operatorSelect:focus,
+.valueInput:focus {
+  outline: none;
+  border-color: var(--accent-orange);
+  box-shadow: 0 0 0 3px var(--accent-orange-muted);
+}
+
+.dateRangeInputs {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex: 2;
+}
+
+.dateRangeInputs span {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.dateInput {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-md);
+  padding: 0.75rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-family: var(--font-family);
+  transition: all var(--transition-fast);
+  flex: 1;
+}
+
+.dateInput:focus {
+  outline: none;
+  border-color: var(--accent-orange);
+  box-shadow: 0 0 0 3px var(--accent-orange-muted);
+}
+
+.clearButton {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  padding: 0.625rem 1rem;
+  border-radius: var(--border-radius-md);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  align-self: flex-start;
+  margin-top: 0.5rem;
+}
+
+.clearButton:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-secondary);
+}
+

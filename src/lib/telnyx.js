@@ -315,6 +315,17 @@ export async function sendMessage({
             text: messageTextWithCodes // Update with code-embedded text
           }
         });
+
+        // Update Contact.lastMessageSent when message is successfully sent
+        if (contactId && (initialStatus === 'sent' || initialStatus === 'sending')) {
+          await prisma.contact.update({
+            where: { id: contactId },
+            data: { lastMessageSent: new Date() }
+          }).catch(err => {
+            console.error('Error updating contact lastMessageSent:', err);
+            // Don't fail the whole operation if this update fails
+          });
+        }
       } catch (dbError) {
         console.error('Error updating message record:', dbError);
         // Continue even if update fails
