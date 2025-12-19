@@ -169,7 +169,8 @@ export default function CsvUploadModal({ onClose, onUploadComplete }) {
       setProgress({ processed: 0, total: contacts.length, errors: [] });
 
       // Upload contacts in batches for better performance
-      const BATCH_SIZE = 50
+      // Using larger batch size (1000) for much faster processing
+      const BATCH_SIZE = 1000
       let totalSuccess = 0
       let totalFailed = 0
       let allErrors = []

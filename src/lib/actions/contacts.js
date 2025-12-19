@@ -256,12 +256,12 @@ export async function addContact(data) {
 
 /**
  * Batch upload contacts from CSV
- * Processes contacts in batches for better performance
+ * Optimized to use bulk operations for better performance
  * @param {Array} contactsData - Array of contact data objects
- * @param {number} batchSize - Number of contacts to process per batch (default: 50)
+ * @param {number} batchSize - Number of contacts to process per batch (default: 1000)
  * @returns {Promise<{success: number, failed: number, errors: Array}>}
  */
-export async function addContactsBatch(contactsData, batchSize = 50) {
+export async function addContactsBatch(contactsData, batchSize = 1000) {
   try {
     const userId = await getUserId()
     let successCount = 0
@@ -271,6 +271,7 @@ export async function addContactsBatch(contactsData, batchSize = 50) {
     // Process in batches
     for (let i = 0; i < contactsData.length; i += batchSize) {
       const batch = contactsData.slice(i, i + batchSize)
+      const batchStartIndex = i
       
       // Process batch in transaction
       try {
@@ -300,8 +301,28 @@ export async function addContactsBatch(contactsData, batchSize = 50) {
             )
           }
           
-          // Process each contact in the batch
-          for (const contactData of batch) {
+          // Batch check for existing contacts - query all phones at once
+          const phones = batch.map(c => c.phone).filter(Boolean)
+          const existingContacts = await tx.contact.findMany({
+            where: {
+              phone: { in: phones },
+              userId: userId
+            },
+            select: { id: true, phone: true }
+          })
+          
+          // Create a map of phone -> contact id for quick lookup
+          const existingContactMap = new Map()
+          existingContacts.forEach(contact => {
+            existingContactMap.set(contact.phone, contact.id)
+          })
+          
+          // Separate new and existing contacts
+          const newContacts = []
+          const updateContacts = []
+          const contactTagMap = new Map() // Map phone number to tag IDs for new contacts
+          
+          batch.forEach((contactData, batchIdx) => {
             try {
               // Handle clickid
               let clickidArray = []
@@ -312,22 +333,16 @@ export async function addContactsBatch(contactsData, batchSize = 50) {
               }
               
               // Get tag connections for this contact
-              const tagConnections = (contactData.tags || [])
-                .map(tagName => ({ id: tagMap.get(tagName) }))
-                .filter(tag => tag.id) // Remove any undefined tags
+              const tagIds = (contactData.tags || [])
+                .map(tagName => tagMap.get(tagName))
+                .filter(id => id) // Remove any undefined tags
               
-              // Check if contact already exists (phone + userId)
-              const existingContact = await tx.contact.findFirst({
-                where: {
-                  phone: contactData.phone,
-                  userId: userId
-                }
-              })
+              const existingId = existingContactMap.get(contactData.phone)
               
-              if (existingContact) {
-                // Update existing contact
-                await tx.contact.update({
-                  where: { id: existingContact.id },
+              if (existingId) {
+                // Store for batch update
+                updateContacts.push({
+                  id: existingId,
                   data: {
                     firstName: contactData.firstName || undefined,
                     lastName: contactData.lastName || undefined,
@@ -339,52 +354,122 @@ export async function addContactsBatch(contactsData, batchSize = 50) {
                     referrer: contactData.referrer || undefined,
                     subscribed: contactData.subscribed !== undefined ? contactData.subscribed : undefined,
                     clickid: clickidArray.length > 0 ? clickidArray : [],
-                    tags: tagConnections.length > 0 ? {
-                      set: tagConnections
-                    } : undefined
-                  }
+                  },
+                  tagIds: tagIds
                 })
               } else {
-                // Create new contact
-                await tx.contact.create({
-                  data: {
-                    userId,
-                    firstName: contactData.firstName || null,
-                    lastName: contactData.lastName || null,
-                    email: contactData.email || null,
-                    phone: contactData.phone,
-                    clickid: clickidArray,
-                    source: contactData.source || null,
-                    age: contactData.age || null,
-                    ip: contactData.ip || null,
-                    useragent: contactData.useragent || null,
-                    referrer: contactData.referrer || null,
-                    subscribed: contactData.subscribed !== undefined ? contactData.subscribed : true,
-                    tags: tagConnections.length > 0 ? {
-                      connect: tagConnections
-                    } : undefined
-                  }
+                // Store for batch create
+                newContacts.push({
+                  userId,
+                  firstName: contactData.firstName || null,
+                  lastName: contactData.lastName || null,
+                  email: contactData.email || null,
+                  phone: contactData.phone,
+                  clickid: clickidArray,
+                  source: contactData.source || null,
+                  age: contactData.age || null,
+                  ip: contactData.ip || null,
+                  useragent: contactData.useragent || null,
+                  referrer: contactData.referrer || null,
+                  subscribed: contactData.subscribed !== undefined ? contactData.subscribed : true,
                 })
+                // Use phone as key for reliable mapping
+                contactTagMap.set(contactData.phone, tagIds)
               }
-              
-              successCount++
             } catch (contactError) {
               failedCount++
-              const rowIndex = i + batch.indexOf(contactData) + 2 // +2 for header and 0-indexing
+              const rowIndex = batchStartIndex + batchIdx + 2 // +2 for header and 0-indexing
               errors.push({
                 row: rowIndex,
                 contact: contactData,
                 error: contactError.message || 'Unknown error'
               })
             }
+          })
+          
+          // Bulk create new contacts (createMany doesn't support relations, so we handle tags separately)
+          if (newContacts.length > 0) {
+            await tx.contact.createMany({
+              data: newContacts,
+              skipDuplicates: true
+            })
+            
+            // Fetch the newly created contacts to get their IDs for tag connections
+            const phonesToFetch = newContacts.map(c => c.phone)
+            const createdContacts = await tx.contact.findMany({
+              where: {
+                phone: { in: phonesToFetch },
+                userId: userId
+              },
+              select: { id: true, phone: true }
+            })
+            
+            // Create phone -> id map for new contacts
+            const newContactMap = new Map()
+            createdContacts.forEach(contact => {
+              newContactMap.set(contact.phone, contact.id)
+            })
+            
+            // Connect tags to new contacts in parallel batches
+            const tagConnectionPromises = []
+            newContacts.forEach((contact) => {
+              const contactId = newContactMap.get(contact.phone)
+              const tagIds = contactTagMap.get(contact.phone) || []
+              if (contactId && tagIds.length > 0) {
+                tagConnectionPromises.push(
+                  tx.contact.update({
+                    where: { id: contactId },
+                    data: {
+                      tags: {
+                        connect: tagIds.map(tagId => ({ id: tagId }))
+                      }
+                    }
+                  })
+                )
+              }
+            })
+            
+            // Execute tag connections in parallel (with reasonable concurrency)
+            if (tagConnectionPromises.length > 0) {
+              // Process in chunks of 100 to avoid overwhelming the database
+              const chunkSize = 100
+              for (let j = 0; j < tagConnectionPromises.length; j += chunkSize) {
+                const chunk = tagConnectionPromises.slice(j, j + chunkSize)
+                await Promise.all(chunk)
+              }
+            }
+            
+            successCount += createdContacts.length
           }
+          
+          // Batch update existing contacts
+          if (updateContacts.length > 0) {
+            // Update contacts in parallel
+            await Promise.all(
+              updateContacts.map(async ({ id, data, tagIds }) => {
+                await tx.contact.update({
+                  where: { id },
+                  data: {
+                    ...data,
+                    tags: tagIds.length > 0 ? {
+                      set: tagIds.map(tagId => ({ id: tagId }))
+                    } : undefined
+                  }
+                })
+              })
+            )
+            
+            successCount += updateContacts.length
+          }
+        }, {
+          timeout: 30000 // 30 second timeout for large batches
         })
       } catch (batchError) {
         // If entire batch fails, mark all as failed
         batch.forEach((contactData, idx) => {
           failedCount++
           errors.push({
-            row: i + idx + 2,
+            row: batchStartIndex + idx + 2,
             contact: contactData,
             error: batchError.message || 'Batch processing error'
           })
