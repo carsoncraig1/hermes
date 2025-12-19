@@ -347,9 +347,10 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
     if (!campaign.workflow) throw new Error('Campaign is not a workflow campaign')
     
     const triggerNode = campaign.workflow.nodes?.find(node => node.type === 'trigger')
-    if (!triggerNode || triggerNode.data?.triggerType !== 'manualFire') {
-      throw new Error('Campaign is not a manual fire workflow')
+    if (!triggerNode) {
+      throw new Error('Campaign workflow does not have a trigger node')
     }
+    // Allow manually firing any workflow campaign, not just manual fire ones
     
     // Get total contact count (first page to get total)
     const firstPage = await getContactsForManualFirePaginated(
@@ -810,7 +811,7 @@ export async function updateWorkflowCampaign({ id, name, workflow }) {
   }
 }
 
-// Get only dedicated send campaigns (legacy campaigns without workflow)
+// Get all workflow campaigns (for manual fire, show all workflow sequences)
 export async function getWorkflowCampaigns() {
   try {
     const userId = await getUserId()
@@ -831,15 +832,15 @@ export async function getWorkflowCampaigns() {
       }
     })
     
-    // Filter to only include campaigns with manual fire triggers
-    const manualFireCampaigns = campaigns.filter(campaign => {
+    // Return all workflow campaigns (not just manual fire ones)
+    // All workflow sequences can be manually fired
+    const workflowCampaigns = campaigns.filter(campaign => {
       if (!campaign.workflow?.nodes) return false
       const triggerNode = campaign.workflow.nodes.find(node => node.type === 'trigger')
-      if (!triggerNode) return false
-      return triggerNode.data?.triggerType === 'manualFire'
+      return !!triggerNode // Just need a trigger node, any type
     })
     
-    return manualFireCampaigns
+    return workflowCampaigns
   } catch (error) {
     console.error('Error fetching workflow campaigns:', error)
     throw error

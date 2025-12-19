@@ -4,6 +4,7 @@ import ConsoleWindow from '../console/components/ConsoleWindow';
 import DedicatedSendCard from './components/DedicatedSendCard';
 import ManualFireCard from './components/ManualFireCard';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
+import ContactStatsCards from './components/ContactStatsCards';
 import './dashboard.css';
 
 // Force dynamic rendering to avoid build-time database calls
@@ -17,12 +18,7 @@ export default async function Dashboard() {
       <DashboardHeader />
       <div className="dashboard-content">
         <div className="main-content">
-          <div className="stats-container">
-            <div className="stat-card">
-              <h3>Subscribed Contacts:</h3>
-              <p className="stat-number">{subscribedCount}</p>
-            </div>
-          </div>
+          <ContactStatsCards initialSubscribedCount={subscribedCount} />
           <div className="campaign-cards-container">
             <DedicatedSendCard />
             <ManualFireCard />

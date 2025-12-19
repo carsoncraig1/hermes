@@ -630,3 +630,121 @@ export async function getSubscribedContactsCount() {
     throw new Error('Failed to get subscribed contacts count');
   }
 }
+
+/**
+ * Get date range based on time range string
+ * @param {string} timeRange - 'today', 'week', 'month', 'year', or 'all'
+ * @returns {Object} - { startDate, endDate }
+ */
+function getDateRange(timeRange) {
+  const now = new Date();
+  let endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  let startDate;
+
+  switch (timeRange) {
+    case 'today':
+      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      break;
+    case 'week':
+      startDate = new Date(now);
+      startDate.setDate(now.getDate() - 7);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'month':
+      startDate = new Date(now);
+      startDate.setMonth(now.getMonth() - 1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'year':
+      startDate = new Date(now);
+      startDate.setFullYear(now.getFullYear() - 1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'all':
+    default:
+      startDate = null;
+      endDate = null;
+      break;
+  }
+
+  return { startDate, endDate };
+}
+
+/**
+ * Get count of new contacts created in a time range
+ * @param {string} timeRange - 'today', 'week', 'month', 'year', or 'all'
+ * @returns {Promise<number>}
+ */
+export async function getNewContactsCount(timeRange = 'today') {
+  try {
+    const userId = await getUserId()
+    const { startDate, endDate } = getDateRange(timeRange);
+    
+    const where = {
+      userId
+    };
+
+    if (startDate && endDate) {
+      where.createdAt = {
+        gte: startDate,
+        lte: endDate
+      };
+    }
+
+    const count = await prisma.contact.count({ where });
+    return count;
+  } catch (error) {
+    console.error('Error getting new contacts count:', error);
+    throw new Error('Failed to get new contacts count');
+  }
+}
+
+/**
+ * Get count of unsubscribed contacts in a time range
+ * @param {string} timeRange - 'today', 'week', 'month', 'year', or 'all'
+ * @returns {Promise<number>}
+ */
+export async function getUnsubscribedContactsCount(timeRange = 'today') {
+  try {
+    const userId = await getUserId()
+    const { startDate, endDate } = getDateRange(timeRange);
+    
+    const where = {
+      userId,
+      subscribed: false
+    };
+
+    if (startDate && endDate) {
+      // Check when they were unsubscribed (updatedAt when subscribed changed to false)
+      where.updatedAt = {
+        gte: startDate,
+        lte: endDate
+      };
+    }
+
+    const count = await prisma.contact.count({ where });
+    return count;
+  } catch (error) {
+    console.error('Error getting unsubscribed contacts count:', error);
+    throw new Error('Failed to get unsubscribed contacts count');
+  }
+}
+
+/**
+ * Get net contact growth (new contacts - unsubscribed contacts) in a time range
+ * @param {string} timeRange - 'today', 'week', 'month', 'year', or 'all'
+ * @returns {Promise<number>}
+ */
+export async function getNetContactGrowth(timeRange = 'today') {
+  try {
+    const [newContacts, unsubscribed] = await Promise.all([
+      getNewContactsCount(timeRange),
+      getUnsubscribedContactsCount(timeRange)
+    ]);
+    
+    return newContacts - unsubscribed;
+  } catch (error) {
+    console.error('Error getting net contact growth:', error);
+    throw new Error('Failed to get net contact growth');
+  }
+}
