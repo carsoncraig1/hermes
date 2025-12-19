@@ -11,6 +11,31 @@ async function getUserId() {
   return session.user.id
 }
 
+/**
+ * Apply boolean filter to where clause
+ */
+function applyBooleanFilter(where, filter) {
+  if (!filter?.field || !filter?.value) return;
+  
+  const { field, operator, value } = filter;
+  
+  // Handle boolean fields
+  if (field === 'hasClicked' || field === 'subscribed') {
+    // Only apply filter if value is explicitly 'true' or 'false'
+    if (value !== 'true' && value !== 'false') {
+      return; // Don't apply filter if value is empty or invalid
+    }
+    
+    const filterValue = value === 'true';
+    if (operator === 'equals') {
+      where[field] = filterValue;
+    } else if (operator === 'notEquals') {
+      // For boolean fields, "not equals true" means equals false, and vice versa
+      where[field] = !filterValue;
+    }
+  }
+}
+
 export async function getContacts(limit = 100, includeTags = false) {
   try {
     const userId = await getUserId()

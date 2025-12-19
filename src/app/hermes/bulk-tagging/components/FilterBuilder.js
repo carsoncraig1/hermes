@@ -82,12 +82,18 @@ export default function FilterBuilder({ filters, onFiltersChange }) {
         <div className={styles.filterRow}>
           <select
             value={filter.field || ''}
-            onChange={(e) => updateLevelFilter(level, { 
-              field: e.target.value, 
-              operator: 'contains',
-              value: '',
-              value2: ''
-            })}
+            onChange={(e) => {
+              const newField = e.target.value;
+              const fieldConfig = FILTER_FIELDS.find(f => f.id === newField);
+              const isBooleanField = fieldConfig?.type === 'boolean';
+              const isDateField = fieldConfig?.type === 'date';
+              updateLevelFilter(level, { 
+                field: newField, 
+                operator: isBooleanField ? 'equals' : (isDateField ? 'equals' : 'contains'),
+                value: '',
+                value2: ''
+              });
+            }}
             className={styles.fieldSelect}
           >
             <option value="">Select field...</option>

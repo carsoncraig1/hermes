@@ -68,11 +68,17 @@ function applyLevelFilter(where, filter) {
 
   // Handle boolean fields
   if (field === 'hasClicked' || field === 'subscribed') {
-    const filterValue = value === 'true' || value === true || value === '1';
+    // Only apply filter if value is explicitly 'true' or 'false'
+    if (value !== 'true' && value !== 'false') {
+      return; // Don't apply filter if value is empty or invalid
+    }
+    
+    const filterValue = value === 'true';
     if (operator === 'equals') {
       where[field] = filterValue;
     } else if (operator === 'notEquals') {
-      where[field] = { not: filterValue };
+      // For boolean fields, "not equals true" means equals false, and vice versa
+      where[field] = !filterValue;
     }
     return;
   }
