@@ -123,6 +123,7 @@ model Contact {
   subscribed             Boolean?
   unsubscribeReason      String? // Reason for unsubscription: "STOP", "delivery_failed", "sending_failed", "manual", etc.
   lastMessageSent        DateTime?
+  hasClicked             Boolean  @default(false) // Whether this contact has clicked on any links in messages
   tags                   Tag[]
   messages               Message[]
   messageClickCodes      MessageClickCode[]

@@ -57,11 +57,14 @@ export async function getAnalytics(filters = {}) {
       }
     });
 
-    // Get messages for cost calculation
-    const messages = await prisma.message.findMany({
+    // Get messages for cost calculation - only fetch delivered messages for cost
+    // Telnyx only bills for messages that are successfully delivered to the recipient
+    // sent and delivery_unconfirmed may have costs in webhooks but Telnyx doesn't bill for them
+    const messagesForCost = await prisma.message.findMany({
       where: {
         userId,
         direction: 'outbound',
+        status: 'delivered', // Only delivered messages are billed by Telnyx
         ...dateFilter,
         ...(filters.campaignId && { campaignId: parseInt(filters.campaignId, 10) })
       },
@@ -73,15 +76,30 @@ export async function getAnalytics(filters = {}) {
       }
     });
 
+    // Get all messages for counting (including failed)
+    const allMessages = await prisma.message.findMany({
+      where: {
+        userId,
+        direction: 'outbound',
+        ...dateFilter,
+        ...(filters.campaignId && { campaignId: parseInt(filters.campaignId, 10) })
+      },
+      select: {
+        status: true,
+        createdAt: true
+      }
+    });
+
     // Calculate totals
+    // Only count cost for messages that were actually sent/delivered (not failed)
     const totalRevenue = revenueEvents.reduce((sum, event) => sum + parseFloat(event.payout.toString()), 0);
-    const totalCost = messages.reduce((sum, msg) => sum + (msg.costAmount ? parseFloat(msg.costAmount.toString()) : 0), 0);
+    const totalCost = messagesForCost.reduce((sum, msg) => sum + (msg.costAmount ? parseFloat(msg.costAmount.toString()) : 0), 0);
     const roas = totalCost > 0 ? (totalRevenue / totalCost) : 0;
     
     // Count messages by status (only count delivered messages as delivered)
-    const totalMessages = messages.length;
-    const deliveredMessages = messages.filter(msg => msg.status === 'delivered').length;
-    const failedMessages = messages.filter(msg => 
+    const totalMessages = allMessages.length;
+    const deliveredMessages = allMessages.filter(msg => msg.status === 'delivered').length;
+    const failedMessages = allMessages.filter(msg => 
       msg.status === 'sending_failed' || msg.status === 'delivery_failed'
     ).length;
 
@@ -174,7 +192,7 @@ export async function getAnalytics(filters = {}) {
       payout: parseFloat(event.payout.toString())
     }));
     
-    const messagesClean = messages.slice(0, 100).map(msg => ({
+    const messagesClean = messagesForCost.slice(0, 100).map(msg => ({
       ...msg,
       costAmount: msg.costAmount ? parseFloat(msg.costAmount.toString()) : null
     }));
@@ -234,6 +252,7 @@ export async function getCampaignsWithROAS(filters = {}) {
         messages: {
           where: {
             direction: 'outbound',
+            status: 'delivered', // Only delivered messages are billed by Telnyx
             ...dateFilter
           },
           select: {
@@ -318,6 +337,7 @@ export async function getCampaignsWithROAS(filters = {}) {
 
     return campaigns.map(campaign => {
       const revenue = campaign.revenueEvents.reduce((sum, event) => sum + parseFloat(event.payout.toString()), 0);
+      // Messages are already filtered to sent/delivered at database level
       const cost = campaign.messages.reduce((sum, msg) => sum + (msg.costAmount ? parseFloat(msg.costAmount.toString()) : 0), 0);
       const clicks = campaign.shortlinks.reduce((sum, s) => sum + s.clicks, 0);
       const opens = campaign.shortlinks.reduce((sum, s) => sum + s.opens, 0);
@@ -379,9 +399,13 @@ export async function getCampaignDeliveryStatus() {
       const sent = messages.filter(m => m.status === 'sent').length;
       const queued = messages.filter(m => m.status === 'queued' || m.status === 'sending').length;
       
-      const totalCost = messages.reduce((sum, m) => {
-        return sum + (m.costAmount ? parseFloat(m.costAmount) : 0);
-      }, 0);
+      // Only count cost for delivered messages (Telnyx only bills for delivered)
+      // Filter by status AND ensure costAmount exists (defensive check)
+      const totalCost = messages
+        .filter(m => m.status === 'delivered' && m.costAmount)
+        .reduce((sum, m) => {
+          return sum + (m.costAmount ? parseFloat(m.costAmount) : 0);
+        }, 0);
       
       return {
         campaignId: campaign.id,
@@ -440,7 +464,10 @@ export async function getMessageAnalytics(filters = {}) {
         }
       }),
       prisma.message.aggregate({
-        where,
+        where: {
+          ...where,
+          status: 'delivered' // Only delivered messages are billed by Telnyx
+        },
         _sum: { costAmount: true }
       }),
       prisma.message.findMany({

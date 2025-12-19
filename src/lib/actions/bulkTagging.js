@@ -66,6 +66,17 @@ function applyLevelFilter(where, filter) {
 
   const { field, operator, value, value2 } = filter;
 
+  // Handle boolean fields
+  if (field === 'hasClicked' || field === 'subscribed') {
+    const filterValue = value === 'true' || value === true || value === '1';
+    if (operator === 'equals') {
+      where[field] = filterValue;
+    } else if (operator === 'notEquals') {
+      where[field] = { not: filterValue };
+    }
+    return;
+  }
+
   // Handle tag filters
   if (field === 'tags') {
     const searchValue = value.toLowerCase();

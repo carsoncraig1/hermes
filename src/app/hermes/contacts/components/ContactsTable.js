@@ -185,6 +185,14 @@ const createColumns = (columnOrder = [], rowSelection, setRowSelection, filtered
     maxSize: 250,
     cell: info => info.getValue() ? format(new Date(info.getValue()), 'yyyy-MM-dd HH:mm') : 'Never',
   }),
+  columnHelper.accessor('hasClicked', {
+    header: 'Clicked?',
+    id: 'hasClicked',
+    size: columnSizing.hasClicked || 100,
+    minSize: 80,
+    maxSize: 150,
+    cell: info => info.getValue() ? 'Yes' : 'No',
+  }),
   columnHelper.accessor('tags', {
     header: 'Tags',
     id: 'tags',
@@ -229,6 +237,7 @@ const FILTER_FIELDS = [
   { id: 'useragent', label: 'User Agent', type: 'text' },
   { id: 'referrer', label: 'Referrer', type: 'text' },
   { id: 'clickid', label: 'Click ID', type: 'text' },
+  { id: 'hasClicked', label: 'Clicked?', type: 'boolean' },
   { id: 'tags', label: 'Tags', type: 'tags' },
   { id: 'createdAt', label: 'Created At', type: 'date' },
   { id: 'updatedAt', label: 'Updated At', type: 'date' },
@@ -324,6 +333,18 @@ function FilterMenu({ isOpen, onClose, filters, setFilters, contacts, setFiltere
   const matchesFilter = (contact, filter) => {
     const { field, operator, value, value2 } = filter;
     const contactValue = contact[field];
+
+    // Handle boolean fields
+    if (field === 'hasClicked' || field === 'subscribed') {
+      const filterValue = value === 'true' || value === true || value === '1';
+      const contactBoolValue = Boolean(contactValue);
+      if (operator === 'equals') {
+        return contactBoolValue === filterValue;
+      } else if (operator === 'notEquals') {
+        return contactBoolValue !== filterValue;
+      }
+      return false;
+    }
 
     // Handle array fields (clickid, tags)
     if (field === 'clickid' && Array.isArray(contactValue)) {
@@ -436,7 +457,8 @@ function FilterMenu({ isOpen, onClose, filters, setFilters, contacts, setFiltere
     const fieldConfig = FILTER_FIELDS.find(f => f.id === filter.field);
     const isDateField = fieldConfig?.type === 'date';
     const isTagsField = filter.field === 'tags';
-    const operators = isDateField ? DATE_OPERATORS : FILTER_OPERATORS;
+    const isBooleanField = fieldConfig?.type === 'boolean';
+    const operators = isDateField ? DATE_OPERATORS : (isBooleanField ? [{ id: 'equals', label: 'Is' }, { id: 'notEquals', label: 'Is Not' }] : FILTER_OPERATORS);
     const fieldValues = filter.field ? getFieldValues(filter.field) : [];
 
     return (
@@ -504,6 +526,16 @@ function FilterMenu({ isOpen, onClose, filters, setFilters, contacts, setFiltere
                     {availableTags.map(tag => (
                       <option key={tag} value={tag}>{tag}</option>
                     ))}
+                  </select>
+                ) : isBooleanField ? (
+                  <select
+                    value={filter.value || ''}
+                    onChange={(e) => updateLevelFilter(level, { value: e.target.value })}
+                    style={{ flex: 1 }}
+                  >
+                    <option value="">Select...</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
                   </select>
                 ) : (
                   <>
@@ -592,6 +624,7 @@ function FieldsMenu({ isOpen, onClose, visibleFields, setVisibleFields, columnOr
     { field: 'useragent', label: 'User Agent' },
     { field: 'referrer', label: 'Referrer' },
     { field: 'subscribed', label: 'Subscribed' },
+    { field: 'hasClicked', label: 'Clicked?' },
     { field: 'tags', label: 'Tags' },
     { field: 'lastMessageSent', label: 'Last Message' },
     { field: 'createdAt', label: 'Created At' },
@@ -714,7 +747,7 @@ export default function ContactsTable({ initialContacts }) {
   const defaultColumnOrder = [
     'id', 'firstName', 'lastName', 'phone', 'email', 'clickid', 
     'source', 'age', 'ip', 'useragent', 'referrer',
-    'subscribed', 'tags', 'lastMessageSent', 'createdAt', 'updatedAt'
+    'subscribed', 'hasClicked', 'tags', 'lastMessageSent', 'createdAt', 'updatedAt'
   ];
   const [columnOrder, setColumnOrder] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -854,6 +887,18 @@ export default function ContactsTable({ initialContacts }) {
   const applyLevelFilter = (contact, filter) => {
     const { field, operator, value, value2 } = filter;
     const contactValue = contact[field];
+
+    // Handle boolean fields
+    if (field === 'hasClicked' || field === 'subscribed') {
+      const filterValue = value === 'true' || value === true || value === '1';
+      const contactBoolValue = Boolean(contactValue);
+      if (operator === 'equals') {
+        return contactBoolValue === filterValue;
+      } else if (operator === 'notEquals') {
+        return contactBoolValue !== filterValue;
+      }
+      return false;
+    }
 
     // Handle array fields (clickid, tags)
     if (field === 'clickid' && Array.isArray(contactValue)) {

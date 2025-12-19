@@ -75,6 +75,11 @@ export async function getContactsPaginated(page = 0, pageSize = 20, filters = {}
       ]
     }
     
+    // Apply boolean filters server-side (hasClicked, subscribed)
+    applyBooleanFilter(where, filters.level1);
+    applyBooleanFilter(where, filters.level2);
+    applyBooleanFilter(where, filters.level3);
+    
     // Apply tag filters server-side
     // Check each level filter for tag filters
     const tagFilters = []

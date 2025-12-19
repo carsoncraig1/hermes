@@ -88,8 +88,9 @@ export async function POST(request) {
       try {
         const updateData = {
           status,
-          costAmount,
-          costCurrency,
+          // Only set costAmount for sent/delivered/unconfirmed messages (Telnyx bills for these)
+          // delivery_unconfirmed messages are still billed (sent to carrier, no confirmation)
+          ...(status === 'sent' || status === 'delivered' || status === 'delivery_unconfirmed' ? { costAmount, costCurrency } : { costAmount: null, costCurrency }),
           telnyxMetadata: payload
         };
 
@@ -107,27 +108,36 @@ export async function POST(request) {
 
         const updatedMessage = await updateMessageRecord(telnyxMessageId, updateData);
         
-        // Update Contact.lastMessageSent when message is delivered or sent
-        if (updatedMessage.contactId && (status === 'delivered' || status === 'sent' || status === 'sending')) {
-          try {
-            await prisma.contact.update({
-              where: { id: updatedMessage.contactId },
-              data: { lastMessageSent: new Date() }
-            });
-          } catch (err) {
-            console.error('Error updating contact lastMessageSent:', err);
-            // Don't fail the whole operation if this update fails
+        if (!updatedMessage) {
+          // Message record doesn't exist - this can happen if message was sent outside our system
+          // or if the record was never created. Log a warning but continue processing.
+          console.warn(`[Telnyx Webhook] Message record not found for telnyxMessageId: ${telnyxMessageId}`);
+        } else {
+          // Update Contact.lastMessageSent when message is delivered, sent, or unconfirmed
+          if (updatedMessage.contactId && (status === 'delivered' || status === 'sent' || status === 'delivery_unconfirmed' || status === 'sending')) {
+            try {
+              await prisma.contact.update({
+                where: { id: updatedMessage.contactId },
+                data: { lastMessageSent: new Date() }
+              });
+            } catch (err) {
+              console.error('Error updating contact lastMessageSent:', err);
+              // Don't fail the whole operation if this update fails
+            }
           }
+          
+          // Get contactId from the updated message record
+          messageRecord = {
+            contactId: updatedMessage.contactId,
+            to: updatedMessage.to,
+            errorMessage: updatedMessage.errorMessage
+          };
         }
-        
-        // Get contactId from the updated message record
-        messageRecord = {
-          contactId: updatedMessage.contactId,
-          to: updatedMessage.to,
-          errorMessage: updatedMessage.errorMessage
-        };
       } catch (error) {
-        console.error(`[Telnyx Webhook] Error updating message record ${telnyxMessageId}:`, error);
+        // Only log if it's not a "record not found" error (which is already handled above)
+        if (error.code !== 'P2025') {
+          console.error(`[Telnyx Webhook] Error updating message record ${telnyxMessageId}:`, error);
+        }
         // Continue processing even if update fails
       }
     }

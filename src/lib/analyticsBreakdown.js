@@ -302,8 +302,12 @@ function initializeMetrics() {
  * Aggregate metrics from data item
  */
 function aggregateMetrics(metrics, item) {
+  // Only count cost for delivered messages (Telnyx only bills for delivered)
   if (item.costAmount !== undefined && item.costAmount !== null) {
-    metrics.cost += parseFloat(item.costAmount) || 0;
+    // Only add cost if message was delivered (Telnyx only bills for successfully delivered messages)
+    if (item.status === 'delivered') {
+      metrics.cost += parseFloat(item.costAmount) || 0;
+    }
   }
   if (item.payout !== undefined && item.payout !== null) {
     metrics.revenue += parseFloat(item.payout) || 0;

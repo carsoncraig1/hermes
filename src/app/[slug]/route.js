@@ -247,12 +247,12 @@ export async function GET(request, { params }) {
           // Re-fetch the messageClickCode within transaction to get latest state
           const currentCode = await tx.messageClickCode.findUnique({
             where: { code },
-            select: { clicked: true, id: true }
+            select: { clicked: true, id: true, contactId: true }
           })
           
           // If already clicked, return early - don't count this as a click
           if (!currentCode || currentCode.clicked) {
-            return { isNewClick: false, hrms: null }
+            return { isNewClick: false, hrms: null, contactId: currentCode?.contactId || null }
           }
           
           // Mark as clicked (atomic update)
@@ -263,6 +263,17 @@ export async function GET(request, { params }) {
               clickedAt: new Date()
             }
           })
+          
+          // Update contact's hasClicked field if contactId exists
+          if (currentCode.contactId) {
+            await tx.contact.update({
+              where: { id: currentCode.contactId },
+              data: { hasClicked: true }
+            }).catch(err => {
+              // Don't fail the transaction if contact update fails
+              console.error('Error updating contact hasClicked:', err);
+            });
+          }
           
           // Generate unique HRMS for this specific click
           const shortlinkForHrms = await tx.shortlink.findUnique({
@@ -295,7 +306,7 @@ export async function GET(request, { params }) {
             data: { clicks: { increment: 1 } }
           })
           
-          return { isNewClick: true, hrms }
+          return { isNewClick: true, hrms, contactId: currentCode.contactId }
         })
         
         // Only proceed if this was a new click

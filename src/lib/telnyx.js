@@ -308,8 +308,10 @@ export async function sendMessage({
           data: {
             telnyxMessageId,
             status: initialStatus,
-            costAmount: costAmount ? parseFloat(costAmount) : null,
-            costCurrency,
+            // Only set costAmount for sent/delivered/unconfirmed messages (Telnyx bills for these)
+            // delivery_unconfirmed messages are still billed (sent to carrier, no confirmation)
+            costAmount: (initialStatus === 'sent' || initialStatus === 'delivered' || initialStatus === 'delivery_unconfirmed') && costAmount ? parseFloat(costAmount) : null,
+            costCurrency: (initialStatus === 'sent' || initialStatus === 'delivered') ? costCurrency : 'USD',
             telnyxMetadata: response.data ? JSON.parse(JSON.stringify(response.data)) : null,
             sentAt: initialStatus === 'sent' || initialStatus === 'sending' ? new Date() : null,
             text: messageTextWithCodes // Update with code-embedded text

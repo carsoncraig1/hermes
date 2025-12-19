@@ -111,7 +111,11 @@ export async function getMessageStats() {
         }
       }),
       prisma.message.aggregate({
-        where: { userId, direction: 'outbound' },
+        where: { 
+          userId, 
+          direction: 'outbound',
+          status: 'delivered' // Only delivered messages are billed by Telnyx
+        },
         _sum: { costAmount: true }
       })
     ]);
@@ -234,8 +238,10 @@ export async function createMessageRecord({
       parts,
       status,
       direction,
-      costAmount: costAmount ? parseFloat(costAmount) : null,
-      costCurrency,
+      // Only set costAmount for sent/delivered/unconfirmed messages (Telnyx bills for these)
+      // delivery_unconfirmed messages are still billed (sent to carrier, no confirmation)
+      costAmount: (status === 'sent' || status === 'delivered' || status === 'delivery_unconfirmed') && costAmount ? parseFloat(costAmount) : null,
+      costCurrency: (status === 'sent' || status === 'delivered') ? costCurrency : 'USD',
       telnyxMetadata: telnyxMetadata ? JSON.parse(JSON.stringify(telnyxMetadata)) : null,
       errorMessage,
       sentAt: status === 'sent' || status === 'sending' ? new Date() : null,
@@ -250,9 +256,20 @@ export async function createMessageRecord({
  * Update a message record
  * @param {string} telnyxMessageId - Telnyx message ID
  * @param {Object} updates - Fields to update
- * @returns {Promise<Object>} - Updated message record
+ * @returns {Promise<Object|null>} - Updated message record, or null if not found
  */
 export async function updateMessageRecord(telnyxMessageId, updates) {
+  // First check if the message exists
+  const existingMessage = await prisma.message.findUnique({
+    where: { telnyxMessageId },
+    select: { id: true }
+  });
+
+  if (!existingMessage) {
+    // Message doesn't exist - return null instead of throwing
+    return null;
+  }
+
   const updateData = {
     ...(updates.status && { status: updates.status }),
     ...(updates.costAmount !== undefined && { costAmount: parseFloat(updates.costAmount) }),
@@ -308,7 +325,10 @@ export async function getMessageAnalytics(userId, filters = {}) {
       }
     }),
     prisma.message.aggregate({
-      where,
+      where: {
+        ...where,
+        status: 'delivered' // Only delivered messages are billed by Telnyx
+      },
       _sum: { costAmount: true }
     })
   ]);

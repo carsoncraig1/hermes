@@ -15,6 +15,7 @@ const FILTER_FIELDS = [
   { id: 'useragent', label: 'User Agent', type: 'text' },
   { id: 'referrer', label: 'Referrer', type: 'text' },
   { id: 'clickid', label: 'Click ID', type: 'text' },
+  { id: 'hasClicked', label: 'Clicked?', type: 'boolean' },
   { id: 'tags', label: 'Tags', type: 'tags' },
   { id: 'createdAt', label: 'Created At', type: 'date' },
   { id: 'updatedAt', label: 'Updated At', type: 'date' },
@@ -73,7 +74,8 @@ export default function FilterBuilder({ filters, onFiltersChange }) {
     const fieldConfig = FILTER_FIELDS.find(f => f.id === filter.field);
     const isDateField = fieldConfig?.type === 'date';
     const isTagsField = filter.field === 'tags';
-    const operators = isDateField ? DATE_OPERATORS : FILTER_OPERATORS;
+    const isBooleanField = fieldConfig?.type === 'boolean';
+    const operators = isDateField ? DATE_OPERATORS : (isBooleanField ? [{ id: 'equals', label: 'Is' }, { id: 'notEquals', label: 'Is Not' }] : FILTER_OPERATORS);
 
     return (
       <div className={styles.filterLevel}>
@@ -141,6 +143,16 @@ export default function FilterBuilder({ filters, onFiltersChange }) {
                   {availableTags.map(tag => (
                     <option key={tag.id} value={tag.name}>{tag.name}</option>
                   ))}
+                </select>
+              ) : isBooleanField ? (
+                <select
+                  value={filter.value || ''}
+                  onChange={(e) => updateLevelFilter(level, { value: e.target.value })}
+                  className={styles.valueInput}
+                >
+                  <option value="">Select...</option>
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
                 </select>
               ) : (
                 <input
