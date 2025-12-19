@@ -179,13 +179,213 @@ function applyLevelFilter(where, filter) {
 }
 
 /**
- * Bulk tag contacts with split configuration
+ * Process a single split of contacts
  */
-export async function bulkTagContacts({ filters, splits, splitMethod, selectionMethod, preventOverlap, remainingTag, tagOperation }) {
+export async function processSplit({ filters, split, totalContacts, contactIds, taggedContactIds, selectionMethod, preventOverlap, tagOperation }) {
+  try {
+    const userId = await getUserId();
+    const where = buildWhereClause(filters, userId);
+    
+    // Convert taggedContactIds array to Set for efficient lookup
+    const taggedSet = new Set(taggedContactIds || []);
+    
+    let splitCount;
+    if (split.isPercentage) {
+      splitCount = Math.floor((totalContacts * split.value) / 100);
+    } else {
+      splitCount = Math.min(split.value, totalContacts - taggedSet.size);
+    }
+
+    if (splitCount <= 0) {
+      return { tagged: 0, contactIds: [] };
+    }
+
+    // Get contacts for this split
+    let splitContactIds;
+    if (preventOverlap) {
+      splitContactIds = contactIds
+        .filter(id => !taggedSet.has(id))
+        .slice(0, splitCount);
+    } else {
+      splitContactIds = contactIds.slice(0, splitCount);
+    }
+
+    if (splitContactIds.length === 0) {
+      return { tagged: 0, contactIds: [] };
+    }
+
+    // Upsert the tag
+    const tag = await prisma.tag.upsert({
+      where: {
+        name_userId: {
+          name: split.tagName,
+          userId
+        }
+      },
+      update: {},
+      create: {
+        name: split.tagName,
+        userId
+      }
+    });
+
+    // Get existing tags for contacts
+    const contactsWithTags = await prisma.contact.findMany({
+      where: { id: { in: splitContactIds } },
+      include: { tags: true }
+    });
+
+    // Process updates in batches of 100
+    const BATCH_SIZE = 100;
+    for (let i = 0; i < contactsWithTags.length; i += BATCH_SIZE) {
+      const batch = contactsWithTags.slice(i, i + BATCH_SIZE);
+      
+      await prisma.$transaction(async (tx) => {
+        for (const contact of batch) {
+          const existingTagIds = contact.tags.map(t => t.id);
+          let newTagIds;
+
+          if (tagOperation === 'add') {
+            if (!existingTagIds.includes(tag.id)) {
+              newTagIds = [...existingTagIds, tag.id];
+            } else {
+              newTagIds = existingTagIds;
+            }
+          } else if (tagOperation === 'remove') {
+            newTagIds = existingTagIds.filter(id => id !== tag.id);
+          } else {
+            newTagIds = [tag.id];
+          }
+
+          await tx.contact.update({
+            where: { id: contact.id },
+            data: {
+              tags: {
+                set: newTagIds.map(id => ({ id }))
+              }
+            }
+          });
+        }
+      });
+    }
+
+    return { tagged: splitContactIds.length, contactIds: splitContactIds };
+  } catch (error) {
+    console.error('Error processing split:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get contact IDs for filtering (used for split processing)
+ */
+export async function getContactIdsForSplits({ filters, selectionMethod }) {
   try {
     const userId = await getUserId();
     const where = buildWhereClause(filters, userId);
 
+    const contacts = await prisma.contact.findMany({
+      where,
+      select: { id: true },
+      orderBy: selectionMethod === 'sequential' ? { createdAt: 'asc' } : undefined
+    });
+
+    let contactIds = contacts.map(c => c.id);
+    if (selectionMethod === 'random') {
+      // Fisher-Yates shuffle
+      for (let i = contactIds.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [contactIds[i], contactIds[j]] = [contactIds[j], contactIds[i]];
+      }
+    }
+
+    return { contactIds, totalContacts: contactIds.length };
+  } catch (error) {
+    console.error('Error getting contact IDs:', error);
+    throw error;
+  }
+}
+
+/**
+ * Process remaining contacts
+ */
+export async function processRemainingContacts({ filters, remainingTag, remainingContactIds, tagOperation }) {
+  try {
+    if (!remainingTag || !remainingTag.trim() || remainingContactIds.length === 0) {
+      return { tagged: 0 };
+    }
+
+    const userId = await getUserId();
+    
+    const tag = await prisma.tag.upsert({
+      where: {
+        name_userId: {
+          name: remainingTag.trim(),
+          userId
+        }
+      },
+      update: {},
+      create: {
+        name: remainingTag.trim(),
+        userId
+      }
+    });
+
+    const contactsWithTags = await prisma.contact.findMany({
+      where: { id: { in: remainingContactIds } },
+      include: { tags: true }
+    });
+
+    const BATCH_SIZE = 100;
+    for (let i = 0; i < contactsWithTags.length; i += BATCH_SIZE) {
+      const batch = contactsWithTags.slice(i, i + BATCH_SIZE);
+      
+      await prisma.$transaction(async (tx) => {
+        for (const contact of batch) {
+          const existingTagIds = contact.tags.map(t => t.id);
+          let newTagIds;
+
+          if (tagOperation === 'add') {
+            if (!existingTagIds.includes(tag.id)) {
+              newTagIds = [...existingTagIds, tag.id];
+            } else {
+              newTagIds = existingTagIds;
+            }
+          } else if (tagOperation === 'remove') {
+            newTagIds = existingTagIds.filter(id => id !== tag.id);
+          } else {
+            newTagIds = [tag.id];
+          }
+
+          await tx.contact.update({
+            where: { id: contact.id },
+            data: {
+              tags: {
+                set: newTagIds.map(id => ({ id }))
+              }
+            }
+          });
+        }
+      });
+    }
+
+    return { tagged: remainingContactIds.length };
+  } catch (error) {
+    console.error('Error processing remaining contacts:', error);
+    throw error;
+  }
+}
+
+/**
+ * Bulk tag contacts with split configuration (legacy - kept for backwards compatibility)
+ */
+export async function bulkTagContacts({ filters, splits, splitMethod, selectionMethod, preventOverlap, remainingTag, tagOperation }) {
+  try {
+    console.log('Starting bulkTagContacts...');
+    const userId = await getUserId();
+    const where = buildWhereClause(filters, userId);
+
+    console.log('Fetching matching contacts...');
     // Get all matching contact IDs
     const contacts = await prisma.contact.findMany({
       where,
@@ -194,6 +394,7 @@ export async function bulkTagContacts({ filters, splits, splitMethod, selectionM
     });
 
     const totalContacts = contacts.length;
+    console.log(`Found ${totalContacts} matching contacts`);
     if (totalContacts === 0) {
       return { totalTagged: 0, splitsProcessed: 0 };
     }
@@ -214,6 +415,7 @@ export async function bulkTagContacts({ filters, splits, splitMethod, selectionM
 
     // Process each split
     for (const split of splits) {
+      console.log(`Processing split: ${split.tagName}`);
       let splitCount;
       if (split.isPercentage) {
         splitCount = Math.floor((totalContacts * split.value) / 100);
@@ -221,7 +423,10 @@ export async function bulkTagContacts({ filters, splits, splitMethod, selectionM
         splitCount = Math.min(split.value, totalContacts - taggedContactIds.size);
       }
 
-      if (splitCount <= 0) continue;
+      if (splitCount <= 0) {
+        console.log(`Skipping split ${split.tagName} - count is 0`);
+        continue;
+      }
 
       // Get contacts for this split
       let splitContactIds;
@@ -235,7 +440,12 @@ export async function bulkTagContacts({ filters, splits, splitMethod, selectionM
         splitContactIds = contactIds.slice(0, splitCount);
       }
 
-      if (splitContactIds.length === 0) continue;
+      if (splitContactIds.length === 0) {
+        console.log(`Skipping split ${split.tagName} - no contacts available`);
+        continue;
+      }
+
+      console.log(`Tagging ${splitContactIds.length} contacts with tag: ${split.tagName}`);
 
       // Upsert the tag
       const tag = await prisma.tag.upsert({
@@ -258,40 +468,50 @@ export async function bulkTagContacts({ filters, splits, splitMethod, selectionM
         include: { tags: true }
       });
 
-      // Update each contact
-      for (const contact of contactsWithTags) {
-        const existingTagIds = contact.tags.map(t => t.id);
-        let newTagIds;
+      // Process updates in batches of 100 to avoid overwhelming the database
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < contactsWithTags.length; i += BATCH_SIZE) {
+        const batch = contactsWithTags.slice(i, i + BATCH_SIZE);
+        
+        await prisma.$transaction(async (tx) => {
+          for (const contact of batch) {
+            const existingTagIds = contact.tags.map(t => t.id);
+            let newTagIds;
 
-        if (tagOperation === 'add') {
-          // Add tag if not already present
-          if (!existingTagIds.includes(tag.id)) {
-            newTagIds = [...existingTagIds, tag.id];
-          } else {
-            newTagIds = existingTagIds;
-          }
-        } else if (tagOperation === 'remove') {
-          // Remove tag if present
-          newTagIds = existingTagIds.filter(id => id !== tag.id);
-        } else {
-          // Replace - set to only this tag
-          newTagIds = [tag.id];
-        }
-
-        await prisma.contact.update({
-          where: { id: contact.id },
-          data: {
-            tags: {
-              set: newTagIds.map(id => ({ id }))
+            if (tagOperation === 'add') {
+              // Add tag if not already present
+              if (!existingTagIds.includes(tag.id)) {
+                newTagIds = [...existingTagIds, tag.id];
+              } else {
+                newTagIds = existingTagIds;
+              }
+            } else if (tagOperation === 'remove') {
+              // Remove tag if present
+              newTagIds = existingTagIds.filter(id => id !== tag.id);
+            } else {
+              // Replace - set to only this tag
+              newTagIds = [tag.id];
             }
+
+            await tx.contact.update({
+              where: { id: contact.id },
+              data: {
+                tags: {
+                  set: newTagIds.map(id => ({ id }))
+                }
+              }
+            });
           }
         });
+        
+        console.log(`Processed batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(contactsWithTags.length / BATCH_SIZE)} for split ${splitsProcessed + 1}`);
       }
 
       // Track tagged contacts
       splitContactIds.forEach(id => taggedContactIds.add(id));
       totalTagged += splitContactIds.length;
       splitsProcessed++;
+      console.log(`Completed split ${splitsProcessed}/${splits.length}. Total tagged so far: ${totalTagged}`);
     }
 
     // Handle remaining contacts
@@ -299,6 +519,7 @@ export async function bulkTagContacts({ filters, splits, splitMethod, selectionM
       const remainingContactIds = contactIds.filter(id => !taggedContactIds.has(id));
       
       if (remainingContactIds.length > 0) {
+        console.log(`Tagging ${remainingContactIds.length} remaining contacts with tag: ${remainingTag.trim()}`);
         const tag = await prisma.tag.upsert({
           where: {
             name_userId: {
@@ -318,36 +539,48 @@ export async function bulkTagContacts({ filters, splits, splitMethod, selectionM
           include: { tags: true }
         });
 
-        for (const contact of contactsWithTags) {
-          const existingTagIds = contact.tags.map(t => t.id);
-          let newTagIds;
+        // Process remaining contacts in batches
+        const BATCH_SIZE = 100;
+        for (let i = 0; i < contactsWithTags.length; i += BATCH_SIZE) {
+          const batch = contactsWithTags.slice(i, i + BATCH_SIZE);
+          
+          await prisma.$transaction(async (tx) => {
+            for (const contact of batch) {
+              const existingTagIds = contact.tags.map(t => t.id);
+              let newTagIds;
 
-          if (tagOperation === 'add') {
-            if (!existingTagIds.includes(tag.id)) {
-              newTagIds = [...existingTagIds, tag.id];
-            } else {
-              newTagIds = existingTagIds;
-            }
-          } else if (tagOperation === 'remove') {
-            newTagIds = existingTagIds.filter(id => id !== tag.id);
-          } else {
-            newTagIds = [tag.id];
-          }
-
-          await prisma.contact.update({
-            where: { id: contact.id },
-            data: {
-              tags: {
-                set: newTagIds.map(id => ({ id }))
+              if (tagOperation === 'add') {
+                if (!existingTagIds.includes(tag.id)) {
+                  newTagIds = [...existingTagIds, tag.id];
+                } else {
+                  newTagIds = existingTagIds;
+                }
+              } else if (tagOperation === 'remove') {
+                newTagIds = existingTagIds.filter(id => id !== tag.id);
+              } else {
+                newTagIds = [tag.id];
               }
+
+              await tx.contact.update({
+                where: { id: contact.id },
+                data: {
+                  tags: {
+                    set: newTagIds.map(id => ({ id }))
+                  }
+                }
+              });
             }
           });
+          
+          console.log(`Processed remaining batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(contactsWithTags.length / BATCH_SIZE)}`);
         }
 
         totalTagged += remainingContactIds.length;
+        console.log(`Completed remaining contacts tagging. Total tagged: ${totalTagged}`);
       }
     }
 
+    console.log(`Bulk tagging complete. Total: ${totalTagged} contacts across ${splitsProcessed} splits`);
     return {
       totalTagged,
       splitsProcessed,
@@ -355,6 +588,7 @@ export async function bulkTagContacts({ filters, splits, splitMethod, selectionM
     };
   } catch (error) {
     console.error('Error in bulk tag contacts:', error);
+    console.error('Error stack:', error.stack);
     throw error;
   }
 }

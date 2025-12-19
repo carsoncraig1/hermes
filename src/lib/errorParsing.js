@@ -25,6 +25,8 @@ const INVALID_NUMBER_KEYWORDS = [
   'carrier rejected',
   'rejected by carrier',
   'blocked',
+  'block rule',
+  'block',
   'opt-out',
   'opt out',
   'do not contact',
@@ -45,6 +47,8 @@ const CARRIER_OPT_OUT_KEYWORDS = [
   'blacklisted',
   'carrier opt-out',
   'carrier blocked',
+  'block rule',
+  'blocked',
 ];
 
 /**

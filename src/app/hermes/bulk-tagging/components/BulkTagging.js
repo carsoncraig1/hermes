@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { getContactsCount, bulkTagContacts } from '@/lib/actions/bulkTagging';
+import { getContactsCount, getContactIdsForSplits, processSplit, processRemainingContacts } from '@/lib/actions/bulkTagging';
 import FilterBuilder from './FilterBuilder';
 import SplitConfiguration from './SplitConfiguration';
 import PreviewPanel from './PreviewPanel';
@@ -111,31 +111,107 @@ export default function BulkTagging() {
     }
 
     setExecuting(true);
-    setExecutionProgress({ current: 0, total: splits.length, message: 'Starting...' });
+    setExecutionProgress({ current: 0, total: splits.length + (remainingTag.trim() ? 1 : 0), message: 'Initializing...', tagged: 0 });
 
     try {
-      const result = await bulkTagContacts({
+      // Step 1: Get contact IDs
+      setExecutionProgress(prev => ({ ...prev, message: 'Fetching contacts...' }));
+      const { contactIds, totalContacts } = await getContactIdsForSplits({
         filters,
-        splits: splits.map(split => ({
+        selectionMethod
+      });
+
+      if (totalContacts === 0) {
+        alert('No contacts match the filters');
+        setExecuting(false);
+        setExecutionProgress(null);
+        return;
+      }
+
+      const taggedContactIds = [];
+      let totalTagged = 0;
+      let splitsProcessed = 0;
+
+      // Step 2: Process each split sequentially
+      for (let i = 0; i < splits.length; i++) {
+        const split = splits[i];
+        setExecutionProgress({
+          current: i + 1,
+          total: splits.length + (remainingTag.trim() ? 1 : 0),
+          message: `Processing split ${i + 1}/${splits.length}: ${split.tagName}...`,
+          tagged: totalTagged
+        });
+
+        const splitData = {
           tagName: split.tagName.trim(),
           value: splitMethod === 'percentage' ? parseFloat(split.value) : parseInt(split.value),
           isPercentage: splitMethod === 'percentage'
-        })),
-        splitMethod,
-        selectionMethod,
-        preventOverlap,
-        remainingTag: remainingTag.trim() || null,
-        tagOperation
+        };
+
+        const result = await processSplit({
+          filters,
+          split: splitData,
+          totalContacts,
+          contactIds,
+          taggedContactIds,
+          selectionMethod,
+          preventOverlap,
+          tagOperation
+        });
+
+        // Track tagged contacts
+        result.contactIds.forEach(id => {
+          if (!taggedContactIds.includes(id)) {
+            taggedContactIds.push(id);
+          }
+        });
+        totalTagged += result.tagged;
+        splitsProcessed++;
+      }
+
+      // Step 3: Process remaining contacts if specified
+      if (remainingTag && remainingTag.trim()) {
+        const taggedSet = new Set(taggedContactIds);
+        const remainingContactIds = contactIds.filter(id => !taggedSet.has(id));
+        
+        if (remainingContactIds.length > 0) {
+          setExecutionProgress({
+            current: splits.length + 1,
+            total: splits.length + 1,
+            message: `Tagging remaining ${remainingContactIds.length} contacts with "${remainingTag.trim()}"...`,
+            tagged: totalTagged
+          });
+
+          const remainingResult = await processRemainingContacts({
+            filters,
+            remainingTag: remainingTag.trim(),
+            remainingContactIds,
+            tagOperation
+          });
+
+          totalTagged += remainingResult.tagged;
+        }
+      }
+
+      setExecutionProgress({
+        current: splits.length + (remainingTag.trim() ? 1 : 0),
+        total: splits.length + (remainingTag.trim() ? 1 : 0),
+        message: 'Complete!',
+        tagged: totalTagged
       });
 
       setLastExecution({
         timestamp: new Date(),
-        result,
+        result: {
+          totalTagged,
+          splitsProcessed,
+          totalContacts
+        },
         filters: { ...filters },
         splits: [...splits]
       });
       
-      alert(`Successfully tagged ${result.totalTagged} contacts across ${result.splitsProcessed} splits`);
+      alert(`Successfully tagged ${totalTagged} contacts across ${splitsProcessed} splits`);
       
       // Reset form
       setSplits([]);

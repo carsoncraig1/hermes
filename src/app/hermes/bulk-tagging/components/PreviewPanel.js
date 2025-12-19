@@ -131,6 +131,7 @@ export default function PreviewPanel({
 
       {executionProgress && (
         <div className={styles.progressSection}>
+          <h3>Progress</h3>
           <div className={styles.progressBar}>
             <div 
               className={styles.progressFill}
@@ -138,7 +139,15 @@ export default function PreviewPanel({
             />
           </div>
           <div className={styles.progressText}>
-            {executionProgress.message} ({executionProgress.current}/{executionProgress.total})
+            <div className={styles.progressMessage}>{executionProgress.message}</div>
+            <div className={styles.progressStats}>
+              Step {executionProgress.current} of {executionProgress.total}
+              {executionProgress.tagged !== undefined && (
+                <span className={styles.taggedCount}>
+                  • {executionProgress.tagged.toLocaleString()} tagged so far
+                </span>
+              )}
+            </div>
           </div>
         </div>
       )}
