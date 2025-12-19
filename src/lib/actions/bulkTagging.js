@@ -235,41 +235,66 @@ export async function processSplit({ filters, split, totalContacts, contactIds, 
       include: { tags: true }
     });
 
-    // Process updates in batches of 100
-    const BATCH_SIZE = 100;
-    for (let i = 0; i < contactsWithTags.length; i += BATCH_SIZE) {
-      const batch = contactsWithTags.slice(i, i + BATCH_SIZE);
+    // Process updates in optimized batches - only update contacts that actually need changes
+    const contactsToUpdate = [];
+    
+    for (const contact of contactsWithTags) {
+      const existingTagIds = contact.tags.map(t => t.id);
+      let newTagIds;
+      let needsUpdate = false;
+
+      if (tagOperation === 'add') {
+        if (!existingTagIds.includes(tag.id)) {
+          newTagIds = [...existingTagIds, tag.id];
+          needsUpdate = true;
+        }
+      } else if (tagOperation === 'remove') {
+        if (existingTagIds.includes(tag.id)) {
+          newTagIds = existingTagIds.filter(id => id !== tag.id);
+          needsUpdate = true;
+        }
+      } else {
+        // Replace - always update
+        newTagIds = [tag.id];
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
+        contactsToUpdate.push({ id: contact.id, tagIds: newTagIds });
+      }
+    }
+
+    // Only process contacts that actually need updates
+    if (contactsToUpdate.length === 0) {
+      console.log(`No contacts need updates for split ${split.tagName}`);
+      return { tagged: 0, contactIds: [] };
+    }
+
+    // Process in batches of 50 for better performance
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < contactsToUpdate.length; i += BATCH_SIZE) {
+      const batch = contactsToUpdate.slice(i, i + BATCH_SIZE);
       
       await prisma.$transaction(async (tx) => {
-        for (const contact of batch) {
-          const existingTagIds = contact.tags.map(t => t.id);
-          let newTagIds;
-
-          if (tagOperation === 'add') {
-            if (!existingTagIds.includes(tag.id)) {
-              newTagIds = [...existingTagIds, tag.id];
-            } else {
-              newTagIds = existingTagIds;
-            }
-          } else if (tagOperation === 'remove') {
-            newTagIds = existingTagIds.filter(id => id !== tag.id);
-          } else {
-            newTagIds = [tag.id];
-          }
-
-          await tx.contact.update({
-            where: { id: contact.id },
-            data: {
-              tags: {
-                set: newTagIds.map(id => ({ id }))
+        // Process updates in parallel within transaction
+        await Promise.all(
+          batch.map(contact => 
+            tx.contact.update({
+              where: { id: contact.id },
+              data: {
+                tags: {
+                  set: contact.tagIds.map(id => ({ id }))
+                }
               }
-            }
-          });
-        }
+            })
+          )
+        );
+      }, {
+        timeout: 60000 // 60 second timeout
       });
     }
 
-    return { tagged: splitContactIds.length, contactIds: splitContactIds };
+    return { tagged: contactsToUpdate.length, contactIds: splitContactIds };
   } catch (error) {
     console.error('Error processing split:', error);
     throw error;
@@ -336,40 +361,65 @@ export async function processRemainingContacts({ filters, remainingTag, remainin
       include: { tags: true }
     });
 
-    const BATCH_SIZE = 100;
-    for (let i = 0; i < contactsWithTags.length; i += BATCH_SIZE) {
-      const batch = contactsWithTags.slice(i, i + BATCH_SIZE);
+    // Process updates in optimized batches - only update contacts that actually need changes
+    const contactsToUpdate = [];
+    
+    for (const contact of contactsWithTags) {
+      const existingTagIds = contact.tags.map(t => t.id);
+      let newTagIds;
+      let needsUpdate = false;
+
+      if (tagOperation === 'add') {
+        if (!existingTagIds.includes(tag.id)) {
+          newTagIds = [...existingTagIds, tag.id];
+          needsUpdate = true;
+        }
+      } else if (tagOperation === 'remove') {
+        if (existingTagIds.includes(tag.id)) {
+          newTagIds = existingTagIds.filter(id => id !== tag.id);
+          needsUpdate = true;
+        }
+      } else {
+        // Replace - always update
+        newTagIds = [tag.id];
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
+        contactsToUpdate.push({ id: contact.id, tagIds: newTagIds });
+      }
+    }
+
+    // Only process contacts that actually need updates
+    if (contactsToUpdate.length === 0) {
+      return { tagged: 0 };
+    }
+
+    // Process in batches of 50 for better performance
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < contactsToUpdate.length; i += BATCH_SIZE) {
+      const batch = contactsToUpdate.slice(i, i + BATCH_SIZE);
       
       await prisma.$transaction(async (tx) => {
-        for (const contact of batch) {
-          const existingTagIds = contact.tags.map(t => t.id);
-          let newTagIds;
-
-          if (tagOperation === 'add') {
-            if (!existingTagIds.includes(tag.id)) {
-              newTagIds = [...existingTagIds, tag.id];
-            } else {
-              newTagIds = existingTagIds;
-            }
-          } else if (tagOperation === 'remove') {
-            newTagIds = existingTagIds.filter(id => id !== tag.id);
-          } else {
-            newTagIds = [tag.id];
-          }
-
-          await tx.contact.update({
-            where: { id: contact.id },
-            data: {
-              tags: {
-                set: newTagIds.map(id => ({ id }))
+        // Process updates in parallel within transaction
+        await Promise.all(
+          batch.map(contact => 
+            tx.contact.update({
+              where: { id: contact.id },
+              data: {
+                tags: {
+                  set: contact.tagIds.map(id => ({ id }))
+                }
               }
-            }
-          });
-        }
+            })
+          )
+        );
+      }, {
+        timeout: 60000 // 60 second timeout
       });
     }
 
-    return { tagged: remainingContactIds.length };
+    return { tagged: contactsToUpdate.length };
   } catch (error) {
     console.error('Error processing remaining contacts:', error);
     throw error;
@@ -413,8 +463,14 @@ export async function bulkTagContacts({ filters, splits, splitMethod, selectionM
     let totalTagged = 0;
     let splitsProcessed = 0;
 
-    // Process each split
+    // Process each split - skip empty/unconfigured splits
     for (const split of splits) {
+      // Skip splits without a tag name
+      if (!split.tagName || !split.tagName.trim()) {
+        console.log(`Skipping split - no tag name configured`);
+        continue;
+      }
+      
       console.log(`Processing split: ${split.tagName}`);
       let splitCount;
       if (split.isPercentage) {
@@ -468,43 +524,66 @@ export async function bulkTagContacts({ filters, splits, splitMethod, selectionM
         include: { tags: true }
       });
 
-      // Process updates in batches of 100 to avoid overwhelming the database
-      const BATCH_SIZE = 100;
-      for (let i = 0; i < contactsWithTags.length; i += BATCH_SIZE) {
-        const batch = contactsWithTags.slice(i, i + BATCH_SIZE);
+      // Process updates in optimized batches
+      // Group contacts by their tag operation to minimize database calls
+      const contactsToUpdate = [];
+      
+      for (const contact of contactsWithTags) {
+        const existingTagIds = contact.tags.map(t => t.id);
+        let newTagIds;
+        let needsUpdate = false;
+
+        if (tagOperation === 'add') {
+          if (!existingTagIds.includes(tag.id)) {
+            newTagIds = [...existingTagIds, tag.id];
+            needsUpdate = true;
+          }
+        } else if (tagOperation === 'remove') {
+          if (existingTagIds.includes(tag.id)) {
+            newTagIds = existingTagIds.filter(id => id !== tag.id);
+            needsUpdate = true;
+          }
+        } else {
+          // Replace - always update
+          newTagIds = [tag.id];
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+          contactsToUpdate.push({ id: contact.id, tagIds: newTagIds });
+        }
+      }
+
+      // Only process contacts that actually need updates
+      if (contactsToUpdate.length === 0) {
+        console.log(`No contacts need updates for split ${split.tagName}`);
+        continue;
+      }
+
+      // Process in batches of 50 for better performance
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < contactsToUpdate.length; i += BATCH_SIZE) {
+        const batch = contactsToUpdate.slice(i, i + BATCH_SIZE);
         
         await prisma.$transaction(async (tx) => {
-          for (const contact of batch) {
-            const existingTagIds = contact.tags.map(t => t.id);
-            let newTagIds;
-
-            if (tagOperation === 'add') {
-              // Add tag if not already present
-              if (!existingTagIds.includes(tag.id)) {
-                newTagIds = [...existingTagIds, tag.id];
-              } else {
-                newTagIds = existingTagIds;
-              }
-            } else if (tagOperation === 'remove') {
-              // Remove tag if present
-              newTagIds = existingTagIds.filter(id => id !== tag.id);
-            } else {
-              // Replace - set to only this tag
-              newTagIds = [tag.id];
-            }
-
-            await tx.contact.update({
-              where: { id: contact.id },
-              data: {
-                tags: {
-                  set: newTagIds.map(id => ({ id }))
+          // Process updates in parallel within transaction
+          await Promise.all(
+            batch.map(contact => 
+              tx.contact.update({
+                where: { id: contact.id },
+                data: {
+                  tags: {
+                    set: contact.tagIds.map(id => ({ id }))
+                  }
                 }
-              }
-            });
-          }
+              })
+            )
+          );
+        }, {
+          timeout: 60000 // 60 second timeout
         });
         
-        console.log(`Processed batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(contactsWithTags.length / BATCH_SIZE)} for split ${splitsProcessed + 1}`);
+        console.log(`Processed batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(contactsToUpdate.length / BATCH_SIZE)} for split ${splitsProcessed + 1}`);
       }
 
       // Track tagged contacts

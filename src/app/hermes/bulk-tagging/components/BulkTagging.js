@@ -106,12 +106,35 @@ export default function BulkTagging() {
       }
     }
 
-    if (!confirm(`Are you sure you want to apply tags to ${contactCount} contacts?`)) {
+    // Calculate actual number of contacts that will be tagged (only from configured splits)
+    const configuredSplits = splits.filter(s => s.tagName && s.tagName.trim() && s.value && parseFloat(s.value) > 0);
+    let actualTaggedCount = 0;
+    
+    if (splitMethod === 'percentage') {
+      const totalPercent = configuredSplits.reduce((sum, split) => sum + (parseFloat(split.value) || 0), 0);
+      actualTaggedCount = Math.floor((contactCount * totalPercent) / 100);
+    } else {
+      actualTaggedCount = configuredSplits.reduce((sum, split) => sum + (parseInt(split.value) || 0), 0);
+      actualTaggedCount = Math.min(actualTaggedCount, contactCount);
+    }
+    
+    // Add remaining contacts if specified
+    if (remainingTag && remainingTag.trim()) {
+      const remainingCount = contactCount - actualTaggedCount;
+      actualTaggedCount += remainingCount;
+    }
+
+    if (actualTaggedCount === 0) {
+      alert('No contacts will be tagged. Please configure at least one split with a tag name and value.');
       return;
     }
 
+    if (!confirm(`Are you sure you want to apply tags to ${actualTaggedCount.toLocaleString()} contacts? (Out of ${contactCount.toLocaleString()} matching contacts)`)) {
+      return;
+    }
+    
     setExecuting(true);
-    setExecutionProgress({ current: 0, total: splits.length + (remainingTag.trim() ? 1 : 0), message: 'Initializing...', tagged: 0 });
+    setExecutionProgress({ current: 0, total: configuredSplits.length + (remainingTag.trim() ? 1 : 0), message: 'Initializing...', tagged: 0 });
 
     try {
       // Step 1: Get contact IDs
@@ -132,13 +155,13 @@ export default function BulkTagging() {
       let totalTagged = 0;
       let splitsProcessed = 0;
 
-      // Step 2: Process each split sequentially
-      for (let i = 0; i < splits.length; i++) {
-        const split = splits[i];
+      // Step 2: Process each split sequentially - only process configured splits
+      for (let i = 0; i < configuredSplits.length; i++) {
+        const split = configuredSplits[i];
         setExecutionProgress({
           current: i + 1,
-          total: splits.length + (remainingTag.trim() ? 1 : 0),
-          message: `Processing split ${i + 1}/${splits.length}: ${split.tagName}...`,
+          total: configuredSplits.length + (remainingTag.trim() ? 1 : 0),
+          message: `Processing split ${i + 1}/${configuredSplits.length}: ${split.tagName}...`,
           tagged: totalTagged
         });
 
@@ -176,8 +199,8 @@ export default function BulkTagging() {
         
         if (remainingContactIds.length > 0) {
           setExecutionProgress({
-            current: splits.length + 1,
-            total: splits.length + 1,
+            current: configuredSplits.length + 1,
+            total: configuredSplits.length + 1,
             message: `Tagging remaining ${remainingContactIds.length} contacts with "${remainingTag.trim()}"...`,
             tagged: totalTagged
           });
@@ -194,8 +217,8 @@ export default function BulkTagging() {
       }
 
       setExecutionProgress({
-        current: splits.length + (remainingTag.trim() ? 1 : 0),
-        total: splits.length + (remainingTag.trim() ? 1 : 0),
+        current: configuredSplits.length + (remainingTag.trim() ? 1 : 0),
+        total: configuredSplits.length + (remainingTag.trim() ? 1 : 0),
         message: 'Complete!',
         tagged: totalTagged
       });

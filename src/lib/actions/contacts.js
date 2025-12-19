@@ -639,7 +639,7 @@ export async function getSubscribedContactsCount() {
 function getDateRange(timeRange) {
   const now = new Date();
   let endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-  let startDate;
+  let startDate = null;
 
   switch (timeRange) {
     case 'today':
