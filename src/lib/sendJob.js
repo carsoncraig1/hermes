@@ -5,6 +5,13 @@ import prisma from '@/lib/prisma'
 /**
  * Create a new send job
  * @param {Object} params - Job parameters
+ * @param {string} params.userId - User ID
+ * @param {number} params.campaignId - Campaign ID
+ * @param {string} params.jobType - 'dedicated_send' or 'manual_fire'
+ * @param {number} params.totalContacts - Total number of contacts
+ * @param {number} params.totalBatches - Total number of batches
+ * @param {Object} params.metadata - Additional job data
+ * @param {Date|string|null} params.scheduledAt - Optional scheduled execution time
  * @returns {Promise<Object>} - Created job
  */
 export async function createSendJob({
@@ -13,7 +20,8 @@ export async function createSendJob({
   jobType, // 'dedicated_send' or 'manual_fire'
   totalContacts,
   totalBatches,
-  metadata = {}
+  metadata = {},
+  scheduledAt = null
 }) {
   return await prisma.sendJob.create({
     data: {
@@ -23,7 +31,8 @@ export async function createSendJob({
       status: 'pending',
       totalContacts,
       totalBatches,
-      metadata
+      metadata,
+      scheduledAt: scheduledAt ? new Date(scheduledAt) : null
     }
   })
 }
@@ -104,17 +113,24 @@ export async function getSendJob(jobId) {
 
 /**
  * Get pending jobs for processing
+ * Only returns jobs that are ready to execute (scheduledAt is null or scheduledAt <= now)
  * @param {number} limit - Maximum number of jobs to return
- * @returns {Promise<Array>} - Array of pending jobs
+ * @returns {Promise<Array>} - Array of pending jobs ready to execute
  */
 export async function getPendingJobs(limit = 10) {
+  const now = new Date()
   return await prisma.sendJob.findMany({
     where: {
-      status: 'pending'
+      status: 'pending',
+      OR: [
+        { scheduledAt: null }, // Immediate jobs
+        { scheduledAt: { lte: now } } // Scheduled jobs ready to execute
+      ]
     },
-    orderBy: {
-      createdAt: 'asc'
-    },
+    orderBy: [
+      { scheduledAt: 'asc' }, // Process scheduled jobs in order
+      { createdAt: 'asc' } // Then immediate jobs by creation time
+    ],
     take: limit
   })
 }

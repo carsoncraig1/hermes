@@ -1,5 +1,4 @@
 import CredentialsProvider from "next-auth/providers/credentials"
-import prisma from "@/lib/prisma"
 
 // Auth options for NextAuth v4
 export const authOptions = {
@@ -20,6 +19,8 @@ export const authOptions = {
         }
 
         try {
+          // Dynamic import to ensure Prisma is available in NextAuth context
+          const prisma = (await import("@/lib/prisma")).default
           const user = await prisma.user.findUnique({
             where: { email: credentials.email }
           })

@@ -11,6 +11,8 @@ export default function DedicatedSendCard() {
   const [loading, setLoading] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [executing, setExecuting] = useState(false);
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduledDateTime, setScheduledDateTime] = useState('');
 
   useEffect(() => {
     loadCampaigns();
@@ -57,11 +59,24 @@ export default function DedicatedSendCard() {
 
     setExecuting(true);
     try {
-      await executeDedicatedSend(selectedCampaignId);
+      const scheduledAt = scheduleEnabled && scheduledDateTime 
+        ? new Date(scheduledDateTime).toISOString() 
+        : null;
+      
+      const result = await executeDedicatedSend(selectedCampaignId, scheduledAt);
+      
       setShowConfirmModal(false);
       setSelectedCampaignId('');
       setContactCount(null);
-      alert('Campaign executed successfully!');
+      setScheduleEnabled(false);
+      setScheduledDateTime('');
+      
+      if (result.scheduled) {
+        const scheduledDate = new Date(result.scheduledAt);
+        alert(`Campaign scheduled successfully!\n\nScheduled for: ${scheduledDate.toLocaleString()}\nJob ID: ${result.jobId}`);
+      } else {
+        alert('Campaign executed successfully!');
+      }
     } catch (error) {
       console.error('Error executing campaign:', error);
       alert('Failed to execute campaign: ' + (error.message || 'Unknown error'));
@@ -110,12 +125,40 @@ export default function DedicatedSendCard() {
             </div>
           )}
 
+          <div className={styles.formGroup}>
+            <label className={styles.checkboxLabel}>
+              <input
+                type="checkbox"
+                checked={scheduleEnabled}
+                onChange={(e) => setScheduleEnabled(e.target.checked)}
+                disabled={loading || executing}
+                className={styles.checkbox}
+              />
+              <span>Schedule for later</span>
+            </label>
+          </div>
+
+          {scheduleEnabled && (
+            <div className={styles.formGroup}>
+              <label htmlFor="schedule-datetime">Schedule Date & Time</label>
+              <input
+                id="schedule-datetime"
+                type="datetime-local"
+                value={scheduledDateTime}
+                onChange={(e) => setScheduledDateTime(e.target.value)}
+                min={new Date().toISOString().slice(0, 16)}
+                disabled={loading || executing}
+                className={styles.datetimeInput}
+              />
+            </div>
+          )}
+
           <button
             onClick={handleExecute}
-            disabled={!selectedCampaignId || !contactCount || contactCount === 0 || loading || executing}
+            disabled={!selectedCampaignId || !contactCount || contactCount === 0 || loading || executing || (scheduleEnabled && !scheduledDateTime)}
             className={styles.executeButton}
           >
-            {executing ? 'Executing...' : 'Execute Send'}
+            {executing ? 'Executing...' : scheduleEnabled ? 'Schedule Send' : 'Execute Send'}
           </button>
         </div>
       </div>
@@ -145,6 +188,14 @@ export default function DedicatedSendCard() {
                   {selectedCampaign?.message || 'No message set'}
                 </div>
               </div>
+              {scheduleEnabled && scheduledDateTime && (
+                <div className={styles.scheduleInfo}>
+                  <label>Scheduled For:</label>
+                  <div className={styles.scheduledDateTime}>
+                    {new Date(scheduledDateTime).toLocaleString()}
+                  </div>
+                </div>
+              )}
             </div>
             <div className={styles.modalActions}>
               <button

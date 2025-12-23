@@ -34,8 +34,8 @@ export async function GET(request) {
     for (const job of pendingJobs) {
       try {
         if (job.jobType === 'dedicated_send') {
-          // Resume from where it left off if needed
-          await executeDedicatedSend(job.campaignId)
+          // Pass the existing job ID so it uses the scheduled job instead of creating a new one
+          await executeDedicatedSend(job.campaignId, null, job.id)
         } else if (job.jobType === 'manual_fire') {
           // Resume manual fire (would need to store metadata)
           const metadata = job.metadata || {}

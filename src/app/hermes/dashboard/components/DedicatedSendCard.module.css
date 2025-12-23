@@ -316,3 +316,78 @@
   cursor: not-allowed;
 }
 
+/* Scheduling Styles */
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  color: var(--text-primary) !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+}
+
+.checkbox {
+  width: 1.125rem;
+  height: 1.125rem;
+  cursor: pointer;
+  accent-color: var(--accent-orange);
+}
+
+.checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.datetimeInput {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  padding: 0.75rem 1rem;
+  border-radius: var(--border-radius-md);
+  font-size: 0.875rem;
+  font-family: var(--font-family);
+  outline: none;
+  transition: all var(--transition-normal);
+}
+
+.datetimeInput:hover:not(:disabled) {
+  border-color: var(--border-secondary);
+}
+
+.datetimeInput:focus {
+  border-color: var(--accent-orange);
+  box-shadow: 0 0 0 3px var(--accent-orange-muted);
+}
+
+.datetimeInput:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.scheduleInfo {
+  padding: 1rem;
+  background: rgba(255, 165, 0, 0.1);
+  border: 1px solid rgba(255, 165, 0, 0.3);
+  border-radius: var(--border-radius-md);
+  margin-top: 1rem;
+}
+
+.scheduleInfo label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.scheduledDateTime {
+  color: var(--accent-orange);
+  font-size: 1rem;
+  font-weight: 600;
+}
+

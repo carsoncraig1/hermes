@@ -913,15 +913,18 @@ export async function getCampaignContactCount(campaignId) {
 }
 
 // Execute a dedicated send campaign (with batching, job queue, pagination, retry, and batched stats)
-export async function executeDedicatedSend(campaignId) {
-  const { createSendJob, startSendJob, updateSendJobProgress, completeSendJob, failSendJob } = await import('@/lib/sendJob')
+// @param {number|string} campaignId - Campaign ID
+// @param {Date|string|null} scheduledAt - Optional scheduled execution time (null = execute immediately)
+// @param {string|null} existingJobId - Optional existing job ID to use (for scheduled jobs processed by job processor)
+export async function executeDedicatedSend(campaignId, scheduledAt = null, existingJobId = null) {
+  const { createSendJob, startSendJob, updateSendJobProgress, completeSendJob, failSendJob, getSendJob } = await import('@/lib/sendJob')
   const { checkRateLimit } = await import('@/lib/actions/messages')
   const { incrementRateLimitCache } = await import('@/lib/rateLimitCache')
   const { retryWithBackoff, isRetryableError } = await import('@/lib/retry')
   const { getCampaignContactsPaginated } = await import('@/lib/contactPagination')
   const { sendMessage } = await import('@/lib/telnyx')
   
-  let jobId = null
+  let jobId = existingJobId
   const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
   
   try {
@@ -953,24 +956,70 @@ export async function executeDedicatedSend(campaignId) {
     const BATCH_SIZE = 20 // Match rate limit: 20 messages/second
     const totalBatches = Math.ceil(firstPage.total / BATCH_SIZE)
     
-    // Create job
-    const job = await createSendJob({
-      userId,
-      campaignId: campaignIdInt,
-      jobType: 'dedicated_send',
-      totalContacts: firstPage.total,
-      totalBatches
-    })
-    jobId = job.id
-    
-    await startSendJob(jobId)
-    
-    await serverLog(
-      `Dedicated send started: "${campaign.name}" to ${firstPage.total} contacts (Job: ${jobId})`,
-      'info',
-      { campaignId: campaignIdInt, campaignName: campaign.name, contactsCount: firstPage.total, jobId },
-      userId
-    ).catch(() => {})
+    // If using existing job, verify it exists and is pending
+    if (jobId) {
+      const existingJob = await getSendJob(jobId)
+      if (!existingJob) throw new Error('Job not found')
+      if (existingJob.status !== 'pending') throw new Error(`Job is already ${existingJob.status}`)
+      if (existingJob.campaignId !== campaignIdInt) throw new Error('Job campaign ID mismatch')
+      
+      // Start the existing job
+      await startSendJob(jobId)
+      
+      await serverLog(
+        `Scheduled dedicated send started: "${campaign.name}" to ${firstPage.total} contacts (Job: ${jobId})`,
+        'info',
+        { campaignId: campaignIdInt, campaignName: campaign.name, contactsCount: firstPage.total, jobId },
+        userId
+      ).catch(() => {})
+    } else {
+      // Parse scheduledAt if provided
+      const scheduledDate = scheduledAt ? new Date(scheduledAt) : null
+      
+      // Validate scheduledAt is in the future if provided
+      if (scheduledDate && scheduledDate <= new Date()) {
+        throw new Error('Scheduled time must be in the future')
+      }
+      
+      // Create new job
+      const job = await createSendJob({
+        userId,
+        campaignId: campaignIdInt,
+        jobType: 'dedicated_send',
+        totalContacts: firstPage.total,
+        totalBatches,
+        scheduledAt: scheduledDate
+      })
+      jobId = job.id
+      
+      // Only start immediately if not scheduled
+      if (!scheduledDate) {
+        await startSendJob(jobId)
+        
+        await serverLog(
+          `Dedicated send started: "${campaign.name}" to ${firstPage.total} contacts (Job: ${jobId})`,
+          'info',
+          { campaignId: campaignIdInt, campaignName: campaign.name, contactsCount: firstPage.total, jobId },
+          userId
+        ).catch(() => {})
+      } else {
+        await serverLog(
+          `Dedicated send scheduled: "${campaign.name}" to ${firstPage.total} contacts at ${scheduledDate.toISOString()} (Job: ${jobId})`,
+          'info',
+          { campaignId: campaignIdInt, campaignName: campaign.name, contactsCount: firstPage.total, jobId, scheduledAt: scheduledDate.toISOString() },
+          userId
+        ).catch(() => {})
+        
+        // Return early for scheduled jobs - they'll be processed by the job processor
+        return {
+          success: true,
+          scheduled: true,
+          scheduledAt: scheduledDate.toISOString(),
+          totalContacts: firstPage.total,
+          jobId
+        }
+      }
+    }
     
     // Get user's standard opt-out text
     const user = await prisma.user.findUnique({

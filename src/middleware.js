@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server"
-import { getToken } from "next-auth/jwt"
 
 export async function middleware(request) {
   const pathname = request.nextUrl.pathname
@@ -17,10 +16,18 @@ export async function middleware(request) {
   }
 
   // Check for JWT token - support both AUTH_SECRET and NEXTAUTH_SECRET
-  const token = await getToken({ 
-    req: request, 
-    secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET
-  })
+  // Use dynamic import for Edge runtime compatibility
+  let token = null
+  try {
+    const { getToken } = await import("next-auth/jwt")
+    token = await getToken({ 
+      req: request, 
+      secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET
+    })
+  } catch (error) {
+    // If getToken fails, token remains null (user not authenticated)
+    console.error('Error getting token in middleware:', error)
+  }
   
   const isLoggedIn = !!token
   const isHermesRoute = pathname.startsWith('/hermes')

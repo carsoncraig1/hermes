@@ -368,6 +368,7 @@ model SendJob {
   totalBatches      Int       @default(0)
   metadata          Json? // Additional job data (selectedTags, selectedSources, etc.)
   errorMessage      String?   @db.Text
+  scheduledAt       DateTime? // When to execute this job (null = execute immediately)
   startedAt         DateTime?
   completedAt       DateTime?
   createdAt         DateTime  @default(now())
@@ -376,6 +377,7 @@ model SendJob {
   @@index([userId, status])
   @@index([campaignId, status])
   @@index([status, createdAt])
+  @@index([status, scheduledAt]) // For finding scheduled jobs ready to execute
   @@map("send_jobs")
 }
 
