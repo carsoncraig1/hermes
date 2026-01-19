@@ -12,6 +12,7 @@ import prisma from '@/lib/prisma'
  * @param {number} params.totalBatches - Total number of batches
  * @param {Object} params.metadata - Additional job data
  * @param {Date|string|null} params.scheduledAt - Optional scheduled execution time
+ * @param {boolean} params.startImmediately - If true, create with 'processing' status (prevents cron pickup)
  * @returns {Promise<Object>} - Created job
  */
 export async function createSendJob({
@@ -21,14 +22,17 @@ export async function createSendJob({
   totalContacts,
   totalBatches,
   metadata = {},
-  scheduledAt = null
+  scheduledAt = null,
+  startImmediately = false
 }) {
   return await prisma.sendJob.create({
     data: {
       userId,
       campaignId,
       jobType,
-      status: 'pending',
+      // If startImmediately, create as 'processing' to prevent cron job from picking it up
+      status: startImmediately ? 'processing' : 'pending',
+      startedAt: startImmediately ? new Date() : null,
       totalContacts,
       totalBatches,
       metadata,
@@ -53,8 +57,33 @@ export async function updateSendJobProgress(jobId, updates) {
 }
 
 /**
- * Mark job as started
+ * Atomically claim and start a job
+ * Uses updateMany with status check to prevent race conditions
  * @param {string} jobId - Job ID
+ * @returns {Promise<boolean>} - True if job was successfully claimed, false if already claimed
+ */
+export async function claimAndStartJob(jobId) {
+  // Atomically update only if status is still 'pending'
+  // This prevents two processes from both claiming the same job
+  const result = await prisma.sendJob.updateMany({
+    where: {
+      id: jobId,
+      status: 'pending' // Only claim if still pending
+    },
+    data: {
+      status: 'processing',
+      startedAt: new Date()
+    }
+  })
+  
+  // If count is 0, the job was already claimed by another process
+  return result.count > 0
+}
+
+/**
+ * Mark job as started (legacy - prefer claimAndStartJob for race-condition safety)
+ * @param {string} jobId - Job ID
+ * @deprecated Use claimAndStartJob instead for atomic claiming
  */
 export async function startSendJob(jobId) {
   await prisma.sendJob.update({
@@ -112,24 +141,30 @@ export async function getSendJob(jobId) {
 }
 
 /**
- * Get pending jobs for processing
- * Only returns jobs that are ready to execute (scheduledAt is null or scheduledAt <= now)
+ * Get pending SCHEDULED jobs for processing by the cron job processor
+ * 
+ * IMPORTANT: Only returns jobs with a scheduledAt time that has passed.
+ * Immediate jobs (scheduledAt: null) are NOT returned here because they are
+ * executed directly by the caller and should never be picked up by the cron.
+ * 
  * @param {number} limit - Maximum number of jobs to return
- * @returns {Promise<Array>} - Array of pending jobs ready to execute
+ * @returns {Promise<Array>} - Array of scheduled jobs ready to execute
  */
 export async function getPendingJobs(limit = 10) {
   const now = new Date()
   return await prisma.sendJob.findMany({
     where: {
       status: 'pending',
-      OR: [
-        { scheduledAt: null }, // Immediate jobs
-        { scheduledAt: { lte: now } } // Scheduled jobs ready to execute
-      ]
+      // ONLY scheduled jobs - immediate jobs (scheduledAt: null) are executed directly
+      // and should never be picked up by the cron processor
+      scheduledAt: {
+        not: null,
+        lte: now
+      }
     },
     orderBy: [
       { scheduledAt: 'asc' }, // Process scheduled jobs in order
-      { createdAt: 'asc' } // Then immediate jobs by creation time
+      { createdAt: 'asc' }
     ],
     take: limit
   })

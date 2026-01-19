@@ -33,19 +33,27 @@ export async function GET(request) {
     const results = []
     for (const job of pendingJobs) {
       try {
+        let result
         if (job.jobType === 'dedicated_send') {
           // Pass the existing job ID so it uses the scheduled job instead of creating a new one
-          await executeDedicatedSend(job.campaignId, null, job.id)
+          // The function will atomically claim the job to prevent race conditions
+          result = await executeDedicatedSend(job.campaignId, null, job.id)
         } else if (job.jobType === 'manual_fire') {
           // Resume manual fire (would need to store metadata)
           const metadata = job.metadata || {}
-          await executeManualFire(job.campaignId, {
+          result = await executeManualFire(job.campaignId, {
             selectedTags: metadata.selectedTags || [],
             selectedSources: metadata.selectedSources || [],
             targetAllSubscribed: metadata.targetAllSubscribed || false
           })
         }
-        results.push({ jobId: job.id, status: 'processed' })
+        
+        // Check if job was skipped (already claimed by another process)
+        if (result?.skipped) {
+          results.push({ jobId: job.id, status: 'skipped', reason: result.reason })
+        } else {
+          results.push({ jobId: job.id, status: 'processed' })
+        }
       } catch (error) {
         console.error(`Error processing job ${job.id}:`, error)
         results.push({ jobId: job.id, status: 'error', error: error.message })

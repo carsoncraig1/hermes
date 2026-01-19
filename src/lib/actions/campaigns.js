@@ -324,7 +324,7 @@ export async function getContactsForManualFire({ selectedTags = [], selectedSour
 
 // Execute manual fire workflow (with job queue, pagination, retry, and batched stats)
 export async function executeManualFire(campaignId, { selectedTags = [], selectedSources = [], targetAllSubscribed = false }) {
-  const { createSendJob, startSendJob, updateSendJobProgress, completeSendJob, failSendJob } = await import('@/lib/sendJob')
+  const { createSendJob, updateSendJobProgress, completeSendJob, failSendJob } = await import('@/lib/sendJob')
   const { checkRateLimit } = await import('@/lib/actions/messages')
   const { incrementRateLimitCache } = await import('@/lib/rateLimitCache')
   const { retryWithBackoff, isRetryableError } = await import('@/lib/retry')
@@ -333,6 +333,9 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
   
   let jobId = null
   const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
+  
+  // Track sent contact IDs to prevent duplicates within this execution
+  const sentContactIds = new Set()
   
   try {
     const userId = await getUserId()
@@ -367,18 +370,17 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
     const BATCH_SIZE = 20 // Match rate limit: 20 messages/second
     const totalBatches = Math.ceil(firstPage.total / BATCH_SIZE)
     
-    // Create job for tracking
+    // Create job for tracking - startImmediately=true prevents cron from picking it up
     const job = await createSendJob({
       userId,
       campaignId: campaignIdInt,
       jobType: 'manual_fire',
       totalContacts: firstPage.total,
       totalBatches,
-      metadata: { selectedTags, selectedSources, targetAllSubscribed }
+      metadata: { selectedTags, selectedSources, targetAllSubscribed },
+      startImmediately: true // Start with 'processing' status to prevent race conditions
     })
     jobId = job.id
-    
-    await startSendJob(jobId)
     
     await serverLog(
       `Manual fire started: "${campaign.name}" to ${firstPage.total} contacts (Job: ${jobId})`,
@@ -404,12 +406,24 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
       )
       
       hasMore = more
-      let validContacts = contacts.filter(c => c.phone && c.subscribed)
+      
+      // Filter valid contacts AND deduplicate (skip contacts already sent in this execution)
+      let validContacts = contacts.filter(c => {
+        if (!c.phone || !c.subscribed) return false
+        if (sentContactIds.has(c.id)) {
+          console.log(`Skipping duplicate contact ${c.id} (${c.phone}) - already processed in this job`)
+          return false
+        }
+        return true
+      })
       
       // Process in batches
       for (let i = 0; i < validContacts.length; i += BATCH_SIZE) {
         let batch = validContacts.slice(i, i + BATCH_SIZE)
         currentBatch++
+        
+        // Mark contacts as processed BEFORE execution to prevent race conditions
+        batch.forEach(contact => sentContactIds.add(contact.id))
         
         // Check rate limit
         const rateLimit = await checkRateLimit(userId, 1200, 30000, true)
@@ -917,7 +931,7 @@ export async function getCampaignContactCount(campaignId) {
 // @param {Date|string|null} scheduledAt - Optional scheduled execution time (null = execute immediately)
 // @param {string|null} existingJobId - Optional existing job ID to use (for scheduled jobs processed by job processor)
 export async function executeDedicatedSend(campaignId, scheduledAt = null, existingJobId = null) {
-  const { createSendJob, startSendJob, updateSendJobProgress, completeSendJob, failSendJob, getSendJob } = await import('@/lib/sendJob')
+  const { createSendJob, claimAndStartJob, updateSendJobProgress, completeSendJob, failSendJob, getSendJob } = await import('@/lib/sendJob')
   const { checkRateLimit } = await import('@/lib/actions/messages')
   const { incrementRateLimitCache } = await import('@/lib/rateLimitCache')
   const { retryWithBackoff, isRetryableError } = await import('@/lib/retry')
@@ -926,6 +940,9 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
   
   let jobId = existingJobId
   const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
+  
+  // Track sent contact IDs to prevent duplicates within this execution
+  const sentContactIds = new Set()
   
   try {
     const userId = await getUserId()
@@ -956,15 +973,24 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
     const BATCH_SIZE = 20 // Match rate limit: 20 messages/second
     const totalBatches = Math.ceil(firstPage.total / BATCH_SIZE)
     
-    // If using existing job, verify it exists and is pending
+    // If using existing job (scheduled job picked up by cron processor)
     if (jobId) {
       const existingJob = await getSendJob(jobId)
       if (!existingJob) throw new Error('Job not found')
-      if (existingJob.status !== 'pending') throw new Error(`Job is already ${existingJob.status}`)
       if (existingJob.campaignId !== campaignIdInt) throw new Error('Job campaign ID mismatch')
       
-      // Start the existing job
-      await startSendJob(jobId)
+      // ATOMIC: Try to claim the job - prevents race condition with concurrent processors
+      const claimed = await claimAndStartJob(jobId)
+      if (!claimed) {
+        // Job was already claimed by another process - this is expected, not an error
+        console.log(`Job ${jobId} already claimed by another process, skipping`)
+        return {
+          success: true,
+          skipped: true,
+          reason: 'Job already being processed by another worker',
+          jobId
+        }
+      }
       
       await serverLog(
         `Scheduled dedicated send started: "${campaign.name}" to ${firstPage.total} contacts (Job: ${jobId})`,
@@ -982,20 +1008,21 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
       }
       
       // Create new job
+      // For immediate jobs (no scheduledAt), create with startImmediately=true
+      // This creates the job with status='processing' so cron can never pick it up
       const job = await createSendJob({
         userId,
         campaignId: campaignIdInt,
         jobType: 'dedicated_send',
         totalContacts: firstPage.total,
         totalBatches,
-        scheduledAt: scheduledDate
+        scheduledAt: scheduledDate,
+        startImmediately: !scheduledDate // Start immediately if no scheduled date
       })
       jobId = job.id
       
-      // Only start immediately if not scheduled
       if (!scheduledDate) {
-        await startSendJob(jobId)
-        
+        // Job already started (created with processing status)
         await serverLog(
           `Dedicated send started: "${campaign.name}" to ${firstPage.total} contacts (Job: ${jobId})`,
           'info',
@@ -1045,12 +1072,23 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
       let { contacts, hasMore: more } = await getCampaignContactsPaginated(campaignIdInt, page, 1000)
       hasMore = more
       
-      let validContacts = contacts.filter(c => c.phone && c.subscribed)
+      // Filter valid contacts AND deduplicate (skip contacts already sent in this execution)
+      let validContacts = contacts.filter(c => {
+        if (!c.phone || !c.subscribed) return false
+        if (sentContactIds.has(c.id)) {
+          console.log(`Skipping duplicate contact ${c.id} (${c.phone}) - already sent in this job`)
+          return false
+        }
+        return true
+      })
       
       // Process in batches
       for (let i = 0; i < validContacts.length; i += BATCH_SIZE) {
         let batch = validContacts.slice(i, i + BATCH_SIZE)
         currentBatch++
+        
+        // Mark contacts as sent BEFORE sending to prevent race conditions
+        batch.forEach(contact => sentContactIds.add(contact.id))
         
         // Check rate limit
         const rateLimit = await checkRateLimit(userId, 1200, 30000, true)

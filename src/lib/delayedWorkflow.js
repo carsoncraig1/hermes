@@ -56,23 +56,36 @@ export async function getReadyDelayedActions(limit = 100) {
 
 /**
  * Execute a delayed workflow action
+ * Uses atomic claiming to prevent race conditions with concurrent processors
  * @param {string} actionId - Action ID
  */
 export async function executeDelayedAction(actionId) {
+  // ATOMIC: Try to claim the action - only updates if status is still 'pending'
+  // This prevents two concurrent processors from both executing the same action
+  const claimResult = await prisma.delayedWorkflowAction.updateMany({
+    where: {
+      id: actionId,
+      status: 'pending' // Only claim if still pending
+    },
+    data: { status: 'processing' }
+  })
+  
+  // If count is 0, action was already claimed by another process
+  if (claimResult.count === 0) {
+    console.log(`Delayed action ${actionId} already claimed by another process, skipping`)
+    return
+  }
+  
+  // Now fetch the action details (we know it's ours)
   const action = await prisma.delayedWorkflowAction.findUnique({
     where: { id: actionId },
     include: { contact: true }
   })
   
-  if (!action || action.status !== 'pending') {
+  if (!action) {
+    console.log(`Delayed action ${actionId} not found after claiming`)
     return
   }
-  
-  // Mark as processing
-  await prisma.delayedWorkflowAction.update({
-    where: { id: actionId },
-    data: { status: 'processing' }
-  })
   
   try {
     // Find the node to execute
