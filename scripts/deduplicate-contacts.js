@@ -60,46 +60,66 @@ function normalizePhone(phone) {
 async function findDuplicates() {
   console.log('🔍 Scanning all contacts...\n');
   
-  const allContacts = await prisma.contact.findMany({
-    include: {
-      tags: true,
-      messages: {
-        select: { id: true }
-      }
-    },
-    orderBy: {
-      createdAt: 'desc' // Newest first
-    }
-  });
-  
-  console.log(`   Found ${allContacts.length} total contacts\n`);
+  // Process in batches to avoid "too many bind variables" error
+  const BATCH_SIZE = 5000;
+  let skip = 0;
+  let totalContacts = 0;
   
   // Group by userId + normalizedPhone
   const groups = new Map(); // key: `${userId}:${normalizedPhone}` -> array of contacts
   const invalidPhones = [];
   
-  for (const contact of allContacts) {
-    const normalized = normalizePhone(contact.phone);
-    
-    if (!normalized) {
-      invalidPhones.push({
-        id: contact.id,
-        phone: contact.phone,
-        userId: contact.userId
-      });
-      continue;
-    }
-    
-    const key = `${contact.userId}:${normalized}`;
-    
-    if (!groups.has(key)) {
-      groups.set(key, []);
-    }
-    groups.get(key).push({
-      ...contact,
-      normalizedPhone: normalized
+  // First, get total count
+  const totalCount = await prisma.contact.count();
+  console.log(`   Total contacts in database: ${totalCount.toLocaleString()}`);
+  console.log(`   Processing in batches of ${BATCH_SIZE}...\n`);
+  
+  while (skip < totalCount) {
+    const batch = await prisma.contact.findMany({
+      include: {
+        tags: true
+        // Don't include messages - causes too many bind variables
+      },
+      orderBy: {
+        createdAt: 'desc' // Newest first
+      },
+      skip,
+      take: BATCH_SIZE
     });
+    
+    if (batch.length === 0) break;
+    
+    totalContacts += batch.length;
+    const progress = Math.round((totalContacts / totalCount) * 100);
+    process.stdout.write(`\r   Processing: ${totalContacts.toLocaleString()} / ${totalCount.toLocaleString()} (${progress}%)`);
+    
+    for (const contact of batch) {
+      const normalized = normalizePhone(contact.phone);
+      
+      if (!normalized) {
+        invalidPhones.push({
+          id: contact.id,
+          phone: contact.phone,
+          userId: contact.userId
+        });
+        continue;
+      }
+      
+      const key = `${contact.userId}:${normalized}`;
+      
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key).push({
+        ...contact,
+        normalizedPhone: normalized
+      });
+    }
+    
+    skip += BATCH_SIZE;
   }
+  
+  console.log('\n'); // New line after progress
   
   // Find groups with duplicates
   const duplicateGroups = [];
@@ -107,6 +127,9 @@ async function findDuplicates() {
   
   for (const [key, contacts] of groups) {
     if (contacts.length > 1) {
+      // Sort by createdAt desc (newest first) to ensure we keep the newest
+      contacts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      
       duplicateGroups.push({
         key,
         normalizedPhone: contacts[0].normalizedPhone,
@@ -117,7 +140,7 @@ async function findDuplicates() {
     }
   }
   
-  return { duplicateGroups, totalDuplicates, invalidPhones, totalContacts: allContacts.length };
+  return { duplicateGroups, totalDuplicates, invalidPhones, totalContacts };
 }
 
 function mergeContacts(contacts) {
@@ -128,9 +151,9 @@ function mergeContacts(contacts) {
   const duplicates = contacts.slice(1);
   
   // Collect all tags (union)
-  const allTagIds = new Set(primary.tags.map(t => t.id));
+  const allTagIds = new Set((primary.tags || []).map(t => t.id));
   for (const dup of duplicates) {
-    for (const tag of dup.tags) {
+    for (const tag of (dup.tags || [])) {
       allTagIds.add(tag.id);
     }
   }
@@ -159,7 +182,7 @@ function mergeContacts(contacts) {
     subscribed: contacts.some(c => c.subscribed === true) ? true : primary.subscribed,
     // Keep hasClicked=true if ANY contact has clicked
     hasClicked: contacts.some(c => c.hasClicked === true),
-    // Use earliest lastMessageSent if any
+    // Use most recent lastMessageSent if any
     lastMessageSent: contacts
       .map(c => c.lastMessageSent)
       .filter(Boolean)
@@ -186,8 +209,7 @@ function mergeContacts(contacts) {
     duplicatePhones: duplicates.map(d => d.phone),
     mergedData,
     tagIds: Array.from(allTagIds),
-    clickids: Array.from(allClickids),
-    messageCount: contacts.reduce((sum, c) => sum + (c.messages?.length || 0), 0)
+    clickids: Array.from(allClickids)
   };
 }
 
@@ -216,9 +238,6 @@ async function performDeduplication(duplicateGroups, dryRun) {
     }
     if (merge.clickids.length > 0) {
       console.log(`   Merged clickids: ${merge.clickids.length} total`);
-    }
-    if (merge.messageCount > 0) {
-      console.log(`   Total messages: ${merge.messageCount}`);
     }
     
     if (!dryRun) {
@@ -303,21 +322,33 @@ async function normalizeAllPhones(dryRun) {
   // Also normalize phones that aren't duplicates but aren't in E.164 format
   console.log('\n📞 Checking for non-normalized phone numbers...\n');
   
-  const contacts = await prisma.contact.findMany({
-    select: { id: true, phone: true }
-  });
-  
+  const BATCH_SIZE = 10000;
+  let skip = 0;
   const toNormalize = [];
   
-  for (const contact of contacts) {
-    const normalized = normalizePhone(contact.phone);
-    if (normalized && normalized !== contact.phone) {
-      toNormalize.push({
-        id: contact.id,
-        oldPhone: contact.phone,
-        newPhone: normalized
-      });
+  const totalCount = await prisma.contact.count();
+  
+  while (skip < totalCount) {
+    const contacts = await prisma.contact.findMany({
+      select: { id: true, phone: true },
+      skip,
+      take: BATCH_SIZE
+    });
+    
+    if (contacts.length === 0) break;
+    
+    for (const contact of contacts) {
+      const normalized = normalizePhone(contact.phone);
+      if (normalized && normalized !== contact.phone) {
+        toNormalize.push({
+          id: contact.id,
+          oldPhone: contact.phone,
+          newPhone: normalized
+        });
+      }
     }
+    
+    skip += BATCH_SIZE;
   }
   
   if (toNormalize.length === 0) {
@@ -325,7 +356,7 @@ async function normalizeAllPhones(dryRun) {
     return 0;
   }
   
-  console.log(`   Found ${toNormalize.length} phone numbers to normalize:\n`);
+  console.log(`   Found ${toNormalize.length.toLocaleString()} phone numbers to normalize:\n`);
   
   // Show first 20 examples
   const examples = toNormalize.slice(0, 20);
@@ -333,26 +364,41 @@ async function normalizeAllPhones(dryRun) {
     console.log(`   "${item.oldPhone}" → "${item.newPhone}"`);
   }
   if (toNormalize.length > 20) {
-    console.log(`   ... and ${toNormalize.length - 20} more`);
+    console.log(`   ... and ${(toNormalize.length - 20).toLocaleString()} more`);
   }
   
   if (!dryRun) {
     console.log('\n   Normalizing phone numbers...');
     
     let updated = 0;
-    for (const item of toNormalize) {
-      try {
-        await prisma.contact.update({
-          where: { id: item.id },
-          data: { phone: item.newPhone }
-        });
-        updated++;
-      } catch (error) {
-        console.log(`   ❌ Error updating ${item.id}: ${error.message}`);
+    let errors = 0;
+    
+    // Process in batches of 100 for updates
+    for (let i = 0; i < toNormalize.length; i += 100) {
+      const batch = toNormalize.slice(i, i + 100);
+      
+      await Promise.all(batch.map(async (item) => {
+        try {
+          await prisma.contact.update({
+            where: { id: item.id },
+            data: { phone: item.newPhone }
+          });
+          updated++;
+        } catch (error) {
+          errors++;
+          if (errors <= 10) {
+            console.log(`   ❌ Error updating ${item.id}: ${error.message}`);
+          }
+        }
+      }));
+      
+      // Progress update every 1000
+      if ((i + 100) % 1000 === 0 || i + 100 >= toNormalize.length) {
+        process.stdout.write(`\r   Progress: ${Math.min(i + 100, toNormalize.length).toLocaleString()} / ${toNormalize.length.toLocaleString()}`);
       }
     }
     
-    console.log(`   ✅ Normalized ${updated} phone numbers\n`);
+    console.log(`\n   ✅ Normalized ${updated.toLocaleString()} phone numbers${errors > 0 ? `, ${errors} errors` : ''}\n`);
     return updated;
   }
   
