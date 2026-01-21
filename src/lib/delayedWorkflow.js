@@ -127,8 +127,14 @@ export async function executeDelayedAction(actionId) {
 
 /**
  * Process all ready delayed actions (should be called periodically)
+ * DISABLED: Automated delayed action processing is disabled - only manual sends are allowed
  */
 export async function processDelayedActions() {
+  // DISABLED: Automated processing is disabled
+  console.log('[DISABLED] processDelayedActions() called but automated processing is disabled');
+  return;
+  
+  /* DISABLED CODE BELOW
   const actions = await getReadyDelayedActions(100)
   
   // Process in parallel with limit
@@ -139,5 +145,6 @@ export async function processDelayedActions() {
       batch.map(action => executeDelayedAction(action.id))
     )
   }
+  END DISABLED CODE */
 }
 

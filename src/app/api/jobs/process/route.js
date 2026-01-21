@@ -21,13 +21,29 @@ export async function GET(request) {
   }
   
   try {
+    // DISABLED: Automated job processing is disabled - only manual sends are allowed
     // Process delayed workflow actions
-    await processDelayedActions()
+    // await processDelayedActions()
     
     // Process scheduled shortlink redirects
-    const scheduledRedirectResults = await processScheduledRedirects()
+    // const scheduledRedirectResults = await processScheduledRedirects()
     
     // Process pending send jobs (limit to 5 at a time)
+    // const pendingJobs = await getPendingJobs(5)
+    
+    // Return early - no automated processing
+    return Response.json({
+      success: true,
+      message: 'Automated job processing is disabled. Only manual sends are allowed.',
+      delayedActionsProcessed: false,
+      scheduledRedirectsProcessed: 0,
+      jobsProcessed: 0,
+      scheduledRedirectResults: [],
+      results: []
+    })
+    
+    /* DISABLED CODE - Automated job processing
+    const scheduledRedirectResults = await processScheduledRedirects()
     const pendingJobs = await getPendingJobs(5)
     
     const results = []
@@ -35,11 +51,8 @@ export async function GET(request) {
       try {
         let result
         if (job.jobType === 'dedicated_send') {
-          // Pass the existing job ID so it uses the scheduled job instead of creating a new one
-          // The function will atomically claim the job to prevent race conditions
           result = await executeDedicatedSend(job.campaignId, null, job.id)
         } else if (job.jobType === 'manual_fire') {
-          // Resume manual fire (would need to store metadata)
           const metadata = job.metadata || {}
           result = await executeManualFire(job.campaignId, {
             selectedTags: metadata.selectedTags || [],
@@ -48,7 +61,6 @@ export async function GET(request) {
           })
         }
         
-        // Check if job was skipped (already claimed by another process)
         if (result?.skipped) {
           results.push({ jobId: job.id, status: 'skipped', reason: result.reason })
         } else {
@@ -68,6 +80,7 @@ export async function GET(request) {
       scheduledRedirectResults,
       results
     })
+    */
   } catch (error) {
     console.error('Error processing jobs:', error)
     return Response.json(

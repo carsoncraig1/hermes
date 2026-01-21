@@ -283,12 +283,13 @@ export async function POST(request) {
         })
       }
 
-      // Trigger workflows for new contact (only for new contacts, not updates)
-      if (userId) {
-        triggerWorkflowsForContact(contact, userId).catch(err => {
-          console.error('Error triggering workflows:', err);
-        });
-      }
+      // DISABLED: Trigger workflows for new contact (only for new contacts, not updates)
+      // Automated workflow execution is disabled - only manual sends are allowed
+      // if (userId) {
+      //   triggerWorkflowsForContact(contact, userId).catch(err => {
+      //     console.error('Error triggering workflows:', err);
+      //   });
+      // }
     }
 
     return Response.json(contact, { status: existingContact ? 200 : 201 })
