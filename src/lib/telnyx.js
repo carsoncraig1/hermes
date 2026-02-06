@@ -45,40 +45,55 @@ function normalizePhoneForTelnyx(phone) {
 }
 
 /**
- * Get Telnyx client for a specific user
+ * Get all Telnyx configuration for a user in a single query
  * @param {string} userId - User ID
- * @returns {Promise<Telnyx|null>} - Telnyx client instance or null if no API key
+ * @returns {Promise<Object>} - Telnyx configuration including client, phone, and profile
  */
-async function getTelnyxClient(userId) {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { telnyxApiKey: true },
-  });
-
-  if (!user?.telnyxApiKey) {
-    return null;
-  }
-
-  return new Telnyx(user.telnyxApiKey);
-}
-
-/**
- * Get user's Telnyx settings
- * @param {string} userId - User ID
- * @returns {Promise<Object>} - User's Telnyx settings
- */
-async function getUserTelnyxSettings(userId) {
+export async function getTelnyxConfig(userId) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
+      telnyxApiKey: true,
       telnyxPhoneNumber: true,
       telnyxMessagingProfileId: true,
     },
   });
 
+  if (!user?.telnyxApiKey) {
+    return {
+      client: null,
+      phoneNumber: null,
+      messagingProfileId: null,
+      error: 'Telnyx API key not configured'
+    };
+  }
+
   return {
-    phoneNumber: user?.telnyxPhoneNumber || null,
-    messagingProfileId: user?.telnyxMessagingProfileId || '400196b2-9253-4a8b-8936-6ac04b4e6bbd', // Default fallback
+    client: new Telnyx(user.telnyxApiKey),
+    phoneNumber: user.telnyxPhoneNumber || null,
+    messagingProfileId: user.telnyxMessagingProfileId || '400196b2-9253-4a8b-8936-6ac04b4e6bbd',
+    error: null
+  };
+}
+
+/**
+ * @deprecated Use getTelnyxConfig instead for better performance
+ * Get Telnyx client for a specific user
+ */
+async function getTelnyxClient(userId) {
+  const config = await getTelnyxConfig(userId);
+  return config.client;
+}
+
+/**
+ * @deprecated Use getTelnyxConfig instead for better performance
+ * Get user's Telnyx settings
+ */
+async function getUserTelnyxSettings(userId) {
+  const config = await getTelnyxConfig(userId);
+  return {
+    phoneNumber: config.phoneNumber,
+    messagingProfileId: config.messagingProfileId || '400196b2-9253-4a8b-8936-6ac04b4e6bbd',
   };
 }
 
@@ -89,6 +104,11 @@ async function getUserTelnyxSettings(userId) {
  * @param {string} params.to - Recipient phone number
  * @param {string} params.text - Message text
  * @param {string} params.userId - User ID (optional, will get from session if not provided)
+ * @param {number} params.contactId - Contact ID (optional)
+ * @param {number} params.campaignId - Campaign ID (optional)
+ * @param {Object} params.telnyxConfig - Pre-fetched Telnyx config (optional, for bulk sends)
+ * @param {boolean} params.skipRateLimit - Skip rate limit check (use when already checked at batch level)
+ * @param {boolean} params.skipSubscriptionCheck - Skip subscription check (use when contacts pre-filtered)
  * @returns {Promise<Object>} - Telnyx API response
  */
 export async function sendMessage({
@@ -98,6 +118,9 @@ export async function sendMessage({
   userId = null,
   contactId = null,
   campaignId = null,
+  telnyxConfig = null,
+  skipRateLimit = false,
+  skipSubscriptionCheck = false,
 }) {
   // Declare variables in outer scope for error handling
   let finalUserId = userId;
@@ -144,8 +167,8 @@ export async function sendMessage({
       };
     }
 
-    // Enforce subscription check if contactId is provided
-    if (contactId) {
+    // Enforce subscription check if contactId is provided (skip if pre-filtered in bulk send)
+    if (contactId && !skipSubscriptionCheck) {
       const contact = await prisma.contact.findUnique({
         where: { id: contactId },
         select: { subscribed: true }
@@ -159,42 +182,64 @@ export async function sendMessage({
       }
     }
 
-    // Check rate limits (use cache for performance)
-    const rateLimit = await checkRateLimit(finalUserId, 1200, 30000, true);
-    if (!rateLimit.allowed) {
-      // Log rate limit hit
-      await serverLog(
-        `Rate limit exceeded: ${rateLimit.minuteCount}/${rateLimit.minuteLimit} messages/minute, ${rateLimit.hourCount}/${rateLimit.hourLimit} messages/hour`,
-        'warn',
-        {
-          minuteCount: rateLimit.minuteCount,
-          minuteLimit: rateLimit.minuteLimit,
-          hourCount: rateLimit.hourCount,
-          hourLimit: rateLimit.hourLimit,
+    // Check rate limits (skip if already checked at batch level in bulk sends)
+    let rateLimit = null;
+    if (!skipRateLimit) {
+      rateLimit = await checkRateLimit(finalUserId, 1200, 30000, true);
+      if (!rateLimit.allowed) {
+        // Log rate limit hit
+        await serverLog(
+          `Rate limit exceeded: ${rateLimit.minuteCount}/${rateLimit.minuteLimit} messages/minute, ${rateLimit.hourCount}/${rateLimit.hourLimit} messages/hour`,
+          'warn',
+          {
+            minuteCount: rateLimit.minuteCount,
+            minuteLimit: rateLimit.minuteLimit,
+            hourCount: rateLimit.hourCount,
+            hourLimit: rateLimit.hourLimit,
+            retryAfter: rateLimit.retryAfter
+          },
+          finalUserId
+        ).catch(err => console.error('Error logging rate limit:', err));
+        
+        return {
+          success: false,
+          error: `Rate limit exceeded. ${rateLimit.minuteCount}/${rateLimit.minuteLimit} messages in the last minute, ${rateLimit.hourCount}/${rateLimit.hourLimit} in the last hour.`,
+          rateLimit,
           retryAfter: rateLimit.retryAfter
-        },
-        finalUserId
-      ).catch(err => console.error('Error logging rate limit:', err));
-      
-      return {
-        success: false,
-        error: `Rate limit exceeded. ${rateLimit.minuteCount}/${rateLimit.minuteLimit} messages in the last minute, ${rateLimit.hourCount}/${rateLimit.hourLimit} in the last hour.`,
-        rateLimit,
-        retryAfter: rateLimit.retryAfter
-      };
+        };
+      }
     }
 
-    // Get Telnyx client for user
-    const telnyx = await getTelnyxClient(finalUserId);
-    if (!telnyx) {
-      return {
-        success: false,
-        error: 'Telnyx API key not configured. Please configure it in Settings.',
+    // Get Telnyx client and settings (use pre-fetched config if provided for bulk sends)
+    let telnyx;
+    if (telnyxConfig) {
+      // Use pre-fetched config (bulk send optimization)
+      if (!telnyxConfig.client) {
+        return {
+          success: false,
+          error: telnyxConfig.error || 'Telnyx API key not configured. Please configure it in Settings.',
+        };
+      }
+      telnyx = telnyxConfig.client;
+      settings = {
+        phoneNumber: telnyxConfig.phoneNumber,
+        messagingProfileId: telnyxConfig.messagingProfileId
+      };
+    } else {
+      // Fetch config (single message sends)
+      const config = await getTelnyxConfig(finalUserId);
+      if (!config.client) {
+        return {
+          success: false,
+          error: config.error || 'Telnyx API key not configured. Please configure it in Settings.',
+        };
+      }
+      telnyx = config.client;
+      settings = {
+        phoneNumber: config.phoneNumber,
+        messagingProfileId: config.messagingProfileId
       };
     }
-
-    // Get user's Telnyx settings
-    settings = await getUserTelnyxSettings(finalUserId);
 
     // Normalize phone numbers to E.164 format for Telnyx
     normalizedTo = normalizePhoneForTelnyx(to);
@@ -301,9 +346,13 @@ export async function sendMessage({
     const costCurrency = response.data?.cost?.currency || 'USD';
 
     // STEP 5: Update message record with Telnyx response data
+    // OPTIMIZED: Run message update and contact update in parallel
     if (messageRecord && messageId) {
-      try {
-        await prisma.message.update({
+      const updatePromises = [];
+      
+      // Update message record
+      updatePromises.push(
+        prisma.message.update({
           where: { id: messageId },
           data: {
             telnyxMessageId,
@@ -316,22 +365,25 @@ export async function sendMessage({
             sentAt: initialStatus === 'sent' || initialStatus === 'sending' ? new Date() : null,
             text: messageTextWithCodes // Update with code-embedded text
           }
-        });
+        }).catch(err => {
+          console.error('Error updating message record:', err);
+        })
+      );
 
-        // Update Contact.lastMessageSent when message is successfully sent
-        if (contactId && (initialStatus === 'sent' || initialStatus === 'sending')) {
-          await prisma.contact.update({
+      // Update Contact.lastMessageSent when message is successfully sent (parallel)
+      if (contactId && (initialStatus === 'sent' || initialStatus === 'sending')) {
+        updatePromises.push(
+          prisma.contact.update({
             where: { id: contactId },
             data: { lastMessageSent: new Date() }
           }).catch(err => {
             console.error('Error updating contact lastMessageSent:', err);
-            // Don't fail the whole operation if this update fails
-          });
-        }
-      } catch (dbError) {
-        console.error('Error updating message record:', dbError);
-        // Continue even if update fails
+          })
+        );
       }
+      
+      // Wait for all updates in parallel
+      await Promise.all(updatePromises);
     } else if (!messageRecord) {
       // If we didn't create the record before sending, create it now
       try {

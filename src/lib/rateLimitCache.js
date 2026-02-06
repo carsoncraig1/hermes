@@ -5,31 +5,55 @@ import prisma from '@/lib/prisma'
 const CACHE_TTL_SECONDS = 10 // Cache for 10 seconds
 const CACHE_EXPIRY_MS = CACHE_TTL_SECONDS * 1000
 
+// In-memory cache layer to avoid DB hits during bulk sends
+// Structure: Map<userId, { minuteCount, hourCount, expiresAt, pendingCount }>
+const memoryCache = new Map()
+
 /**
- * Get cached rate limit data or calculate fresh
+ * Get cached rate limit data with in-memory layer
  * @param {string} userId - User ID
  * @returns {Promise<Object>} - Rate limit data
  */
 export async function getCachedRateLimit(userId) {
-  const now = new Date()
+  const now = Date.now()
   
-  // Try to get cached data
+  // Check in-memory cache first (fastest path)
+  const memCached = memoryCache.get(userId)
+  if (memCached && memCached.expiresAt > now) {
+    return {
+      minuteCount: memCached.minuteCount + (memCached.pendingCount || 0),
+      hourCount: memCached.hourCount + (memCached.pendingCount || 0),
+      cached: true,
+      memCached: true
+    }
+  }
+  
+  // Try DB cache next
   const cache = await prisma.rateLimitCache.findUnique({
     where: { userId }
   })
   
-  // If cache exists and is still valid, return it
-  if (cache && cache.expiresAt > now) {
+  // If DB cache exists and is still valid
+  if (cache && cache.expiresAt > new Date()) {
+    // Store in memory cache for subsequent fast lookups
+    memoryCache.set(userId, {
+      minuteCount: cache.minuteCount,
+      hourCount: cache.hourCount,
+      expiresAt: cache.expiresAt.getTime(),
+      pendingCount: 0
+    })
+    
     return {
       minuteCount: cache.minuteCount,
       hourCount: cache.hourCount,
-      cached: true
+      cached: true,
+      memCached: false
     }
   }
   
   // Cache miss or expired - calculate fresh
-  const oneMinuteAgo = new Date(now.getTime() - 60 * 1000)
-  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000)
+  const oneMinuteAgo = new Date(now - 60 * 1000)
+  const oneHourAgo = new Date(now - 60 * 60 * 1000)
   
   const [recentMinute, recentHour] = await Promise.all([
     prisma.message.count({
@@ -50,9 +74,18 @@ export async function getCachedRateLimit(userId) {
     })
   ])
   
-  // Update or create cache
-  const expiresAt = new Date(now.getTime() + CACHE_EXPIRY_MS)
-  await prisma.rateLimitCache.upsert({
+  const expiresAt = new Date(now + CACHE_EXPIRY_MS)
+  
+  // Update in-memory cache
+  memoryCache.set(userId, {
+    minuteCount: recentMinute,
+    hourCount: recentHour,
+    expiresAt: expiresAt.getTime(),
+    pendingCount: 0
+  })
+  
+  // Update DB cache asynchronously (don't wait)
+  prisma.rateLimitCache.upsert({
     where: { userId },
     create: {
       userId,
@@ -64,14 +97,15 @@ export async function getCachedRateLimit(userId) {
       minuteCount: recentMinute,
       hourCount: recentHour,
       expiresAt,
-      lastUpdated: now
+      lastUpdated: new Date()
     }
-  })
+  }).catch(() => {}) // Best effort, don't block
   
   return {
     minuteCount: recentMinute,
     hourCount: recentHour,
-    cached: false
+    cached: false,
+    memCached: false
   }
 }
 
@@ -80,6 +114,10 @@ export async function getCachedRateLimit(userId) {
  * @param {string} userId - User ID
  */
 export async function invalidateRateLimitCache(userId) {
+  // Clear in-memory cache immediately
+  memoryCache.delete(userId)
+  
+  // Clear DB cache asynchronously
   await prisma.rateLimitCache.deleteMany({
     where: { userId }
   }).catch(() => {
@@ -89,13 +127,21 @@ export async function invalidateRateLimitCache(userId) {
 
 /**
  * Increment rate limit cache counts (optimistic update)
+ * Uses in-memory cache for immediate updates, DB is async
  * @param {string} userId - User ID
  */
 export async function incrementRateLimitCache(userId) {
-  await prisma.rateLimitCache.updateMany({
+  // Increment in-memory cache immediately (fastest path)
+  const memCached = memoryCache.get(userId)
+  if (memCached) {
+    memCached.pendingCount = (memCached.pendingCount || 0) + 1
+  }
+  
+  // Update DB cache asynchronously (don't wait)
+  prisma.rateLimitCache.updateMany({
     where: {
       userId,
-      expiresAt: { gt: new Date() } // Only update if cache is still valid
+      expiresAt: { gt: new Date() }
     },
     data: {
       minuteCount: { increment: 1 },
@@ -104,5 +150,12 @@ export async function incrementRateLimitCache(userId) {
   }).catch(() => {
     // Ignore errors - cache update is best effort
   })
+}
+
+/**
+ * Clear all in-memory cache entries (useful for testing or memory management)
+ */
+export function clearMemoryCache() {
+  memoryCache.clear()
 }
 

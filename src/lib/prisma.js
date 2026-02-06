@@ -2,10 +2,29 @@ import { PrismaClient } from '@prisma/client'
 
 const globalForPrisma = global
 
-// Configure connection pool explicitly to prevent exhaustion
-// Connection pool settings via DATABASE_URL query params or explicit config
+// Configure connection pool explicitly for high-throughput bulk sends
+// 
+// CONNECTION POOL SIZING FOR BULK SMS:
+// - Bulk sends do 20 messages in parallel
+// - Each message needs 3-5 DB operations (create, update, etc.)
+// - Recommended: connection_limit = 50-100 for bulk sending
+//
+// DATABASE_URL PARAMS (append to connection string):
+// - connection_limit=50    : Max connections from Prisma to pooler
+// - pool_timeout=30        : Seconds to wait for a connection (increase for bulk)
+// - connect_timeout=30     : Seconds to wait for initial connection
+//
+// DIGITALOCEAN POOLER (port 25061):
+// - Transaction mode allows many client connections to share few backend connections
+// - 22 backend connections can support 100+ client connections in transaction mode
+// - Example: postgresql://user:pass@host:25061/db?sslmode=require&connection_limit=50&pool_timeout=30
+//
+// DIRECT CONNECTION (port 25060):
+// - Each client connection = 1 backend connection
+// - Limited by your database plan (e.g., 22 connections)
+// - Only use for migrations or if pooler isn't working
+
 const connectionUrl = process.env.DATABASE_URL || ''
-const hasPoolConfig = connectionUrl.includes('connection_limit') || connectionUrl.includes('pool_timeout')
 
 const prisma = globalForPrisma.prisma ?? new PrismaClient({
   datasources: {
@@ -14,14 +33,8 @@ const prisma = globalForPrisma.prisma ?? new PrismaClient({
     }
   },
   log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-  // Connection pool configuration
-  // Using DigitalOcean connection pooler (port 25061) with 22 backend connections
-  // Transaction pooling mode: connections released after each transaction
-  // This allows efficient connection reuse - Prisma can use up to connection_limit
-  // Set connection_limit=20 in DATABASE_URL to max out the pooler (leaving 2 for overhead)
-  // Example: postgresql://user:pass@host:25061/hermes-executor?sslmode=require&connection_limit=20&pool_timeout=20
 })
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 
-export default prisma 
+export default prisma

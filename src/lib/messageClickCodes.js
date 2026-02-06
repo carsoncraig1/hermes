@@ -22,11 +22,24 @@ function generateBase62Code(length = 5) {
 
 /**
  * Generate a unique click code for message tracking
- * Checks for collisions and retries if needed
+ * OPTIMIZED: No longer checks DB for collisions - relies on unique constraint
+ * Collision probability for 6-char base62 is ~1 in 56 billion, extremely rare
+ * @returns {Promise<string>} - Unique 6 character code
+ */
+export async function generateUniqueClickCode() {
+  // Use 6 chars for better uniqueness (62^6 = 56.8 billion combinations)
+  // Skip DB collision check - let the unique constraint handle rare collisions
+  // The createMany with skipDuplicates: true handles any collision gracefully
+  return generateBase62Code(6);
+}
+
+/**
+ * Generate a unique click code with collision checking (legacy, slower)
+ * Use generateUniqueClickCode() for bulk operations
  * @param {number} maxRetries - Maximum number of retry attempts (default: 10)
  * @returns {Promise<string>} - Unique 5-6 character code
  */
-export async function generateUniqueClickCode(maxRetries = 10) {
+export async function generateUniqueClickCodeWithCheck(maxRetries = 10) {
   let attempts = 0;
   let code = '';
   
@@ -95,6 +108,7 @@ export function extractShortlinksFromText(messageText) {
 
 /**
  * Create MessageClickCode records for all shortlinks in a message
+ * OPTIMIZED: Generates codes in parallel and uses batch insert
  * @param {string} messageId - Message ID
  * @param {string} messageText - Original message text
  * @param {number} contactId - Contact ID
@@ -127,48 +141,58 @@ export async function createMessageClickCodes(messageId, messageText, contactId,
   // Create a map of shortlink ID to verify ownership
   const validShortlinkIds = new Set(shortlinkRecords.map(s => s.id));
   
+  // Filter to only valid shortlink refs
+  const validRefs = shortlinkRefs.filter(ref => validShortlinkIds.has(ref.shortlinkId));
+  if (validRefs.length === 0) {
+    return { codes: [], modifiedText: messageText };
+  }
+  
   // Calculate expiration date (30 days from now)
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 30);
   
-  // Create codes for each shortlink in the message
-  const codes = [];
-  let modifiedText = messageText;
+  // OPTIMIZATION: Generate all codes in parallel (faster than sequential)
+  const generatedCodes = await Promise.all(
+    validRefs.map(() => generateUniqueClickCode())
+  );
   
-  // Process in reverse order to maintain correct indices when replacing
-  for (let i = shortlinkRefs.length - 1; i >= 0; i--) {
-    const shortlinkRef = shortlinkRefs[i];
-    const shortlinkId = shortlinkRef.shortlinkId;
-    
-    if (!validShortlinkIds.has(shortlinkId)) {
-      console.warn(`Shortlink with ID ${shortlinkId} not found or not owned by user ${userId}`);
-      continue;
-    }
-    
-    // Generate unique code
-    const code = await generateUniqueClickCode();
-    
-    // Create MessageClickCode record
-    const messageClickCode = await prisma.messageClickCode.create({
-      data: {
-        code,
-        shortlinkId,
-        messageId,
-        contactId,
-        userId,
-        expiresAt
-      }
-    });
-    
-    codes.push(messageClickCode);
-    
-    // Replace marker/URL in message text with code-only URL
-    // Format: txt.cx/CODE
+  // Build data for batch insert
+  const codeDataArray = validRefs.map((ref, index) => ({
+    code: generatedCodes[index],
+    shortlinkId: ref.shortlinkId,
+    messageId,
+    contactId,
+    userId,
+    expiresAt
+  }));
+  
+  // OPTIMIZATION: Use createMany for batch insert (single DB round trip)
+  await prisma.messageClickCode.createMany({
+    data: codeDataArray,
+    skipDuplicates: true // Handle any rare collision gracefully
+  });
+  
+  // Build modified text with codes (process in reverse to maintain indices)
+  let modifiedText = messageText;
+  for (let i = validRefs.length - 1; i >= 0; i--) {
+    const shortlinkRef = validRefs[i];
+    const code = generatedCodes[i];
     const newUrl = `https://txt.cx/${code}`;
     modifiedText = modifiedText.substring(0, shortlinkRef.index) + 
                    newUrl + 
                    modifiedText.substring(shortlinkRef.index + shortlinkRef.fullUrl.length);
   }
+  
+  // Return the code data (without fetching back from DB - we already have the data)
+  const codes = codeDataArray.map((data, index) => ({
+    ...data,
+    id: null, // ID not known without re-fetching, but not needed for most use cases
+    clicked: false,
+    clickedAt: null,
+    opened: false,
+    openedAt: null,
+    createdAt: new Date()
+  }));
   
   return { codes, modifiedText };
 }

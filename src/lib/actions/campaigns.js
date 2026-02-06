@@ -936,7 +936,7 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
   const { incrementRateLimitCache } = await import('@/lib/rateLimitCache')
   const { retryWithBackoff, isRetryableError } = await import('@/lib/retry')
   const { getCampaignContactsPaginated } = await import('@/lib/contactPagination')
-  const { sendMessage } = await import('@/lib/telnyx')
+  const { sendMessage, getTelnyxConfig } = await import('@/lib/telnyx')
   
   let jobId = existingJobId
   const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
@@ -1048,11 +1048,19 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
       }
     }
     
-    // Get user's standard opt-out text
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { standardOptOutText: true }
-    })
+    // Pre-fetch user settings and Telnyx config ONCE (optimization: avoid per-message DB lookups)
+    const [user, telnyxConfig] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { standardOptOutText: true }
+      }),
+      getTelnyxConfig(userId)
+    ])
+    
+    // Validate Telnyx config before starting
+    if (!telnyxConfig.client) {
+      throw new Error(telnyxConfig.error || 'Telnyx API key not configured')
+    }
     
     let messageText = campaign.message
     if (user?.standardOptOutText) {
@@ -1098,6 +1106,7 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
         }
         
         // Execute batch with retry
+        // OPTIMIZED: Pass pre-fetched telnyxConfig, skip per-message rate limit and subscription checks
         const batchStartTime = Date.now()
         let results = await Promise.allSettled(
           batch.map(contact =>
@@ -1107,7 +1116,10 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
                 text: messageText,
                 userId,
                 contactId: contact.id,
-                campaignId: campaignIdInt
+                campaignId: campaignIdInt,
+                telnyxConfig,           // Pre-fetched config (avoids 2 DB queries per message)
+                skipRateLimit: true,     // Already checked at batch level
+                skipSubscriptionCheck: true  // Contacts already filtered for subscribed=true
               }),
               {
                 maxRetries: 3,
