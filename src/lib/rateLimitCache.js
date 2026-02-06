@@ -155,7 +155,7 @@ export async function incrementRateLimitCache(userId) {
 /**
  * Clear all in-memory cache entries (useful for testing or memory management)
  */
-export function clearMemoryCache() {
+export async function clearMemoryCache() {
   memoryCache.clear()
 }
 
