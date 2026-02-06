@@ -119,16 +119,17 @@ export async function getDashboardData(timeRange = 'today') {
     }),
     
     // Dedicated send campaigns (lightweight - no messages)
+    // Fetch all campaigns and filter for null workflow (Prisma JSON null checks are unreliable)
     prisma.campaign.findMany({
       where: {
         userId,
-        workflow: { equals: null },
         message: { not: '' }
       },
       select: {
         id: true,
         name: true,
         message: true,
+        workflow: true,
         _count: {
           select: {
             targets: true
@@ -136,7 +137,7 @@ export async function getDashboardData(timeRange = 'today') {
         }
       },
       orderBy: { createdAt: 'desc' },
-      take: 50
+      take: 100 // Fetch more to account for filtering
     }),
     
     // Workflow campaigns (lightweight)
@@ -224,11 +225,14 @@ export async function getDashboardData(timeRange = 'today') {
     messageStats: messageStatsProcessed,
     
     // Campaign lists for dropdowns
-    dedicatedSendCampaigns: dedicatedSendCampaigns.map(c => ({
-      id: c.id,
-      name: c.name,
-      message: c.message
-    })),
+    dedicatedSendCampaigns: dedicatedSendCampaigns
+      .filter(c => c.workflow === null) // Filter for dedicated send campaigns (no workflow)
+      .slice(0, 50) // Limit to 50 after filtering
+      .map(c => ({
+        id: c.id,
+        name: c.name,
+        message: c.message
+      })),
     
     workflowCampaigns: workflowCampaigns.filter(c => {
       if (!c.workflow?.nodes) return false;
