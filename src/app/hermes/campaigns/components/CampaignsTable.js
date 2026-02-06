@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import styles from './CampaignsTable.module.css'
-import { getCampaigns, deleteCampaign } from '@/lib/actions/campaigns'
+import { getCampaigns, deleteCampaign, getCampaignDeliveryStats } from '@/lib/actions/campaigns'
 import AddCampaignModal from './AddCampaignModal'
 import CreateWorkflowCampaign from './CreateWorkflowCampaign'
 import EditWorkflowCampaign from './EditWorkflowCampaign'
@@ -16,6 +16,8 @@ export default function CampaignsTable({ initialCampaigns }) {
   const [showWorkflowModal, setShowWorkflowModal] = useState(false)
   const [editingCampaign, setEditingCampaign] = useState(null)
   const [editingWorkflowCampaign, setEditingWorkflowCampaign] = useState(null)
+  const [loadingStats, setLoadingStats] = useState(new Set()) // Track which campaigns are loading stats
+  const [loadedStats, setLoadedStats] = useState(new Set()) // Track which campaigns have loaded full stats
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -33,14 +35,64 @@ export default function CampaignsTable({ initialCampaigns }) {
   const handleSync = async () => {
     setLoading(true)
     try {
-      const fresh = await getCampaigns()
+      // Only load recent campaigns (last 72 hours)
+      const fresh = await getCampaigns(true)
       setCampaigns(fresh)
       setFilteredCampaigns(fresh)
+      // Reset loaded stats when syncing
+      setLoadedStats(new Set())
     } catch (error) {
       console.error('Error syncing campaigns:', error)
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleLoadOlderStats = async (campaignId) => {
+    // Don't load if already loading or already loaded
+    if (loadingStats.has(campaignId) || loadedStats.has(campaignId)) {
+      return
+    }
+
+    setLoadingStats(prev => new Set(prev).add(campaignId))
+    try {
+      const stats = await getCampaignDeliveryStats(campaignId)
+      
+      // Update the campaign with full stats
+      setCampaigns(prevCampaigns => 
+        prevCampaigns.map(campaign => 
+          campaign.id === campaignId 
+            ? { ...campaign, deliveryStats: stats.deliveryStats }
+            : campaign
+        )
+      )
+      setFilteredCampaigns(prevFiltered => 
+        prevFiltered.map(campaign => 
+          campaign.id === campaignId 
+            ? { ...campaign, deliveryStats: stats.deliveryStats }
+            : campaign
+        )
+      )
+      
+      setLoadedStats(prev => new Set(prev).add(campaignId))
+    } catch (error) {
+      console.error('Error loading campaign stats:', error)
+    } finally {
+      setLoadingStats(prev => {
+        const next = new Set(prev)
+        next.delete(campaignId)
+        return next
+      })
+    }
+  }
+
+  // Check if a campaign is older than 72 hours (needs stats loading)
+  const isOlderCampaign = (campaign) => {
+    if (!campaign.lastMessageSent && !campaign.createdAt) return false
+    const seventyTwoHoursAgo = new Date()
+    seventyTwoHoursAgo.setHours(seventyTwoHoursAgo.getHours() - 72)
+    const checkDate = campaign.lastMessageSent || campaign.createdAt
+    return new Date(checkDate) < seventyTwoHoursAgo
   }
 
   const handleDelete = async (id) => {
@@ -195,7 +247,15 @@ export default function CampaignsTable({ initialCampaigns }) {
                 </td>
                 <td>
                   {campaign.deliveryStats && campaign.deliveryStats.total > 0 ? (
-                    <div className={styles.deliveryStats}>
+                    <div 
+                      className={styles.deliveryStats}
+                      onMouseEnter={() => {
+                        // Auto-load stats on hover for older campaigns
+                        if (isOlderCampaign(campaign) && !loadedStats.has(campaign.id) && !loadingStats.has(campaign.id)) {
+                          handleLoadOlderStats(campaign.id)
+                        }
+                      }}
+                    >
                       <span className={styles.deliveryRate}>
                         {campaign.deliveryStats.deliveryRate.toFixed(1)}% delivered
                       </span>
@@ -206,9 +266,35 @@ export default function CampaignsTable({ initialCampaigns }) {
                           <span className={styles.queued}>⏳ {campaign.deliveryStats.queued}</span>
                         )}
                       </div>
+                      {isOlderCampaign(campaign) && !loadedStats.has(campaign.id) && (
+                        <button
+                          className={styles.loadStatsButton}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleLoadOlderStats(campaign.id)
+                          }}
+                          disabled={loadingStats.has(campaign.id)}
+                        >
+                          {loadingStats.has(campaign.id) ? 'Loading...' : '📊 Load Full Stats'}
+                        </button>
+                      )}
                     </div>
                   ) : (
-                    <span className={styles.noCampaign}>No messages</span>
+                    <div className={styles.deliveryStats}>
+                      <span className={styles.noCampaign}>No messages</span>
+                      {isOlderCampaign(campaign) && !loadedStats.has(campaign.id) && (
+                        <button
+                          className={styles.loadStatsButton}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleLoadOlderStats(campaign.id)
+                          }}
+                          disabled={loadingStats.has(campaign.id)}
+                        >
+                          {loadingStats.has(campaign.id) ? 'Loading...' : '📊 Load Stats'}
+                        </button>
+                      )}
+                    </div>
                   )}
                 </td>
                 <td>

@@ -5,9 +5,19 @@ import MessagesTable from './components/MessagesTable';
 export const dynamic = 'force-dynamic';
 
 export default async function Messages() {
-  // OPTIMIZED: Only load first page (50 messages) instead of 1000
+  // OPTIMIZED: Only load first page (50 messages) from last 24 hours
+  const twentyFourHoursAgo = new Date()
+  twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24)
+  
   const [initialMessages, initialStats] = await Promise.all([
-    getMessages({ page: 0, pageSize: 50 }),
+    getMessages({ 
+      page: 0, 
+      pageSize: 50,
+      dateRange: {
+        start: twentyFourHoursAgo,
+        end: new Date()
+      }
+    }),
     getMessageStats()
   ]);
 

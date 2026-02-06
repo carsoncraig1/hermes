@@ -16,6 +16,7 @@ export default function MessagesTable({ initialMessages, initialStats }) {
   const [statusFilter, setStatusFilter] = useState('all');
   const [directionFilter, setDirectionFilter] = useState('all');
   const [selectedConversationId, setSelectedConversationId] = useState(null);
+  const [useRecentFilter, setUseRecentFilter] = useState(true); // Track if we're filtering to recent messages
   
   // Pagination state
   const [page, setPage] = useState(initialMessages?.page || 0);
@@ -33,21 +34,38 @@ export default function MessagesTable({ initialMessages, initialStats }) {
     }
   }, [conversations, selectedConversationId]);
 
-  const loadPage = async (newPage, filters = {}) => {
+  const loadPage = async (newPage, filters = {}, includeRecentFilter = null) => {
     setLoading(true);
     try {
+      // If includeRecentFilter is null, use the current state
+      const shouldFilter = includeRecentFilter !== null ? includeRecentFilter : useRecentFilter;
+      
+      // Build date filter if we should filter to recent (24 hours)
+      const dateFilter = shouldFilter ? (() => {
+        const twentyFourHoursAgo = new Date();
+        twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+        return {
+          dateRange: {
+            start: twentyFourHoursAgo,
+            end: new Date()
+          }
+        };
+      })() : {};
+      
       const result = await getMessages({
         page: newPage,
         pageSize: 50,
         ...(statusFilter !== 'all' && { status: statusFilter }),
         ...(directionFilter !== 'all' && { direction: directionFilter }),
         ...(searchQuery && { search: searchQuery }),
+        ...dateFilter,
         ...filters
       });
       setMessages(result.messages);
       setPage(result.page);
       setTotalPages(result.totalPages);
       setTotal(result.total);
+      setUseRecentFilter(shouldFilter);
     } catch (error) {
       console.error('Error loading messages:', error);
     } finally {
@@ -58,8 +76,19 @@ export default function MessagesTable({ initialMessages, initialStats }) {
   const handleSync = async () => {
     setLoading(true);
     try {
+      // Reset to recent messages (24 hours) on sync
+      const twentyFourHoursAgo = new Date();
+      twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+      
       const [freshResult, freshStats] = await Promise.all([
-        getMessages({ page: 0, pageSize: 50 }),
+        getMessages({ 
+          page: 0, 
+          pageSize: 50,
+          dateRange: {
+            start: twentyFourHoursAgo,
+            end: new Date()
+          }
+        }),
         getMessageStats()
       ]);
       setMessages(freshResult.messages);
@@ -67,6 +96,7 @@ export default function MessagesTable({ initialMessages, initialStats }) {
       setTotalPages(freshResult.totalPages);
       setTotal(freshResult.total);
       setStats(freshStats);
+      setUseRecentFilter(true);
     } catch (error) {
       console.error('Error syncing messages:', error);
     } finally {
@@ -164,27 +194,39 @@ export default function MessagesTable({ initialMessages, initialStats }) {
           />
           
           {/* Pagination controls */}
-          {totalPages > 1 && (
-            <div className={styles.pagination}>
+          <div className={styles.pagination}>
+            {useRecentFilter && (
               <button
-                onClick={() => loadPage(page - 1)}
-                disabled={page === 0 || loading}
-                className={styles.paginationButton}
+                onClick={() => loadPage(0, {}, false)}
+                className={styles.loadOlderButton}
+                disabled={loading}
               >
-                ← Prev
+                📊 Load All Messages
               </button>
-              <span className={styles.paginationInfo}>
-                Page {page + 1} of {totalPages} ({total} total)
-              </span>
-              <button
-                onClick={() => loadPage(page + 1)}
-                disabled={page >= totalPages - 1 || loading}
-                className={styles.paginationButton}
-              >
-                Next →
-              </button>
-            </div>
-          )}
+            )}
+            {totalPages > 1 && (
+              <>
+                <button
+                  onClick={() => loadPage(page - 1)}
+                  disabled={page === 0 || loading}
+                  className={styles.paginationButton}
+                >
+                  ← Prev
+                </button>
+                <span className={styles.paginationInfo}>
+                  Page {page + 1} of {totalPages} ({total} total)
+                  {useRecentFilter && ' (Last 24h)'}
+                </span>
+                <button
+                  onClick={() => loadPage(page + 1)}
+                  disabled={page >= totalPages - 1 || loading}
+                  className={styles.paginationButton}
+                >
+                  Next →
+                </button>
+              </>
+            )}
+          </div>
         </div>
         <div className={styles.conversationMain}>
           <ConversationDetail

@@ -5,7 +5,8 @@ import CampaignsTable from './components/CampaignsTable'
 export const dynamic = 'force-dynamic'
 
 export default async function Campaigns() {
-  const initialCampaigns = await getCampaigns()
+  // Only load campaigns from last 72 hours initially
+  const initialCampaigns = await getCampaigns(true)
 
   return (
     <div className="dashboard-container">

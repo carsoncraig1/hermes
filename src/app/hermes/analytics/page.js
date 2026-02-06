@@ -5,10 +5,10 @@ import AnalyticsDashboard from './components/AnalyticsDashboard';
 export const dynamic = 'force-dynamic';
 
 export default async function Analytics() {
-  // Use the same default date range as the client (last 30 days)
+  // OPTIMIZED: Default to last 24 hours instead of 30 days for faster loading
   const endDate = new Date();
   const startDate = new Date();
-  startDate.setDate(endDate.getDate() - 30);
+  startDate.setHours(endDate.getHours() - 24);
   
   const filters = {
     dateRange: {

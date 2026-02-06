@@ -536,15 +536,29 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
   }
 }
 
-export async function getCampaigns() {
+export async function getCampaigns(recentOnly = true) {
   try {
     const userId = await getUserId()
+    
+    // Calculate date threshold for recent campaigns (72 hours)
+    const seventyTwoHoursAgo = new Date()
+    seventyTwoHoursAgo.setHours(seventyTwoHoursAgo.getHours() - 72)
+    
+    // Build where clause - filter by last message sent date if recentOnly is true
+    const campaignWhere = recentOnly ? {
+      userId,
+      OR: [
+        { lastMessageSent: { gte: seventyTwoHoursAgo } },
+        { lastMessageSent: null }, // Include campaigns that never sent
+        { createdAt: { gte: seventyTwoHoursAgo } } // Include recently created campaigns
+      ]
+    } : { userId }
     
     // OPTIMIZED: Fetch campaigns without ALL messages - use _count and separate aggregate queries
     const [campaigns, messageStatsByCampaign, costByCampaign] = await Promise.all([
       // Get campaigns with targets and shortlinks (no messages)
       prisma.campaign.findMany({
-        where: { userId },
+        where: campaignWhere,
         include: {
           targets: {
             include: {
@@ -561,23 +575,29 @@ export async function getCampaigns() {
         }
       }),
       
-      // Get message counts by campaign and status
+      // Get message counts by campaign and status (only for recent campaigns if recentOnly)
       prisma.message.groupBy({
         by: ['campaignId', 'status'],
         where: {
           userId,
-          campaignId: { not: null }
+          campaignId: { not: null },
+          ...(recentOnly && {
+            createdAt: { gte: seventyTwoHoursAgo }
+          })
         },
         _count: true
       }),
       
-      // Get cost by campaign (delivered only)
+      // Get cost by campaign (delivered only, only for recent if recentOnly)
       prisma.message.groupBy({
         by: ['campaignId'],
         where: {
           userId,
           campaignId: { not: null },
-          status: 'delivered'
+          status: 'delivered',
+          ...(recentOnly && {
+            createdAt: { gte: seventyTwoHoursAgo }
+          })
         },
         _sum: { costAmount: true }
       })
@@ -646,6 +666,79 @@ export async function getCampaigns() {
   } catch (error) {
     console.error('Error fetching campaigns:', error)
     throw new Error('Failed to fetch campaigns')
+  }
+}
+
+/**
+ * Get delivery stats for a specific campaign (for on-demand loading of older campaigns)
+ * @param {number} campaignId - Campaign ID
+ * @returns {Promise<Object>} - Delivery stats for the campaign
+ */
+export async function getCampaignDeliveryStats(campaignId) {
+  try {
+    const userId = await getUserId()
+    const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
+    
+    // Verify ownership
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: campaignIdInt, userId },
+      select: { id: true }
+    })
+    
+    if (!campaign) {
+      throw new Error('Campaign not found')
+    }
+    
+    // Get message stats for this campaign (all time, not just recent)
+    const [messageStats, costStats] = await Promise.all([
+      prisma.message.groupBy({
+        by: ['status'],
+        where: {
+          userId,
+          campaignId: campaignIdInt
+        },
+        _count: true
+      }),
+      prisma.message.aggregate({
+        where: {
+          userId,
+          campaignId: campaignIdInt,
+          status: 'delivered'
+        },
+        _sum: { costAmount: true }
+      })
+    ])
+    
+    // Build stats object
+    const stats = { total: 0, delivered: 0, failed: 0, sent: 0, queued: 0 }
+    messageStats.forEach(stat => {
+      stats.total += stat._count
+      if (stat.status === 'delivered') stats.delivered = stat._count
+      else if (stat.status === 'sending_failed' || stat.status === 'delivery_failed') {
+        stats.failed += stat._count
+      }
+      else if (stat.status === 'sent') stats.sent = stat._count
+      else if (stat.status === 'queued' || stat.status === 'sending') {
+        stats.queued += stat._count
+      }
+    })
+    
+    const totalCost = costStats._sum?.costAmount ? parseFloat(costStats._sum.costAmount.toString()) : 0
+    
+    return {
+      deliveryStats: {
+        total: stats.total,
+        delivered: stats.delivered,
+        failed: stats.failed,
+        sent: stats.sent,
+        queued: stats.queued,
+        deliveryRate: stats.total > 0 ? (stats.delivered / stats.total) * 100 : 0,
+        totalCost: parseFloat(totalCost.toFixed(4))
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching campaign delivery stats:', error)
+    throw error
   }
 }
 

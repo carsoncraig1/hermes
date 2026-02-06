@@ -354,3 +354,28 @@
   font-weight: 600;
   color: var(--accent-orange);
 }
+
+.loadStatsButton {
+  margin-top: 0.5rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-family: var(--font-family);
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.loadStatsButton:hover {
+  background: var(--bg-elevated);
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+}
+
+.loadStatsButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
