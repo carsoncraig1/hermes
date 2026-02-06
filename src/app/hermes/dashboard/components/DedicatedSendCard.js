@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getDedicatedSendCampaigns, getCampaignContactCount, executeDedicatedSend } from '@/lib/actions/campaigns';
+import { getCampaignContactCount, executeDedicatedSend } from '@/lib/actions/campaigns';
 import styles from './DedicatedSendCard.module.css';
 
-export default function DedicatedSendCard() {
-  const [campaigns, setCampaigns] = useState([]);
+export default function DedicatedSendCard({ initialCampaigns = [] }) {
+  // OPTIMIZED: Use pre-fetched campaigns from server
+  const [campaigns, setCampaigns] = useState(initialCampaigns);
   const [selectedCampaignId, setSelectedCampaignId] = useState('');
   const [contactCount, setContactCount] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -14,9 +15,7 @@ export default function DedicatedSendCard() {
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduledDateTime, setScheduledDateTime] = useState('');
 
-  useEffect(() => {
-    loadCampaigns();
-  }, []);
+  // No initial fetch needed - data comes from server
 
   useEffect(() => {
     if (selectedCampaignId) {
@@ -25,15 +24,6 @@ export default function DedicatedSendCard() {
       setContactCount(null);
     }
   }, [selectedCampaignId]);
-
-  const loadCampaigns = async () => {
-    try {
-      const data = await getDedicatedSendCampaigns();
-      setCampaigns(data);
-    } catch (error) {
-      console.error('Error loading campaigns:', error);
-    }
-  };
 
   const loadContactCount = async (campaignId) => {
     try {

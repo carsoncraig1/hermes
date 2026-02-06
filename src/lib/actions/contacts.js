@@ -748,3 +748,30 @@ export async function getNetContactGrowth(timeRange = 'today') {
     throw new Error('Failed to get net contact growth');
   }
 }
+
+/**
+ * Get unique contact sources (optimized - uses distinct query instead of fetching all contacts)
+ */
+export async function getContactSources() {
+  try {
+    const userId = await getUserId();
+    
+    // OPTIMIZED: Use findMany with distinct instead of fetching all contacts
+    const contacts = await prisma.contact.findMany({
+      where: { 
+        userId,
+        source: { not: null }
+      },
+      select: { source: true },
+      distinct: ['source']
+    });
+    
+    return contacts
+      .map(c => c.source)
+      .filter(Boolean)
+      .sort();
+  } catch (error) {
+    console.error('Error getting contact sources:', error);
+    throw new Error('Failed to get contact sources');
+  }
+}

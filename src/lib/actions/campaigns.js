@@ -540,50 +540,82 @@ export async function getCampaigns() {
   try {
     const userId = await getUserId()
     
-    const campaigns = await prisma.campaign.findMany({
-      where: { userId },
-      include: {
-        targets: {
-          include: {
-            tag: true
+    // OPTIMIZED: Fetch campaigns without ALL messages - use _count and separate aggregate queries
+    const [campaigns, messageStatsByCampaign, costByCampaign] = await Promise.all([
+      // Get campaigns with targets and shortlinks (no messages)
+      prisma.campaign.findMany({
+        where: { userId },
+        include: {
+          targets: {
+            include: {
+              tag: true
+            }
+          },
+          shortlinks: true,
+          _count: {
+            select: { messages: true }
           }
         },
-        shortlinks: true,
-        messages: {
-          select: {
-            status: true,
-            costAmount: true
-          }
+        orderBy: {
+          createdAt: 'desc'
         }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    })
-    
-    // Calculate delivery stats for each campaign
-    return campaigns.map(campaign => {
-      const messages = campaign.messages || []
-      const total = messages.length
-      const delivered = messages.filter(m => m.status === 'delivered').length
-      const failed = messages.filter(m => 
-        m.status === 'sending_failed' || m.status === 'delivery_failed'
-      ).length
-      const sent = messages.filter(m => m.status === 'sent').length
-      const queued = messages.filter(m => m.status === 'queued' || m.status === 'sending').length
+      }),
       
-      const totalCost = messages.reduce((sum, m) => {
-        return sum + (m.costAmount ? parseFloat(m.costAmount.toString()) : 0)
-      }, 0)
+      // Get message counts by campaign and status
+      prisma.message.groupBy({
+        by: ['campaignId', 'status'],
+        where: {
+          userId,
+          campaignId: { not: null }
+        },
+        _count: true
+      }),
+      
+      // Get cost by campaign (delivered only)
+      prisma.message.groupBy({
+        by: ['campaignId'],
+        where: {
+          userId,
+          campaignId: { not: null },
+          status: 'delivered'
+        },
+        _sum: { costAmount: true }
+      })
+    ]);
+    
+    // Build lookup maps for O(1) access
+    const statsMap = new Map();
+    messageStatsByCampaign.forEach(stat => {
+      if (!stat.campaignId) return;
+      if (!statsMap.has(stat.campaignId)) {
+        statsMap.set(stat.campaignId, { total: 0, delivered: 0, failed: 0, sent: 0, queued: 0 });
+      }
+      const entry = statsMap.get(stat.campaignId);
+      entry.total += stat._count;
+      if (stat.status === 'delivered') entry.delivered = stat._count;
+      else if (stat.status === 'sending_failed' || stat.status === 'delivery_failed') {
+        entry.failed += stat._count;
+      }
+      else if (stat.status === 'sent') entry.sent = stat._count;
+      else if (stat.status === 'queued' || stat.status === 'sending') {
+        entry.queued += stat._count;
+      }
+    });
+    
+    const costMap = new Map();
+    costByCampaign.forEach(stat => {
+      if (stat.campaignId) {
+        costMap.set(stat.campaignId, stat._sum?.costAmount ? parseFloat(stat._sum.costAmount.toString()) : 0);
+      }
+    });
+    
+    // Calculate delivery stats for each campaign using pre-computed maps
+    return campaigns.map(campaign => {
+      const stats = statsMap.get(campaign.id) || { total: 0, delivered: 0, failed: 0, sent: 0, queued: 0 };
+      const totalCost = costMap.get(campaign.id) || 0;
       
       // Convert Decimal to number to avoid client component warnings
       const totalRevenue = campaign.totalRevenue ? parseFloat(campaign.totalRevenue.toString()) : 0;
-      
-      // Convert messages array to remove Decimal objects
-      const messagesClean = messages.map(m => ({
-        ...m,
-        costAmount: m.costAmount ? parseFloat(m.costAmount.toString()) : null
-      }))
       
       return {
         id: campaign.id,
@@ -593,20 +625,20 @@ export async function getCampaigns() {
         workflow: campaign.workflow,
         enabled: campaign.enabled,
         messagesSent: campaign.messagesSent,
-        totalRevenue: totalRevenue, // Converted to number
+        totalRevenue: totalRevenue,
         lastMessageSent: campaign.lastMessageSent,
         createdAt: campaign.createdAt,
         updatedAt: campaign.updatedAt,
         targets: campaign.targets,
         shortlinks: campaign.shortlinks,
-        messages: messagesClean, // Include cleaned messages array
+        messages: [], // No longer fetching all messages - use deliveryStats instead
         deliveryStats: {
-          total,
-          delivered,
-          failed,
-          sent,
-          queued,
-          deliveryRate: total > 0 ? (delivered / total) * 100 : 0,
+          total: stats.total,
+          delivered: stats.delivered,
+          failed: stats.failed,
+          sent: stats.sent,
+          queued: stats.queued,
+          deliveryRate: stats.total > 0 ? (stats.delivered / stats.total) * 100 : 0,
           totalCost: parseFloat(totalCost.toFixed(4))
         }
       }

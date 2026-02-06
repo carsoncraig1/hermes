@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getWorkflowCampaigns, getContactsForManualFire, executeManualFire } from '@/lib/actions/campaigns';
+import { getContactsForManualFire, executeManualFire } from '@/lib/actions/campaigns';
 import { getTags } from '@/lib/actions/tags';
-import { getContacts } from '@/lib/actions/contacts';
+import { getContactSources } from '@/lib/actions/contacts';
 import styles from './ManualFireCard.module.css';
 
-export default function ManualFireCard() {
-  const [campaigns, setCampaigns] = useState([]);
+export default function ManualFireCard({ initialCampaigns = [] }) {
+  // OPTIMIZED: Use pre-fetched campaigns from server
+  const [campaigns, setCampaigns] = useState(initialCampaigns);
   const [selectedCampaignId, setSelectedCampaignId] = useState('');
   const [contactCount, setContactCount] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -21,8 +22,8 @@ export default function ManualFireCard() {
   const [availableTags, setAvailableTags] = useState([]);
   const [availableSources, setAvailableSources] = useState([]);
 
+  // Only load tags and sources (campaigns already pre-fetched)
   useEffect(() => {
-    loadCampaigns();
     loadTags();
     loadSources();
   }, []);
@@ -35,15 +36,6 @@ export default function ManualFireCard() {
     }
   }, [selectedCampaignId, targetAllSubscribed, selectedTags, selectedSources]);
 
-  const loadCampaigns = async () => {
-    try {
-      const data = await getWorkflowCampaigns();
-      setCampaigns(data);
-    } catch (error) {
-      console.error('Error loading campaigns:', error);
-    }
-  };
-
   const loadTags = async () => {
     try {
       const tags = await getTags();
@@ -55,9 +47,9 @@ export default function ManualFireCard() {
 
   const loadSources = async () => {
     try {
-      const contacts = await getContacts();
-      const uniqueSources = [...new Set(contacts.map(c => c.source).filter(Boolean))].sort();
-      setAvailableSources(uniqueSources);
+      // OPTIMIZED: Use dedicated sources endpoint instead of fetching all contacts
+      const sources = await getContactSources();
+      setAvailableSources(sources);
     } catch (error) {
       console.error('Error loading sources:', error);
     }

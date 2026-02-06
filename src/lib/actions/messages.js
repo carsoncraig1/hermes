@@ -12,13 +12,16 @@ async function getUserId() {
 }
 
 /**
- * Get all messages for the current user
- * @param {Object} filters - Optional filters (status, campaignId, contactId, dateRange, search)
- * @returns {Promise<Array>} - Array of messages
+ * Get messages for the current user with pagination
+ * OPTIMIZED: Uses pagination to avoid loading all messages at once
+ * @param {Object} filters - Optional filters (status, campaignId, contactId, dateRange, search, page, pageSize)
+ * @returns {Promise<Object>} - { messages: Array, total: number, page: number, pageSize: number, totalPages: number }
  */
 export async function getMessages(filters = {}) {
   try {
     const userId = await getUserId();
+    const page = filters.page || 0;
+    const pageSize = filters.pageSize || 50; // Default to 50 for better performance
     
     const where = {
       userId,
@@ -41,40 +44,48 @@ export async function getMessages(filters = {}) {
       })
     };
 
-    const messages = await prisma.message.findMany({
-      where,
-      include: {
-        contact: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phone: true
+    // OPTIMIZED: Run count and fetch in parallel
+    const [messages, total] = await Promise.all([
+      prisma.message.findMany({
+        where,
+        include: {
+          contact: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phone: true
+            }
+          },
+          campaign: {
+            select: {
+              id: true,
+              name: true
+            }
           }
         },
-        campaign: {
-          select: {
-            id: true,
-            name: true,
-            totalRevenue: true // Include totalRevenue for potential display
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      },
-      take: filters.limit || 1000
-    });
+        orderBy: {
+          createdAt: 'desc'
+        },
+        skip: page * pageSize,
+        take: pageSize
+      }),
+      prisma.message.count({ where })
+    ]);
 
     // Convert Decimal fields to numbers to avoid client component warnings
-    return messages.map(message => ({
+    const messagesClean = messages.map(message => ({
       ...message,
-      costAmount: message.costAmount ? parseFloat(message.costAmount.toString()) : null,
-      campaign: message.campaign ? {
-        ...message.campaign,
-        totalRevenue: message.campaign.totalRevenue ? parseFloat(message.campaign.totalRevenue.toString()) : null
-      } : null
+      costAmount: message.costAmount ? parseFloat(message.costAmount.toString()) : null
     }));
+    
+    return {
+      messages: messagesClean,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize)
+    };
   } catch (error) {
     console.error('Error fetching messages:', error);
     throw error;

@@ -5,8 +5,9 @@ import MessagesTable from './components/MessagesTable';
 export const dynamic = 'force-dynamic';
 
 export default async function Messages() {
+  // OPTIMIZED: Only load first page (50 messages) instead of 1000
   const [initialMessages, initialStats] = await Promise.all([
-    getMessages(),
+    getMessages({ page: 0, pageSize: 50 }),
     getMessageStats()
   ]);
 

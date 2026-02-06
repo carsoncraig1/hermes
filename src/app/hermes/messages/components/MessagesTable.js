@@ -8,13 +8,19 @@ import ConversationDetail from './ConversationDetail';
 import styles from './MessagesTable.module.css';
 
 export default function MessagesTable({ initialMessages, initialStats }) {
-  const [messages, setMessages] = useState(initialMessages || []);
+  // OPTIMIZED: Handle paginated response format
+  const [messages, setMessages] = useState(initialMessages?.messages || initialMessages || []);
   const [stats, setStats] = useState(initialStats || {});
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [directionFilter, setDirectionFilter] = useState('all');
   const [selectedConversationId, setSelectedConversationId] = useState(null);
+  
+  // Pagination state
+  const [page, setPage] = useState(initialMessages?.page || 0);
+  const [totalPages, setTotalPages] = useState(initialMessages?.totalPages || 1);
+  const [total, setTotal] = useState(initialMessages?.total || messages.length);
 
   // Auto-select first conversation if none selected
   const conversations = useMemo(() => {
@@ -27,15 +33,39 @@ export default function MessagesTable({ initialMessages, initialStats }) {
     }
   }, [conversations, selectedConversationId]);
 
+  const loadPage = async (newPage, filters = {}) => {
+    setLoading(true);
+    try {
+      const result = await getMessages({
+        page: newPage,
+        pageSize: 50,
+        ...(statusFilter !== 'all' && { status: statusFilter }),
+        ...(directionFilter !== 'all' && { direction: directionFilter }),
+        ...(searchQuery && { search: searchQuery }),
+        ...filters
+      });
+      setMessages(result.messages);
+      setPage(result.page);
+      setTotalPages(result.totalPages);
+      setTotal(result.total);
+    } catch (error) {
+      console.error('Error loading messages:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSync = async () => {
     setLoading(true);
     try {
-      const [freshMessages, freshStats] = await Promise.all([
-        getMessages(),
+      const [freshResult, freshStats] = await Promise.all([
+        getMessages({ page: 0, pageSize: 50 }),
         getMessageStats()
       ]);
-      setMessages(freshMessages);
-      setFilteredMessages(freshMessages);
+      setMessages(freshResult.messages);
+      setPage(freshResult.page);
+      setTotalPages(freshResult.totalPages);
+      setTotal(freshResult.total);
       setStats(freshStats);
     } catch (error) {
       console.error('Error syncing messages:', error);
@@ -43,6 +73,17 @@ export default function MessagesTable({ initialMessages, initialStats }) {
       setLoading(false);
     }
   };
+  
+  // Handle filter changes
+  useEffect(() => {
+    // Debounce search
+    const timeoutId = setTimeout(() => {
+      if (statusFilter !== 'all' || directionFilter !== 'all' || searchQuery) {
+        loadPage(0);
+      }
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [statusFilter, directionFilter, searchQuery]);
 
   if (loading && messages.length === 0) {
     return <div className={styles.loading}>Loading messages...</div>;
@@ -121,6 +162,29 @@ export default function MessagesTable({ initialMessages, initialStats }) {
             statusFilter={statusFilter}
             directionFilter={directionFilter}
           />
+          
+          {/* Pagination controls */}
+          {totalPages > 1 && (
+            <div className={styles.pagination}>
+              <button
+                onClick={() => loadPage(page - 1)}
+                disabled={page === 0 || loading}
+                className={styles.paginationButton}
+              >
+                ← Prev
+              </button>
+              <span className={styles.paginationInfo}>
+                Page {page + 1} of {totalPages} ({total} total)
+              </span>
+              <button
+                onClick={() => loadPage(page + 1)}
+                disabled={page >= totalPages - 1 || loading}
+                className={styles.paginationButton}
+              >
+                Next →
+              </button>
+            </div>
+          )}
         </div>
         <div className={styles.conversationMain}>
           <ConversationDetail

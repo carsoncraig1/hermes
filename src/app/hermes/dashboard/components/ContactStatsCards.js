@@ -1,23 +1,20 @@
 'use client';
 
-import { useState, useEffect, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { getNetContactGrowth, getNewContactsCount, getUnsubscribedContactsCount } from '@/lib/actions/contacts';
 import styles from './ContactStatsCards.module.css';
 
-export default function ContactStatsCards({ initialSubscribedCount }) {
-  const [subscribedCount, setSubscribedCount] = useState(initialSubscribedCount);
-  const [netGrowth, setNetGrowth] = useState(null);
-  const [newContacts, setNewContacts] = useState(null);
-  const [unsubscribed, setUnsubscribed] = useState(null);
+export default function ContactStatsCards({ initialData }) {
+  // OPTIMIZED: Use pre-fetched data from server instead of client-side fetch
+  const [subscribedCount] = useState(initialData?.subscribedCount ?? 0);
+  const [netGrowth, setNetGrowth] = useState(initialData?.netGrowth ?? null);
+  const [newContacts, setNewContacts] = useState(initialData?.newContactsCount ?? null);
+  const [unsubscribed, setUnsubscribed] = useState(initialData?.unsubscribedCount ?? null);
   const [timeRange, setTimeRange] = useState('today');
   const [isPending, startTransition] = useTransition();
   const [loading, setLoading] = useState(false);
 
-  // Load initial data for time-based stats
-  useEffect(() => {
-    loadTimeRangeStats(timeRange);
-  }, []);
-
+  // Only fetch on time range change (not on initial load - data comes from server)
   const loadTimeRangeStats = async (range) => {
     setLoading(true);
     try {

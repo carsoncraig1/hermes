@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { getAnalytics, getCampaignDeliveryStatus } from '@/lib/actions/analytics';
+import { useState } from 'react';
+import { getAnalyticsOptimized } from '@/lib/actions/dashboard';
 import styles from './AnalyticsDashboard.module.css';
 
-export default function AnalyticsDashboard() {
-  const [analytics, setAnalytics] = useState(null);
-  const [campaignStatus, setCampaignStatus] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default function AnalyticsDashboard({ initialAnalytics }) {
+  // OPTIMIZED: Use pre-fetched data from server
+  const [analytics, setAnalytics] = useState(initialAnalytics || null);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [dateRange, setDateRange] = useState('today');
   const [customDateRange, setCustomDateRange] = useState(false);
@@ -20,10 +20,7 @@ export default function AnalyticsDashboard() {
     return new Date().toISOString().split('T')[0];
   });
 
-  useEffect(() => {
-    loadAnalytics();
-  }, [dateRange, startDate, endDate, customDateRange]);
-
+  // Only fetch when user changes date range (not on initial load)
   const loadAnalytics = async (isRefresh = false) => {
     if (isRefresh) {
       setRefreshing(true);
@@ -31,56 +28,22 @@ export default function AnalyticsDashboard() {
       setLoading(true);
     }
     try {
-      let start, end;
-      
-      if (customDateRange) {
-        start = new Date(startDate);
-        end = new Date(endDate + 'T23:59:59');
-      } else {
-        end = new Date();
-        start = new Date();
-        
-        switch (dateRange) {
-          case 'today':
-            start.setHours(0, 0, 0, 0);
-            break;
-          case '3d':
-            start.setDate(end.getDate() - 3);
-            start.setHours(0, 0, 0, 0);
-            break;
-          case '7d':
-            start.setDate(end.getDate() - 7);
-            break;
-          case '30d':
-            start.setDate(end.getDate() - 30);
-            break;
-          case '90d':
-            start.setDate(end.getDate() - 90);
-            break;
-          case 'all':
-            start.setFullYear(2020);
-            break;
-        }
-      }
-
-      const [analyticsData, campaignData] = await Promise.all([
-        getAnalytics({
-          dateRange: {
-            start,
-            end
-          }
-        }),
-        getCampaignDeliveryStatus()
-      ]);
-
+      // Use optimized aggregate query
+      const analyticsData = await getAnalyticsOptimized(dateRange);
       setAnalytics(analyticsData);
-      setCampaignStatus(campaignData);
     } catch (error) {
       console.error('Error loading analytics:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
+  };
+  
+  // Handle date range changes
+  const handleDateRangeChange = (newRange) => {
+    setDateRange(newRange);
+    setCustomDateRange(false);
+    loadAnalytics();
   };
 
   const handleRefresh = () => {
@@ -119,10 +82,7 @@ export default function AnalyticsDashboard() {
           {!customDateRange ? (
             <select 
               value={dateRange} 
-              onChange={(e) => {
-                setDateRange(e.target.value);
-                setCustomDateRange(false);
-              }}
+              onChange={(e) => handleDateRangeChange(e.target.value)}
               className={styles.dateRangeSelect}
             >
               <option value="today">Today</option>

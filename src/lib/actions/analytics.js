@@ -13,6 +13,7 @@ async function getUserId() {
 
 /**
  * Get comprehensive analytics data
+ * OPTIMIZED: Uses aggregate queries instead of fetching all records
  * @param {Object} filters - Filters (dateRange, campaignId, shortlinkId, groupBy)
  * @returns {Promise<Object>} - Analytics data
  */
@@ -30,114 +31,144 @@ export async function getAnalytics(filters = {}) {
     const campaignFilter = filters.campaignId ? { campaignId: parseInt(filters.campaignId, 10) } : {};
     const shortlinkFilter = filters.shortlinkId ? { shortlinkId: parseInt(filters.shortlinkId, 10) } : {};
 
-    // Get revenue events
-    const revenueEvents = await prisma.revenueEvent.findMany({
-      where: {
-        userId,
-        ...dateFilter,
-        ...campaignFilter,
-        ...shortlinkFilter
-      },
-      include: {
-        campaign: {
-          select: {
-            id: true,
-            name: true
-          }
+    // OPTIMIZED: Run all queries in parallel using aggregates where possible
+    const [
+      // Revenue aggregate
+      revenueAggregate,
+      revenueCount,
+      
+      // Message stats by status (single groupBy query)
+      messageStats,
+      
+      // Cost aggregate (only delivered messages)
+      costAggregate,
+      
+      // Shortlink aggregates
+      shortlinkStats,
+      shortlinkCount,
+      
+      // Only fetch recent revenue events for display (limited to 50)
+      recentRevenueEvents
+    ] = await Promise.all([
+      // Total revenue
+      prisma.revenueEvent.aggregate({
+        where: {
+          userId,
+          ...dateFilter,
+          ...campaignFilter,
+          ...shortlinkFilter
         },
-        shortlink: {
-          select: {
-            id: true,
-            nickname: true
-          }
+        _sum: { payout: true }
+      }),
+      
+      // Revenue event count
+      prisma.revenueEvent.count({
+        where: {
+          userId,
+          ...dateFilter,
+          ...campaignFilter,
+          ...shortlinkFilter
         }
-      },
-      orderBy: {
-        createdAt: 'desc'
+      }),
+      
+      // Message counts by status (single query instead of fetching all)
+      prisma.message.groupBy({
+        by: ['status'],
+        where: {
+          userId,
+          direction: 'outbound',
+          ...dateFilter,
+          ...(filters.campaignId && { campaignId: parseInt(filters.campaignId, 10) })
+        },
+        _count: true
+      }),
+      
+      // Total cost (delivered messages only)
+      prisma.message.aggregate({
+        where: {
+          userId,
+          direction: 'outbound',
+          status: 'delivered',
+          ...dateFilter,
+          ...(filters.campaignId && { campaignId: parseInt(filters.campaignId, 10) })
+        },
+        _sum: { costAmount: true }
+      }),
+      
+      // Shortlink click/open totals
+      prisma.shortlink.aggregate({
+        where: {
+          userId,
+          ...(filters.shortlinkId && { id: parseInt(filters.shortlinkId, 10) })
+        },
+        _sum: { clicks: true, opens: true }
+      }),
+      
+      // Shortlink count
+      prisma.shortlink.count({
+        where: {
+          userId,
+          ...(filters.shortlinkId && { id: parseInt(filters.shortlinkId, 10) })
+        }
+      }),
+      
+      // Recent revenue events (limited for display)
+      prisma.revenueEvent.findMany({
+        where: {
+          userId,
+          ...dateFilter,
+          ...campaignFilter,
+          ...shortlinkFilter
+        },
+        include: {
+          campaign: { select: { id: true, name: true } },
+          shortlink: { select: { id: true, nickname: true } }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50
+      })
+    ]);
+
+    // Process message stats from groupBy
+    let totalMessages = 0;
+    let deliveredMessages = 0;
+    let failedMessages = 0;
+    let sentMessages = 0;
+    let queuedMessages = 0;
+    
+    messageStats.forEach(stat => {
+      totalMessages += stat._count;
+      if (stat.status === 'delivered') deliveredMessages = stat._count;
+      else if (stat.status === 'sending_failed' || stat.status === 'delivery_failed') {
+        failedMessages += stat._count;
+      }
+      else if (stat.status === 'sent') sentMessages = stat._count;
+      else if (stat.status === 'queued' || stat.status === 'sending') {
+        queuedMessages += stat._count;
       }
     });
 
-    // Get messages for cost calculation - only fetch delivered messages for cost
-    // Telnyx only bills for messages that are successfully delivered to the recipient
-    // sent and delivery_unconfirmed may have costs in webhooks but Telnyx doesn't bill for them
-    const messagesForCost = await prisma.message.findMany({
-      where: {
-        userId,
-        direction: 'outbound',
-        status: 'delivered', // Only delivered messages are billed by Telnyx
-        ...dateFilter,
-        ...(filters.campaignId && { campaignId: parseInt(filters.campaignId, 10) })
-      },
-      select: {
-        costAmount: true,
-        campaignId: true,
-        status: true,
-        createdAt: true
-      }
-    });
-
-    // Get all messages for counting (including failed)
-    const allMessages = await prisma.message.findMany({
-      where: {
-        userId,
-        direction: 'outbound',
-        ...dateFilter,
-        ...(filters.campaignId && { campaignId: parseInt(filters.campaignId, 10) })
-      },
-      select: {
-        status: true,
-        createdAt: true
-      }
-    });
-
-    // Calculate totals
-    // Only count cost for messages that were actually sent/delivered (not failed)
-    const totalRevenue = revenueEvents.reduce((sum, event) => sum + parseFloat(event.payout.toString()), 0);
-    const totalCost = messagesForCost.reduce((sum, msg) => sum + (msg.costAmount ? parseFloat(msg.costAmount.toString()) : 0), 0);
+    // Calculate totals from aggregates
+    const totalRevenue = revenueAggregate._sum?.payout ? parseFloat(revenueAggregate._sum.payout.toString()) : 0;
+    const totalCost = costAggregate._sum?.costAmount ? parseFloat(costAggregate._sum.costAmount.toString()) : 0;
     const roas = totalCost > 0 ? (totalRevenue / totalCost) : 0;
     
-    // Count messages by status (only count delivered messages as delivered)
-    const totalMessages = allMessages.length;
-    const deliveredMessages = allMessages.filter(msg => msg.status === 'delivered').length;
-    const failedMessages = allMessages.filter(msg => 
-      msg.status === 'sending_failed' || msg.status === 'delivery_failed'
-    ).length;
-
-    // Get shortlink click data
-    const shortlinks = await prisma.shortlink.findMany({
-      where: {
-        userId,
-        ...(filters.shortlinkId && { id: parseInt(filters.shortlinkId, 10) })
-      },
-      select: {
-        id: true,
-        nickname: true,
-        clicks: true,
-        opens: true,
-        campaignId: true,
-        campaign: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
-
+    const totalClicks = shortlinkStats._sum?.clicks || 0;
+    const totalOpens = shortlinkStats._sum?.opens || 0;
+    const totalSends = totalMessages;
+    
     // Calculate additional metrics
-    const totalClicks = shortlinks.reduce((sum, s) => sum + s.clicks, 0);
-    const totalSends = totalMessages; // Total message sends
     const clickthroughRate = totalSends > 0 ? (totalClicks / totalSends) * 100 : 0;
-    const cpc = totalClicks > 0 ? (totalCost / totalClicks) : 0; // Cost per click
-    const epc = totalClicks > 0 ? (totalRevenue / totalClicks) : 0; // Earnings per click
-    const cvr = totalClicks > 0 ? ((revenueEvents.length / totalClicks) * 100) : 0; // Conversion rate
+    const cpc = totalClicks > 0 ? (totalCost / totalClicks) : 0;
+    const epc = totalClicks > 0 ? (totalRevenue / totalClicks) : 0;
+    const cvr = totalClicks > 0 ? ((revenueCount / totalClicks) * 100) : 0;
 
-    // Group by dimension if specified
+    // Group by dimension if specified (using the limited recent events)
     let groupedData = {};
-    if (filters.groupBy) {
+    if (filters.groupBy && recentRevenueEvents.length > 0) {
       if (filters.groupBy === 'campaign') {
         const campaignMap = new Map();
-        revenueEvents.forEach(event => {
+        recentRevenueEvents.forEach(event => {
           const key = event.campaignId ? `campaign_${event.campaignId}` : 'no_campaign';
           if (!campaignMap.has(key)) {
             campaignMap.set(key, {
@@ -153,7 +184,7 @@ export async function getAnalytics(filters = {}) {
         groupedData = Object.fromEntries(campaignMap);
       } else if (filters.groupBy === 'shortlink') {
         const shortlinkMap = new Map();
-        revenueEvents.forEach(event => {
+        recentRevenueEvents.forEach(event => {
           const key = event.shortlinkId ? `shortlink_${event.shortlinkId}` : 'no_shortlink';
           if (!shortlinkMap.has(key)) {
             shortlinkMap.set(key, {
@@ -169,14 +200,10 @@ export async function getAnalytics(filters = {}) {
         groupedData = Object.fromEntries(shortlinkMap);
       } else if (filters.groupBy === 'date') {
         const dateMap = new Map();
-        revenueEvents.forEach(event => {
+        recentRevenueEvents.forEach(event => {
           const date = new Date(event.createdAt).toISOString().split('T')[0];
           if (!dateMap.has(date)) {
-            dateMap.set(date, {
-              date,
-              revenue: 0,
-              events: 0
-            });
+            dateMap.set(date, { date, revenue: 0, events: 0 });
           }
           const group = dateMap.get(date);
           group.revenue += parseFloat(event.payout.toString());
@@ -186,36 +213,31 @@ export async function getAnalytics(filters = {}) {
       }
     }
 
-    // Convert Decimal fields to numbers to avoid client component warnings
-    const revenueEventsClean = revenueEvents.slice(0, 100).map(event => ({
+    // Convert Decimal fields for client
+    const revenueEventsClean = recentRevenueEvents.map(event => ({
       ...event,
       payout: parseFloat(event.payout.toString())
-    }));
-    
-    const messagesClean = messagesForCost.slice(0, 100).map(msg => ({
-      ...msg,
-      costAmount: msg.costAmount ? parseFloat(msg.costAmount.toString()) : null
     }));
 
     return {
       totalRevenue,
       totalCost,
       roas,
-      revenueEventCount: revenueEvents.length,
-      totalMessages: totalMessages,
-      deliveredMessages: deliveredMessages, // Only messages with status 'delivered'
-      failedMessages: failedMessages, // Messages that failed to send or deliver
-      shortlinks: shortlinks.length,
-      totalClicks: totalClicks,
-      totalOpens: shortlinks.reduce((sum, s) => sum + s.opens, 0),
-      totalSends: totalSends,
-      clickthroughRate: clickthroughRate,
-      cpc: cpc,
-      epc: epc,
-      cvr: cvr,
+      revenueEventCount: revenueCount,
+      totalMessages,
+      deliveredMessages,
+      failedMessages,
+      shortlinks: shortlinkCount,
+      totalClicks,
+      totalOpens,
+      totalSends,
+      clickthroughRate,
+      cpc,
+      epc,
+      cvr,
       groupedData,
-      revenueEvents: revenueEventsClean, // Converted Decimal fields
-      messages: messagesClean // Converted Decimal fields
+      revenueEvents: revenueEventsClean,
+      messages: [] // No longer fetching all messages - use aggregates
     };
   } catch (error) {
     console.error('Error fetching analytics:', error);
@@ -371,51 +393,85 @@ export async function getCampaignsWithROAS(filters = {}) {
 
 /**
  * Get campaign delivery status (for dashboard analytics)
+ * OPTIMIZED: Uses groupBy aggregate instead of fetching all messages
  * @returns {Promise<Array>} - Campaign delivery summaries
  */
 export async function getCampaignDeliveryStatus() {
   try {
     const userId = await getUserId();
     
-    const campaigns = await prisma.campaign.findMany({
-      where: { userId },
-      include: {
-        messages: {
-          select: {
-            status: true,
-            costAmount: true
-          }
+    // OPTIMIZED: Fetch campaigns without messages, then use groupBy for stats
+    const [campaigns, messageStatsByCampaign, costByCampaign] = await Promise.all([
+      // Get campaign list (lightweight)
+      prisma.campaign.findMany({
+        where: { userId },
+        select: {
+          id: true,
+          name: true
         }
+      }),
+      
+      // Get message counts by campaign and status
+      prisma.message.groupBy({
+        by: ['campaignId', 'status'],
+        where: {
+          userId,
+          campaignId: { not: null }
+        },
+        _count: true
+      }),
+      
+      // Get cost by campaign (delivered only)
+      prisma.message.groupBy({
+        by: ['campaignId'],
+        where: {
+          userId,
+          campaignId: { not: null },
+          status: 'delivered'
+        },
+        _sum: { costAmount: true }
+      })
+    ]);
+    
+    // Build lookup maps for O(1) access
+    const statsMap = new Map(); // campaignId -> { delivered: n, failed: n, ... }
+    messageStatsByCampaign.forEach(stat => {
+      if (!stat.campaignId) return;
+      if (!statsMap.has(stat.campaignId)) {
+        statsMap.set(stat.campaignId, { total: 0, delivered: 0, failed: 0, sent: 0, queued: 0 });
+      }
+      const entry = statsMap.get(stat.campaignId);
+      entry.total += stat._count;
+      if (stat.status === 'delivered') entry.delivered = stat._count;
+      else if (stat.status === 'sending_failed' || stat.status === 'delivery_failed') {
+        entry.failed += stat._count;
+      }
+      else if (stat.status === 'sent') entry.sent = stat._count;
+      else if (stat.status === 'queued' || stat.status === 'sending') {
+        entry.queued += stat._count;
+      }
+    });
+    
+    const costMap = new Map();
+    costByCampaign.forEach(stat => {
+      if (stat.campaignId) {
+        costMap.set(stat.campaignId, stat._sum?.costAmount ? parseFloat(stat._sum.costAmount.toString()) : 0);
       }
     });
     
     return campaigns.map(campaign => {
-      const messages = campaign.messages || [];
-      const total = messages.length;
-      const delivered = messages.filter(m => m.status === 'delivered').length;
-      const failed = messages.filter(m => 
-        m.status === 'sending_failed' || m.status === 'delivery_failed'
-      ).length;
-      const sent = messages.filter(m => m.status === 'sent').length;
-      const queued = messages.filter(m => m.status === 'queued' || m.status === 'sending').length;
-      
-      // Only count cost for delivered messages (Telnyx only bills for delivered)
-      // Filter by status AND ensure costAmount exists (defensive check)
-      const totalCost = messages
-        .filter(m => m.status === 'delivered' && m.costAmount)
-        .reduce((sum, m) => {
-          return sum + (m.costAmount ? parseFloat(m.costAmount) : 0);
-        }, 0);
+      const stats = statsMap.get(campaign.id) || { total: 0, delivered: 0, failed: 0, sent: 0, queued: 0 };
+      const totalCost = costMap.get(campaign.id) || 0;
       
       return {
         campaignId: campaign.id,
         campaignName: campaign.name,
-        total,
-        delivered,
-        failed,
-        sent,
-        queued,
-        deliveryRate: total > 0 ? (delivered / total) * 100 : 0,
+        total: stats.total,
+        delivered: stats.delivered,
+        failed: stats.failed,
+        sent: stats.sent,
+        queued: stats.queued,
+        deliveryRate: stats.total > 0 ? (stats.delivered / stats.total) * 100 : 0,
         totalCost: parseFloat(totalCost.toFixed(4))
       };
     });

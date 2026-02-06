@@ -4,16 +4,18 @@ import { useEffect, useState } from 'react'
 import { getLogs, clearLogs } from '@/lib/serverLogger'
 import styles from './ConsoleWindow.module.css'
 
-export default function ConsoleWindow({ compact = false }) {
-  const [logs, setLogs] = useState([])
+export default function ConsoleWindow({ compact = false, initialLogs = [] }) {
+  // OPTIMIZED: Use pre-fetched logs from server
+  const [logs, setLogs] = useState(initialLogs)
 
   useEffect(() => {
+    // Only poll for updates, don't fetch immediately (data already loaded)
     const fetchLogs = async () => {
       const serverLogs = await getLogs()
       setLogs(serverLogs)
     }
 
-    fetchLogs()
+    // Start polling after 5 seconds (initial data already present)
     const interval = setInterval(fetchLogs, 5000)
     return () => clearInterval(interval)
   }, [])

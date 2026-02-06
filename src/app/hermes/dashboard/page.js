@@ -1,4 +1,4 @@
-import { getSubscribedContactsCount } from '@/lib/actions/contacts';
+import { getDashboardData } from '@/lib/actions/dashboard';
 import DashboardHeader from './components/DashboardHeader';
 import ConsoleWindow from '../console/components/ConsoleWindow';
 import DedicatedSendCard from './components/DedicatedSendCard';
@@ -11,22 +11,34 @@ import './dashboard.css';
 export const dynamic = 'force-dynamic'
 
 export default async function Dashboard() {
-  const subscribedCount = await getSubscribedContactsCount();
+  // OPTIMIZED: Single server call fetches ALL dashboard data in parallel
+  const dashboardData = await getDashboardData('today');
 
   return (
     <div className="dashboard-container">
       <DashboardHeader />
       <div className="dashboard-content">
         <div className="main-content">
-          <ContactStatsCards initialSubscribedCount={subscribedCount} />
+          <ContactStatsCards 
+            initialData={dashboardData.contactStats}
+          />
           <div className="campaign-cards-container">
-            <DedicatedSendCard />
-            <ManualFireCard />
+            <DedicatedSendCard 
+              initialCampaigns={dashboardData.dedicatedSendCampaigns}
+            />
+            <ManualFireCard 
+              initialCampaigns={dashboardData.workflowCampaigns}
+            />
           </div>
-          <AnalyticsDashboard />
+          <AnalyticsDashboard 
+            initialAnalytics={dashboardData.analytics}
+          />
         </div>
         <div className="side-content">
-          <ConsoleWindow compact={true} />
+          <ConsoleWindow 
+            compact={true} 
+            initialLogs={dashboardData.logs}
+          />
         </div>
       </div>
     </div>
