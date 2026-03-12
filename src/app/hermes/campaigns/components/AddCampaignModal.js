@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { createCampaign, updateCampaign } from '@/lib/actions/campaigns'
 import { getTags } from '@/lib/actions/tags'
 import { getShortlinks } from '@/lib/actions/shortlinks'
+import { validateMessage, getSuggestedReplacement } from '@/lib/messageUtils'
 import styles from './AddCampaignModal.module.css'
 
 // Searchable Multi-Select Component
@@ -151,6 +152,7 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
   const [availableTags, setAvailableTags] = useState([])
   const [availableSources, setAvailableSources] = useState([])
   const [availableShortlinks, setAvailableShortlinks] = useState([])
+  const [optOutText, setOptOutText] = useState('')
   const [loading, setLoading] = useState(false)
 
   // Convert markers to URLs when loading campaign or when shortlinks are loaded
@@ -179,13 +181,17 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
   useEffect(() => {
     const loadData = async () => {
       try {
-        const tags = await getTags()
+        const [tags, shortlinks, optOutRes] = await Promise.all([
+          getTags(),
+          getShortlinks(),
+          fetch('/api/user/opt-out-text')
+        ])
         setAvailableTags(tags)
-        
-        const shortlinks = await getShortlinks()
         setAvailableShortlinks(shortlinks)
-        
-        // Get unique sources from contacts
+        if (optOutRes.ok) {
+          const { optOutText: text } = await optOutRes.json()
+          setOptOutText(text || '')
+        }
         const { getContacts } = await import('@/lib/actions/contacts')
         const contacts = await getContacts()
         const uniqueSources = [...new Set(contacts.map(c => c.source).filter(Boolean))].sort()
@@ -319,9 +325,44 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
                 }}
               />
             </div>
-            <div className={styles.charCount}>
-              Characters: {messageText.length}
-            </div>
+            {(() => {
+              const effectiveMessage = optOutText
+                ? `${messageText}${messageText ? '\n\n' : ''}${optOutText}`
+                : messageText
+              const validation = validateMessage(effectiveMessage)
+              const messageSuggestion = getSuggestedReplacement(messageText)
+              return (
+                <>
+                  <div className={styles.charCount}>
+                    {optOutText ? (
+                      <>Characters: {validation.characterCount} (message: {messageText.length} + opt-out: {optOutText.length + (messageText ? 2 : 0)})</>
+                    ) : (
+                      <>Characters: {validation.characterCount}</>
+                    )}
+                    {validation.parts > 0 && (
+                      <span> • Est. {validation.parts} part{validation.parts !== 1 ? 's' : ''}</span>
+                    )}
+                  </div>
+                  {validation.encodingWarning && (
+                    <div className={styles.encodingWarning}>
+                      <p><strong>Warning:</strong> {validation.encodingWarning}</p>
+                      {validation.nonGsmChars?.length > 0 && (
+                        <p>Non-GSM characters: {validation.nonGsmChars.map(c => `"${c}"`).join(', ')}</p>
+                      )}
+                      {messageSuggestion.hasReplacement && (
+                        <button
+                          type="button"
+                          className={styles.replaceButton}
+                          onClick={() => setMessageText(messageSuggestion.fixedText)}
+                        >
+                          Replace with ASCII equivalents
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
+              )
+            })()}
           </div>
 
           <div className={styles.formGroup}>

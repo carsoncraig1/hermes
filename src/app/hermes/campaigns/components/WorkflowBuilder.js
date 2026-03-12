@@ -15,6 +15,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { getShortlinks } from '@/lib/actions/shortlinks';
+import { validateMessage, getSuggestedReplacement } from '@/lib/messageUtils';
 import styles from './WorkflowBuilder.module.css';
 
 // Searchable Single-Select Component for Trigger Source
@@ -179,7 +180,7 @@ const TriggerNode = ({ data, selected, availableSources = [] }) => {
   );
 };
 
-const ActionNode = ({ data, selected, id, onDelete, availableShortlinks = [] }) => {
+const ActionNode = ({ data, selected, id, onDelete, availableShortlinks = [], optOutText = '' }) => {
   const handleShortlinkInsert = (e) => {
     e.stopPropagation();
     const shortlink = availableShortlinks.find(s => s.id === parseInt(e.target.value));
@@ -294,9 +295,48 @@ const ActionNode = ({ data, selected, id, onDelete, availableShortlinks = [] }) 
               }}
             />
           </div>
-          <div className={styles.charCount}>
-            Characters: {displayValue.length}
-          </div>
+          {(() => {
+            const rawMessage = data.message || '';
+            const effectiveMessage = optOutText
+              ? `${displayValue}${displayValue ? '\n\n' : ''}${optOutText}`
+              : displayValue;
+            const validation = validateMessage(effectiveMessage);
+            const messageSuggestion = getSuggestedReplacement(rawMessage);
+            return (
+              <>
+                <div className={styles.charCount}>
+                  {optOutText ? (
+                    <>Characters: {validation.characterCount} (message: {displayValue.length} + opt-out: {optOutText.length + (displayValue ? 2 : 0)})</>
+                  ) : (
+                    <>Characters: {validation.characterCount}</>
+                  )}
+                  {validation.parts > 0 && (
+                    <span> • Est. {validation.parts} part{validation.parts !== 1 ? 's' : ''}</span>
+                  )}
+                </div>
+                {validation.encodingWarning && (
+                  <div className={styles.encodingWarning}>
+                    <p><strong>Warning:</strong> {validation.encodingWarning}</p>
+                    {validation.nonGsmChars?.length > 0 && (
+                      <p>Non-GSM characters: {validation.nonGsmChars.map(c => `"${c}"`).join(', ')}</p>
+                    )}
+                    {messageSuggestion.hasReplacement && (
+                      <button
+                        type="button"
+                        className={styles.replaceButton}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          data.onChange?.('message', messageSuggestion.fixedText);
+                        }}
+                      >
+                        Replace with ASCII equivalents
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       </div>
       <Handle type="target" position={Position.Left} className={styles.nodeHandle} id="target" />
@@ -529,9 +569,9 @@ const DelayNode = ({ data, selected, id, onDelete }) => {
   );
 };
 
-const createNodeTypes = (onDelete, availableShortlinks = [], availableSources = []) => ({
+const createNodeTypes = (onDelete, availableShortlinks = [], availableSources = [], optOutText = '') => ({
   trigger: (props) => <TriggerNode {...props} availableSources={availableSources} />,
-  action: (props) => <ActionNode {...props} onDelete={onDelete} availableShortlinks={availableShortlinks} />,
+  action: (props) => <ActionNode {...props} onDelete={onDelete} availableShortlinks={availableShortlinks} optOutText={optOutText} />,
   segmentation: (props) => <SegmentationNode {...props} onDelete={onDelete} />,
   delay: (props) => <DelayNode {...props} onDelete={onDelete} />,
 });
@@ -546,6 +586,7 @@ const WorkflowBuilder = forwardRef(function WorkflowBuilder({ workflow, onSave, 
   const [editingNode, setEditingNode] = useState(null);
   const [availableShortlinks, setAvailableShortlinks] = useState([]);
   const [availableSources, setAvailableSources] = useState([]);
+  const [optOutText, setOptOutText] = useState('');
 
   useEffect(() => {
     const loadShortlinks = async () => {
@@ -571,6 +612,21 @@ const WorkflowBuilder = forwardRef(function WorkflowBuilder({ workflow, onSave, 
       }
     };
     loadSources();
+  }, []);
+
+  useEffect(() => {
+    const loadOptOut = async () => {
+      try {
+        const res = await fetch('/api/user/opt-out-text');
+        if (res.ok) {
+          const { optOutText: text } = await res.json();
+          setOptOutText(text || '');
+        }
+      } catch (error) {
+        console.error('Error loading opt-out text:', error);
+      }
+    };
+    loadOptOut();
   }, []);
 
   const handleDeleteNode = useCallback((nodeId) => {
@@ -717,7 +773,7 @@ const WorkflowBuilder = forwardRef(function WorkflowBuilder({ workflow, onSave, 
     getCurrentWorkflow,
   }));
 
-  const nodeTypes = useMemo(() => createNodeTypes(handleDeleteNode, availableShortlinks, availableSources), [handleDeleteNode, availableShortlinks, availableSources]);
+  const nodeTypes = useMemo(() => createNodeTypes(handleDeleteNode, availableShortlinks, availableSources, optOutText), [handleDeleteNode, availableShortlinks, availableSources, optOutText]);
 
   const workflowStats = useMemo(() => {
     const actionNodes = nodes.filter(n => n.type === 'action').length;

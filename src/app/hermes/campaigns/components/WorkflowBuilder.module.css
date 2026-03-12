@@ -739,3 +739,37 @@
   text-align: right;
 }
 
+.encodingWarning {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  color: #f59e0b;
+  font-size: 0.8125rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--border-radius-md);
+  margin-top: 0.5rem;
+}
+
+.encodingWarning p {
+  margin: 0 0 0.375rem 0;
+}
+
+.encodingWarning p:last-child {
+  margin-bottom: 0;
+}
+
+.replaceButton {
+  margin-top: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  color: #f59e0b;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.replaceButton:hover {
+  background: rgba(245, 158, 11, 0.3);
+}
+

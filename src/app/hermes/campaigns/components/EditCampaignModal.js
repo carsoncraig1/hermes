@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import { updateCampaign } from '@/lib/actions/campaigns'
 import { getTags } from '@/lib/actions/tags'
-import styles from './AddCampaignModal.module.css' // We can reuse the same styles
+import { validateMessage, getSuggestedReplacement } from '@/lib/messageUtils'
+import styles from './AddCampaignModal.module.css'
 
 export default function EditCampaignModal({ campaign, onClose, onUpdate }) {
   const [name, setName] = useState(campaign.name)
@@ -17,18 +18,26 @@ export default function EditCampaignModal({ campaign, onClose, onUpdate }) {
       .map(target => target.tagId)
   )
   const [availableTags, setAvailableTags] = useState([])
+  const [optOutText, setOptOutText] = useState('')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    const loadTags = async () => {
+    const loadData = async () => {
       try {
-        const tags = await getTags()
+        const [tags, optOutRes] = await Promise.all([
+          getTags(),
+          fetch('/api/user/opt-out-text')
+        ])
         setAvailableTags(tags)
+        if (optOutRes.ok) {
+          const { optOutText: text } = await optOutRes.json()
+          setOptOutText(text || '')
+        }
       } catch (error) {
-        console.error('Error loading tags:', error)
+        console.error('Error loading data:', error)
       }
     }
-    loadTags()
+    loadData()
   }, [])
 
   const handleSubmit = async (e) => {
@@ -87,9 +96,44 @@ export default function EditCampaignModal({ campaign, onClose, onUpdate }) {
               className={styles.textarea}
               rows={4}
             />
-            <div className={styles.charCount}>
-              Characters: {message.length}
-            </div>
+            {(() => {
+              const effectiveMessage = optOutText
+                ? `${message}${message ? '\n\n' : ''}${optOutText}`
+                : message
+              const validation = validateMessage(effectiveMessage)
+              const messageSuggestion = getSuggestedReplacement(message)
+              return (
+                <>
+                  <div className={styles.charCount}>
+                    {optOutText ? (
+                      <>Characters: {validation.characterCount} (message: {message.length} + opt-out: {optOutText.length + (message ? 2 : 0)})</>
+                    ) : (
+                      <>Characters: {validation.characterCount}</>
+                    )}
+                    {validation.parts > 0 && (
+                      <span> • Est. {validation.parts} part{validation.parts !== 1 ? 's' : ''}</span>
+                    )}
+                  </div>
+                  {validation.encodingWarning && (
+                    <div className={styles.encodingWarning}>
+                      <p><strong>Warning:</strong> {validation.encodingWarning}</p>
+                      {validation.nonGsmChars?.length > 0 && (
+                        <p>Non-GSM characters: {validation.nonGsmChars.map(c => `"${c}"`).join(', ')}</p>
+                      )}
+                      {messageSuggestion.hasReplacement && (
+                        <button
+                          type="button"
+                          className={styles.replaceButton}
+                          onClick={() => setMessage(messageSuggestion.fixedText)}
+                        >
+                          Replace with ASCII equivalents
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
+              )
+            })()}
           </div>
 
           <div className={styles.formGroup}>
