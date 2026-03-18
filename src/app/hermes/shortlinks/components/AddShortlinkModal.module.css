@@ -85,6 +85,17 @@ body:has(.sidebar.collapsed) .modalOverlay {
   background: var(--bg-tertiary);
 }
 
+.errorMessage {
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid var(--error);
+  border-radius: var(--border-radius-md);
+  color: var(--error);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
 .formGroup {
   margin-bottom: 1.25rem;
 }

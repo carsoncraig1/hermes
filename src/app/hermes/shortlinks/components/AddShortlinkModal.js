@@ -14,6 +14,7 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
   const [campaignId, setCampaignId] = useState('')
   const [campaigns, setCampaigns] = useState([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
   const [enabled, setEnabled] = useState(true) // For legacy shortlinks
   
   // OG Preview fields
@@ -82,6 +83,7 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
+    setError(null)
     
     try {
       // Validate scheduled redirect if enabled
@@ -126,9 +128,8 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
       
       onAdd(shortlink)
       onClose()
-    } catch (error) {
-      console.error('Error adding shortlink:', error)
-      alert(error.message || 'Failed to create shortlink')
+    } catch (err) {
+      setError(err.message || 'Failed to create shortlink')
     } finally {
       setLoading(false)
     }
@@ -147,20 +148,25 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
           <button
             type="button"
             className={`${styles.tab} ${type === 'dynamic' ? styles.activeTab : ''}`}
-            onClick={() => setType('dynamic')}
+            onClick={() => { setType('dynamic'); setError(null); }}
           >
             Dynamic
           </button>
           <button
             type="button"
             className={`${styles.tab} ${type === 'legacy' ? styles.activeTab : ''}`}
-            onClick={() => setType('legacy')}
+            onClick={() => { setType('legacy'); setError(null); }}
           >
             Legacy
           </button>
         </div>
 
         <form onSubmit={handleSubmit}>
+          {error && (
+            <div className={styles.errorMessage} role="alert">
+              {error}
+            </div>
+          )}
           {type === 'dynamic' ? (
             <>
               <div className={styles.formGroup}>
@@ -227,6 +233,7 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
                     onChange={(e) => {
                       const value = e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toLowerCase();
                       setSlug(value);
+                      if (error) setError(null);
                     }}
                     placeholder="abc"
                     className={styles.input}

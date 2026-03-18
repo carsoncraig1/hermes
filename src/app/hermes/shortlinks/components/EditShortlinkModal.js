@@ -14,6 +14,7 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
   const [campaignId, setCampaignId] = useState(shortlink.campaignId || '')
   const [campaigns, setCampaigns] = useState([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
   const [enabled, setEnabled] = useState(shortlink.enabled !== undefined ? shortlink.enabled : true)
   
   // OG Preview fields
@@ -82,6 +83,7 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
+    setError(null)
     
     try {
       // Validate scheduled redirect if enabled
@@ -126,9 +128,8 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
       
       onUpdate(updatedShortlink)
       onClose()
-    } catch (error) {
-      console.error('Error updating shortlink:', error)
-      alert(error.message || 'Failed to update shortlink')
+    } catch (err) {
+      setError(err.message || 'Failed to update shortlink')
     } finally {
       setLoading(false)
     }
@@ -154,6 +155,11 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
           <button onClick={onClose} className={styles.closeButton}>&times;</button>
         </div>
         <form onSubmit={handleSubmit}>
+          {error && (
+            <div className={styles.errorMessage} role="alert">
+              {error}
+            </div>
+          )}
           {isLegacy ? (
             <>
               <div className={styles.formGroup}>
@@ -164,6 +170,7 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate }) {
                   onChange={(e) => {
                     const value = e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toLowerCase();
                     setSlug(value);
+                    if (error) setError(null);
                   }}
                   placeholder="abc"
                   className={styles.input}

@@ -93,7 +93,10 @@ export async function addShortlink(data) {
     })
     return shortlink
   } catch (error) {
-    console.error('Error adding shortlink:', error)
+    const isSlugTaken = error.code === 'P2002' || (error.message && error.message.includes('already taken'))
+    if (!isSlugTaken) {
+      console.error('Error adding shortlink:', error)
+    }
     if (error.code === 'P2002') {
       throw new Error('This slug is already taken. Please choose a different one.')
     }
@@ -170,7 +173,10 @@ export async function updateShortlink({ id, nickname, slug, destination, enabled
     })
     return shortlink
   } catch (error) {
-    console.error('Error updating shortlink:', error)
+    const isSlugTaken = error.code === 'P2002' || (error.message && error.message.includes('already taken'))
+    if (!isSlugTaken) {
+      console.error('Error updating shortlink:', error)
+    }
     if (error.code === 'P2002') {
       throw new Error('This slug is already taken. Please choose a different one.')
     }
