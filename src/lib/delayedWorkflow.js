@@ -3,6 +3,8 @@
 import prisma from '@/lib/prisma'
 import { executeWorkflow } from '@/lib/workflow/executor'
 
+const STALE_DELAYED_ACTION_TIMEOUT_MS = 15 * 60 * 1000
+
 /**
  * Schedule a delayed workflow action
  * @param {Object} params - Action parameters
@@ -37,6 +39,7 @@ export async function scheduleDelayedWorkflowAction({
  * @returns {Promise<Array>} - Array of actions ready to execute
  */
 export async function getReadyDelayedActions(limit = 100) {
+  await recoverStaleDelayedActions()
   const now = new Date()
   
   return await prisma.delayedWorkflowAction.findMany({
@@ -52,6 +55,32 @@ export async function getReadyDelayedActions(limit = 100) {
       contact: true
     }
   })
+}
+
+/**
+ * Recover stale delayed actions stuck in processing
+ * @param {number} staleMs - Maximum processing age before recovery
+ * @returns {Promise<number>} - Number of actions recovered
+ */
+export async function recoverStaleDelayedActions(staleMs = STALE_DELAYED_ACTION_TIMEOUT_MS) {
+  const staleBefore = new Date(Date.now() - staleMs)
+  const result = await prisma.delayedWorkflowAction.updateMany({
+    where: {
+      status: 'processing',
+      updatedAt: { lte: staleBefore }
+    },
+    data: {
+      status: 'pending',
+      errorMessage: `Recovered stale processing action at ${new Date().toISOString()}`,
+      retryCount: { increment: 1 }
+    }
+  })
+
+  if (result.count > 0) {
+    console.warn(`Recovered ${result.count} stale delayed actions`)
+  }
+
+  return result.count
 }
 
 /**
@@ -96,14 +125,13 @@ export async function executeDelayedAction(actionId) {
       throw new Error(`Node ${action.currentNodeId} not found in workflow`)
     }
     
-    // Execute from this node onwards
-    // We need to modify the workflow to start from this node
-    // For now, we'll execute the full workflow but this could be optimized
+    // Resume from the delayed target node (do not replay trigger/previous nodes)
     await executeWorkflow(
       workflow,
       action.contact,
       action.userId,
-      action.campaignId
+      action.campaignId,
+      { startNodeId: action.currentNodeId }
     )
     
     // Mark as completed
@@ -127,13 +155,9 @@ export async function executeDelayedAction(actionId) {
 
 /**
  * Process all ready delayed actions (should be called periodically)
- * DISABLED: Automated delayed action processing is disabled - only manual sends are allowed
  */
 export async function processDelayedActions() {
   const actions = await getReadyDelayedActions(100)
-  // #region agent log
-  fetch('http://127.0.0.1:7914/ingest/e456b1d5-4367-4e1a-abc7-876a56bf30dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe3f2d'},body:JSON.stringify({sessionId:'fe3f2d',runId:'post-fix',hypothesisId:'H2',location:'src/lib/delayedWorkflow.js:136',message:'delayed actions fetched for processing',data:{readyActionsCount:actions.length},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   
   // Process in parallel with limit
   const BATCH_SIZE = 10
@@ -143,8 +167,5 @@ export async function processDelayedActions() {
       batch.map(action => executeDelayedAction(action.id))
     )
   }
-  // #region agent log
-  fetch('http://127.0.0.1:7914/ingest/e456b1d5-4367-4e1a-abc7-876a56bf30dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe3f2d'},body:JSON.stringify({sessionId:'fe3f2d',runId:'post-fix',hypothesisId:'H2',location:'src/lib/delayedWorkflow.js:147',message:'delayed actions processing loop complete',data:{processedBatches:Math.ceil(actions.length/BATCH_SIZE)},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
 }
 

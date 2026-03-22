@@ -12,8 +12,8 @@ const PAGE_SIZE = 1000 // Process 1000 contacts at a time
  * @param {number} pageSize - Number of contacts per page
  * @returns {Promise<{contacts: Array, hasMore: boolean, total: number}>}
  */
-export async function getCampaignContactsPaginated(campaignId, page = 0, pageSize = PAGE_SIZE) {
-  const userId = await getUserId()
+export async function getCampaignContactsPaginated(campaignId, page = 0, pageSize = PAGE_SIZE, executionUserId = null) {
+  const userId = await getUserId(executionUserId)
   
   // Ensure campaignId is an integer
   const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
@@ -118,9 +118,10 @@ export async function getCampaignContactsPaginated(campaignId, page = 0, pageSiz
 export async function getContactsForManualFirePaginated(
   { selectedTags = [], selectedSources = [], targetAllSubscribed = false },
   page = 0,
-  pageSize = PAGE_SIZE
+  pageSize = PAGE_SIZE,
+  executionUserId = null
 ) {
-  const userId = await getUserId()
+  const userId = await getUserId(executionUserId)
   
   const whereConditions = {
     userId,
@@ -190,7 +191,10 @@ export async function getContactsForManualFirePaginated(
   }
 }
 
-async function getUserId() {
+async function getUserId(executionUserId = null) {
+  if (executionUserId) {
+    return executionUserId
+  }
   const { auth } = await import('@/lib/auth')
   const session = await auth()
   if (!session?.user?.id) {

@@ -13,6 +13,10 @@ async function getUserId() {
   return session.user.id
 }
 
+async function resolveExecutionUserId(executionUserId = null) {
+  return executionUserId || getUserId()
+}
+
 // Helper function to extract shortlink IDs from message text
 // Looks for {{SHORTLINK:ID}} markers or txt.cx/shortlink-ID format
 function extractShortlinkIds(message) {
@@ -324,22 +328,27 @@ export async function getContactsForManualFire({ selectedTags = [], selectedSour
 }
 
 // Execute manual fire workflow (with job queue, pagination, retry, and batched stats)
-export async function executeManualFire(campaignId, { selectedTags = [], selectedSources = [], targetAllSubscribed = false }) {
-  const { createSendJob, updateSendJobProgress, completeSendJob, failSendJob } = await import('@/lib/sendJob')
+export async function executeManualFire(
+  campaignId,
+  { selectedTags = [], selectedSources = [], targetAllSubscribed = false },
+  existingJobId = null,
+  executionUserId = null
+) {
+  const { createSendJob, claimAndStartJob, updateSendJobProgress, completeSendJob, failSendJob, getSendJob } = await import('@/lib/sendJob')
   const { checkRateLimit } = await import('@/lib/actions/messages')
   const { incrementRateLimitCache } = await import('@/lib/rateLimitCache')
   const { retryWithBackoff, isRetryableError } = await import('@/lib/retry')
   const { getContactsForManualFirePaginated } = await import('@/lib/contactPagination')
   const { executeWorkflow } = await import('@/lib/workflow/executor')
   
-  let jobId = null
+  let jobId = existingJobId
   const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
   
   // Track sent contact IDs to prevent duplicates within this execution
   const sentContactIds = new Set()
   
   try {
-    const userId = await getUserId()
+    const userId = await resolveExecutionUserId(executionUserId)
     
     // Verify ownership and get campaign
     const campaign = await prisma.campaign.findFirst({
@@ -360,7 +369,8 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
     const firstPage = await getContactsForManualFirePaginated(
       { selectedTags, selectedSources, targetAllSubscribed },
       0,
-      1
+      1,
+      userId
     )
     
     if (firstPage.total === 0) {
@@ -371,24 +381,50 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
     const BATCH_SIZE = 20 // Match rate limit: 20 messages/second
     const totalBatches = Math.ceil(firstPage.total / BATCH_SIZE)
     
-    // Create job for tracking - startImmediately=true prevents cron from picking it up
-    const job = await createSendJob({
-      userId,
-      campaignId: campaignIdInt,
-      jobType: 'manual_fire',
-      totalContacts: firstPage.total,
-      totalBatches,
-      metadata: { selectedTags, selectedSources, targetAllSubscribed },
-      startImmediately: true // Start with 'processing' status to prevent race conditions
-    })
-    jobId = job.id
-    
-    await serverLog(
-      `Manual fire started: "${campaign.name}" to ${firstPage.total} contacts (Job: ${jobId})`,
-      'info',
-      { campaignId: campaignIdInt, campaignName: campaign.name, contactsCount: firstPage.total, jobId },
-      userId
-    ).catch(() => {})
+    if (jobId) {
+      const existingJob = await getSendJob(jobId)
+      if (!existingJob) throw new Error('Job not found')
+      if (existingJob.campaignId !== campaignIdInt) throw new Error('Job campaign ID mismatch')
+      if (existingJob.userId !== userId) throw new Error('Job user ID mismatch')
+
+      // ATOMIC: claim queued job to avoid duplicate workers
+      const claimed = await claimAndStartJob(jobId)
+      if (!claimed) {
+        console.log(`Job ${jobId} already claimed by another process, skipping`)
+        return {
+          success: true,
+          skipped: true,
+          reason: 'Job already being processed by another worker',
+          jobId
+        }
+      }
+
+      await serverLog(
+        `Scheduled manual fire started: "${campaign.name}" to ${firstPage.total} contacts (Job: ${jobId})`,
+        'info',
+        { campaignId: campaignIdInt, campaignName: campaign.name, contactsCount: firstPage.total, jobId },
+        userId
+      ).catch(() => {})
+    } else {
+      // Create job for tracking - startImmediately=true prevents cron from picking it up
+      const job = await createSendJob({
+        userId,
+        campaignId: campaignIdInt,
+        jobType: 'manual_fire',
+        totalContacts: firstPage.total,
+        totalBatches,
+        metadata: { selectedTags, selectedSources, targetAllSubscribed },
+        startImmediately: true // Start with 'processing' status to prevent race conditions
+      })
+      jobId = job.id
+
+      await serverLog(
+        `Manual fire started: "${campaign.name}" to ${firstPage.total} contacts (Job: ${jobId})`,
+        'info',
+        { campaignId: campaignIdInt, campaignName: campaign.name, contactsCount: firstPage.total, jobId },
+        userId
+      ).catch(() => {})
+    }
     
     let successCount = 0
     let failCount = 0
@@ -403,7 +439,8 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
       let { contacts, hasMore: more } = await getContactsForManualFirePaginated(
         { selectedTags, selectedSources, targetAllSubscribed },
         page,
-        1000 // Load 1000 contacts per page
+        1000, // Load 1000 contacts per page
+        userId
       )
       
       hasMore = more
@@ -1056,7 +1093,7 @@ export async function getCampaignContactCount(campaignId) {
 // @param {number|string} campaignId - Campaign ID
 // @param {Date|string|null} scheduledAt - Optional scheduled execution time (null = execute immediately)
 // @param {string|null} existingJobId - Optional existing job ID to use (for scheduled jobs processed by job processor)
-export async function executeDedicatedSend(campaignId, scheduledAt = null, existingJobId = null) {
+export async function executeDedicatedSend(campaignId, scheduledAt = null, existingJobId = null, executionUserId = null) {
   const { createSendJob, claimAndStartJob, updateSendJobProgress, completeSendJob, failSendJob, getSendJob } = await import('@/lib/sendJob')
   const { checkRateLimit } = await import('@/lib/actions/messages')
   const { incrementRateLimitCache } = await import('@/lib/rateLimitCache')
@@ -1071,7 +1108,7 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
   const sentContactIds = new Set()
   
   try {
-    const userId = await getUserId()
+    const userId = await resolveExecutionUserId(executionUserId)
     
     // Verify ownership and get campaign
     const campaign = await prisma.campaign.findFirst({
@@ -1090,7 +1127,7 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
     if (!campaign.message) throw new Error('Campaign has no message')
     
     // Get total contact count
-    const firstPage = await getCampaignContactsPaginated(campaignIdInt, 0, 1)
+    const firstPage = await getCampaignContactsPaginated(campaignIdInt, 0, 1, userId)
     if (firstPage.total === 0) {
       throw new Error('No contacts found for this campaign')
     }
@@ -1203,7 +1240,7 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
     let hasMore = true
     
     while (hasMore) {
-      let { contacts, hasMore: more } = await getCampaignContactsPaginated(campaignIdInt, page, 1000)
+      let { contacts, hasMore: more } = await getCampaignContactsPaginated(campaignIdInt, page, 1000, userId)
       hasMore = more
       
       // Filter valid contacts AND deduplicate (skip contacts already sent in this execution)

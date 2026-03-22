@@ -163,6 +163,22 @@ export async function processScheduledRedirects() {
     
     for (const scheduledRedirect of readyRedirects) {
       try {
+        // ATOMIC: claim redirect before mutating shortlink to avoid duplicate processors
+        const claimResult = await prisma.scheduledShortlinkRedirect.updateMany({
+          where: {
+            id: scheduledRedirect.id,
+            status: 'pending'
+          },
+          data: {
+            status: 'processing'
+          }
+        })
+
+        if (claimResult.count === 0) {
+          console.log(`Scheduled redirect ${scheduledRedirect.id} already claimed, skipping`)
+          continue
+        }
+
         // Update the shortlink destination
         await prisma.shortlink.update({
           where: { id: scheduledRedirect.shortlinkId },

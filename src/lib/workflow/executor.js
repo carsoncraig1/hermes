@@ -407,7 +407,8 @@ async function evaluateOpenCondition(contactId, userId, campaignId, value) {
 }
 
 // Execute a workflow for a contact
-export async function executeWorkflow(workflow, contact, userId, campaignId = null) {
+// options.startNodeId allows resuming from a specific node (used by delayed actions)
+export async function executeWorkflow(workflow, contact, userId, campaignId = null, options = {}) {
   if (!workflow || !workflow.nodes || !workflow.edges) {
     await serverLog(
       'Invalid workflow structure',
@@ -421,16 +422,21 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
 
   const { nodes, edges } = workflow;
 
-  // Find the trigger node (should be the starting point)
-  const triggerNode = nodes.find((node) => node.type === 'trigger');
-  if (!triggerNode) {
+  const startNodeId = options?.startNodeId || null;
+  const startNode = startNodeId
+    ? nodes.find((node) => node.id === startNodeId)
+    : nodes.find((node) => node.type === 'trigger');
+  if (!startNode) {
+    const errorMessage = startNodeId
+      ? `Start node ${startNodeId} not found in workflow`
+      : 'No trigger node found in workflow';
     await serverLog(
-      'No trigger node found in workflow',
+      errorMessage,
       'error',
       { campaignId, contactId: contact?.id },
       userId
     ).catch(() => {});
-    console.error('No trigger node found in workflow');
+    console.error(errorMessage);
     return;
   }
 
@@ -443,7 +449,8 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
       contactId: contact.id,
       contactPhone: contact.phone,
       nodesCount: nodes.length,
-      edgesCount: edges.length
+      edgesCount: edges.length,
+      startNodeId: startNode.id
     },
     userId
   ).catch(err => console.error('Error logging workflow start:', err));
@@ -638,8 +645,8 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
     }
   };
 
-  // Start processing from the trigger node
-  await processNode(triggerNode.id, 0);
+  // Start processing from trigger or explicit resume node
+  await processNode(startNode.id, 0);
 }
 
 // Trigger workflows for a new contact

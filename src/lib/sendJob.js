@@ -2,6 +2,8 @@
 
 import prisma from '@/lib/prisma'
 
+const STALE_JOB_TIMEOUT_MS = 15 * 60 * 1000
+
 /**
  * Create a new send job
  * @param {Object} params - Job parameters
@@ -151,6 +153,7 @@ export async function getSendJob(jobId) {
  * @returns {Promise<Array>} - Array of scheduled jobs ready to execute
  */
 export async function getPendingJobs(limit = 10) {
+  await recoverStaleSendJobs()
   const now = new Date()
   return await prisma.sendJob.findMany({
     where: {
@@ -168,6 +171,35 @@ export async function getPendingJobs(limit = 10) {
     ],
     take: limit
   })
+}
+
+/**
+ * Recover stale scheduled jobs stuck in processing
+ * Jobs are considered stale if they have been processing for too long
+ * @param {number} staleMs - Maximum processing age before recovery
+ * @returns {Promise<number>} - Number of jobs recovered
+ */
+export async function recoverStaleSendJobs(staleMs = STALE_JOB_TIMEOUT_MS) {
+  const staleBefore = new Date(Date.now() - staleMs)
+  const result = await prisma.sendJob.updateMany({
+    where: {
+      status: 'processing',
+      scheduledAt: { not: null }, // only scheduler-managed jobs
+      startedAt: { not: null, lte: staleBefore },
+      completedAt: null
+    },
+    data: {
+      status: 'pending',
+      startedAt: null,
+      errorMessage: `Recovered stale processing job at ${new Date().toISOString()}`
+    }
+  })
+
+  if (result.count > 0) {
+    console.warn(`Recovered ${result.count} stale send jobs`)
+  }
+
+  return result.count
 }
 
 /**
