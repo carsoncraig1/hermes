@@ -66,6 +66,8 @@ const INVALID_NUMBER_KEYWORDS = [
  */
 const TEMPORARY_ERROR_KEYWORDS = [
   'temporary',
+  'spam filter',
+  'blocked as spam - temporary',
   'retry',
   'rate limit',
   'timeout',
@@ -144,7 +146,20 @@ export function parseDeliveryError(errorMessage) {
 
   const errorText = buildErrorText(errorMessage);
 
-  // Check for carrier-level opt-out first
+  // Telnyx code 40002 is provider spam filtering and explicitly temporary.
+  // Never treat this as a permanent unsubscribe condition.
+  const hasTemporarySpamFilterCode = errorText.includes('40002');
+  if (hasTemporarySpamFilterCode) {
+    return {
+      isInvalidNumber: false,
+      isCarrierOptOut: false,
+      isTemporary: true,
+      reason: 'temporary_error',
+      confidence: 'high'
+    };
+  }
+
+  // Check for carrier-level opt-out
   const isCarrierOptOut = CARRIER_OPT_OUT_KEYWORDS.some((keyword) =>
     errorText.includes(keyword)
   );

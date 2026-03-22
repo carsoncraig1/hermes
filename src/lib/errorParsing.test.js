@@ -32,6 +32,17 @@ describe('errorParsing', () => {
     expect(reason).toBeNull();
   });
 
+  it('does not classify Telnyx 40002 spam filter as permanent unsubscribe', () => {
+    const reason = getPermanentUnsubscribeReason([
+      {
+        code: '40002',
+        detail: 'The message was flagged by a SPAM filter and was not delivered. This is a temporary condition.',
+        title: 'Blocked as spam - temporary'
+      },
+    ]);
+    expect(reason).toBeNull();
+  });
+
   it('gates webhook unsubscribe by failure status only', () => {
     const reason = getUnsubscribeReason('delivered', [
       { detail: 'The destination number is either a landline or a non-routable wireless number.' },
