@@ -30,6 +30,28 @@ function isBotRequest(userAgent) {
   )
 }
 
+// Paths and patterns that should NOT log "code not found" (browser assets, known routes, scanner probes)
+const KNOWN_PATHS = new Set([
+  'robots.txt', 'sitemap.xml', 'sitemap.txt', 'sitemaps.xml',
+  'hermes', 'api', 'favicon.ico', 'favicon.png', 'favicon.svg',
+  'apple-touch-icon.png', 'apple-touch-icon-precomposed.png',
+])
+const SCANNER_PATTERNS = [
+  /\.php$/i,           // WordPress/vulnerability scanners
+  /^wp-/,              // wp-login.php, wp-admin.php, etc.
+  /^(admin|config|install|setup|test)\d*\.php$/i,
+  /\.(env|bak|log|sql|zip)$/i,
+  /^(xmlrpc|atomlib|inputs|ioxi|rip|wso|alfa|shell|class-t\.api)\.php$/i,
+  /^(image|doc|mar|about|ws|content|cache|load|edit|file|wp-content)$/i, // Common scanner path fragments
+]
+function shouldSuppressNotFoundLog(code) {
+  if (!code || typeof code !== 'string') return true
+  const lower = code.toLowerCase()
+  if (KNOWN_PATHS.has(lower)) return true
+  if (SCANNER_PATTERNS.some(p => p.test(code))) return true
+  return false
+}
+
 function generateOgHtml(shortlink, destinationWithHrms, code) {
   const { ogImage, ogTitle, ogDescription } = shortlink
   const shortUrl = `https://txt.cx/${code}`
@@ -134,9 +156,8 @@ export async function GET(request, { params }) {
       })
       
       if (!shortlink) {
-        // Not found - hit fallback
-        const knownPaths = ['robots.txt', 'sitemap.xml', 'sitemap.txt', 'hermes', 'api', 'favicon.ico']
-        if (!knownPaths.includes(code)) {
+        // Not found - hit fallback (suppress log for known paths and scanner/browser noise)
+        if (!shouldSuppressNotFoundLog(code)) {
           console.log(`❌ Legacy shortlink not found: ${code}`)
         }
         redirect('https://lp.stockstotrade.com/algo-trader')
@@ -152,9 +173,8 @@ export async function GET(request, { params }) {
       messageClickCode = await lookupMessageClickCode(code);
       
       if (!messageClickCode) {
-        // Not found - hit fallback
-        const knownPaths = ['robots.txt', 'sitemap.xml', 'sitemap.txt', 'hermes', 'api', 'favicon.ico']
-        if (!knownPaths.includes(code)) {
+        // Not found - hit fallback (suppress log for known paths and scanner/browser noise)
+        if (!shouldSuppressNotFoundLog(code)) {
           console.log(`❌ Click code not found: ${code}`)
         }
         redirect('https://lp.stockstotrade.com/algo-trader')
