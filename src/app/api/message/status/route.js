@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { serverLog } from '@/lib/serverLogger';
 import { findRecentMessageForRecipient, updateMessageRecord } from '@/lib/actions/messages';
+import { trackSpamFilterEvent } from '@/lib/actions/spamTracking';
 import { getUnsubscribeReason } from '@/lib/errorParsing';
 
 const DEBUG_TELNYX_WEBHOOK = true;
@@ -18,12 +18,6 @@ function debugWebhook(label, payload) {
 function hasErrorCode(errors, code) {
   if (!Array.isArray(errors)) return false;
   return errors.some((err) => String(err?.code || '') === String(code));
-}
-
-function getMessagePreview(text, maxLength = 120) {
-  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
-  if (!normalized) return null;
-  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength)}...`;
 }
 
 /**
@@ -170,6 +164,7 @@ export async function POST(request) {
             });
 
             messageRecord = {
+              messageId: linkedMessage.id,
               contactId: linkedMessage.contactId,
               to: linkedMessage.to,
               errorMessage: linkedMessage.errorMessage,
@@ -209,6 +204,7 @@ export async function POST(request) {
           
           // Get contactId from the updated message record
           messageRecord = {
+            messageId: updatedMessage.id,
             contactId: updatedMessage.contactId,
             to: updatedMessage.to,
             errorMessage: updatedMessage.errorMessage,
@@ -231,35 +227,34 @@ export async function POST(request) {
     }
 
     if (isSpamFilter40002 && (status === 'sending_failed' || status === 'delivery_failed')) {
-      const campaignId = messageRecord?.campaignId || null;
-      const messagePreview = getMessagePreview(messageRecord?.text);
-      let campaignName = null;
-      if (campaignId) {
-        const campaign = await prisma.campaign.findUnique({
-          where: { id: campaignId },
-          select: { name: true }
-        }).catch(() => null);
-        campaignName = campaign?.name || null;
-      }
+      const firstError = errors.find(err => String(err?.code || '') === '40002') || null;
+      const toPayload = payload.to?.[0] || payload.to || {};
 
-      const campaignPart = campaignName ? `"${campaignName}"` : 'unknown campaign';
-      const spamMessage = `ALERT: Carrier spam filter (40002) for ${toNumber} in ${campaignPart}. Message failed temporarily; contact will NOT be auto-unsubscribed. Review message content.`;
-      console.warn(`⚠️ ${spamMessage}`);
-      await serverLog(
-        spamMessage,
-        'warn',
-        {
-          telnyxMessageId,
-          toNumber,
-          status,
-          code: '40002',
-          campaignId,
-          campaignName,
-          messagePreview,
-          errors
-        },
-        user.id
-      ).catch(() => {});
+      await trackSpamFilterEvent({
+        userId: user.id,
+        campaignId: messageRecord?.campaignId || null,
+        messageId: messageRecord?.messageId || null,
+        providerMessageId: telnyxMessageId,
+        fromNumber: payload.from?.phone_number || null,
+        toNumber: toNumber || null,
+        carrier: toPayload?.carrier || null,
+        lineType: toPayload?.line_type || null,
+        errorCode: '40002',
+        errorTitle: firstError?.title || null,
+        errorDetail: firstError?.detail || null,
+        occurredAt: body?.data?.occurred_at || completedAt || new Date().toISOString(),
+        rawPayload: payload
+      }).catch((error) => {
+        console.error('[Telnyx Webhook] Error tracking spam filter event:', error);
+      });
+
+      debugWebhook('spam-event-tracked', {
+        telnyxMessageId,
+        status,
+        toNumber,
+        campaignId: messageRecord?.campaignId || null,
+        messageId: messageRecord?.messageId || null
+      });
     }
 
     // Handle auto-unsubscribe on delivery failures

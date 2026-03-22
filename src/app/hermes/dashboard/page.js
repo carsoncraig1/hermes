@@ -5,6 +5,7 @@ import DedicatedSendCard from './components/DedicatedSendCard';
 import ManualFireCard from './components/ManualFireCard';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import ContactStatsCards from './components/ContactStatsCards';
+import SpamRateCard from './components/SpamRateCard';
 import './dashboard.css';
 
 // Force dynamic rendering to avoid build-time database calls
@@ -22,6 +23,7 @@ export default async function Dashboard() {
           <ContactStatsCards 
             initialData={dashboardData.contactStats}
           />
+          <SpamRateCard initialAnalytics={dashboardData.spamAnalytics} />
           <div className="campaign-cards-container">
             <DedicatedSendCard 
               initialCampaigns={dashboardData.dedicatedSendCampaigns}

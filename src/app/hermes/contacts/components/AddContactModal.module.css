@@ -13,6 +13,8 @@
   display: flex;
   justify-content: center;
   align-items: center;
+  padding: 1rem;
+  overflow-y: auto;
   z-index: 1000;
   animation: fadeIn 0.15s ease-out;
   transition: left var(--transition-normal);
@@ -33,9 +35,13 @@ body:has(.sidebar.collapsed) .modalOverlay {
   border-radius: var(--border-radius-lg);
   width: 100%;
   max-width: 480px;
+  max-height: 90vh;
   padding: 1.75rem;
+  display: flex;
+  flex-direction: column;
   box-shadow: var(--shadow-lg);
   animation: slideUp 0.2s ease-out;
+  overflow: hidden;
 }
 
 @keyframes slideUp {
@@ -87,6 +93,8 @@ body:has(.sidebar.collapsed) .modalOverlay {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .formGroup {

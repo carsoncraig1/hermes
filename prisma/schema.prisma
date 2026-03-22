@@ -44,6 +44,7 @@ model User {
   delayedWorkflowActions DelayedWorkflowAction[]
   rateLimitCache         RateLimitCache?
   scheduledShortlinkRedirects ScheduledShortlinkRedirect[]
+  spamFilterEvents       SpamFilterEvent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -151,6 +152,7 @@ model Campaign {
   lastMessageSent       DateTime?
   targets               CampaignTarget[] // Legacy targeting, kept for backward compatibility
   sendJobs              SendJob[]
+  spamFilterEvents      SpamFilterEvent[]
   createdAt             DateTime                @default(now())
   updatedAt             DateTime                @updatedAt
   DelayedWorkflowAction DelayedWorkflowAction[]
@@ -319,6 +321,7 @@ model Message {
   errorMessage      String?            @db.Text // Error message if failed
   messageClickCodes MessageClickCode[] // Click codes generated for shortlinks in this message
   shortlinkClicks   ShortlinkClick[] // Clicks on shortlinks in this message
+  spamFilterEvents  SpamFilterEvent[]
 
   @@index([userId, createdAt])
   @@index([contactId])
@@ -326,6 +329,35 @@ model Message {
   @@index([status])
   @@index([telnyxMessageId])
   @@map("messages")
+}
+
+model SpamFilterEvent {
+  id                Int       @id @default(autoincrement())
+  eventKey          String    @unique // Idempotency key (e.g. telnyxMessageId:errorCode)
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaignId        Int?
+  campaign          Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  messageId         String?
+  message           Message?  @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  providerMessageId String?
+  fromNumber        String?
+  toNumber          String?
+  carrier           String?
+  lineType          String?
+  errorCode         String
+  errorTitle        String?
+  errorDetail       String?   @db.Text
+  occurredAt        DateTime
+  rawPayload        Json?
+  createdAt         DateTime  @default(now())
+
+  @@index([userId, occurredAt])
+  @@index([userId, campaignId, occurredAt])
+  @@index([userId, fromNumber, occurredAt])
+  @@index([userId, toNumber, occurredAt])
+  @@index([userId, errorCode, occurredAt])
+  @@map("spam_filter_events")
 }
 
 model RevenueEvent {

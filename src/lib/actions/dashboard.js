@@ -2,6 +2,7 @@
 
 import prisma from '@/lib/prisma';
 import { auth } from '@/lib/auth';
+import { getSpamRateAnalyticsForUser } from '@/lib/actions/spamTracking';
 
 async function getUserId() {
   const session = await auth();
@@ -69,7 +70,10 @@ export async function getDashboardData(timeRange = 'today') {
     recentLogs,
 
     // User display settings
-    userSettings
+    userSettings,
+
+    // Spam analytics summary
+    spamAnalytics
   ] = await Promise.all([
     // Subscribed contacts count
     prisma.contact.count({
@@ -169,7 +173,9 @@ export async function getDashboardData(timeRange = 'today') {
     prisma.user.findUnique({
       where: { id: userId },
       select: { timezone: true }
-    })
+    }),
+
+    getSpamRateAnalyticsForUser(userId, timeRange, 20)
   ]);
   
   // Process message stats from groupBy
@@ -228,6 +234,8 @@ export async function getDashboardData(timeRange = 'today') {
       deliveredMessages: messageStatsProcessed.delivered,
       failedMessages: messageStatsProcessed.failed
     },
+
+    spamAnalytics,
     
     // Message delivery stats
     messageStats: messageStatsProcessed,
