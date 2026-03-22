@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import { getBrowserTimeZone, isValidTimeZone } from '@/lib/timezone';
 import styles from './page.module.css';
 
 export default function Settings() {
@@ -24,15 +25,29 @@ export default function Settings() {
   const [autoUnsubscribe, setAutoUnsubscribe] = useState(true);
   const [autoUnsubscribeLoading, setAutoUnsubscribeLoading] = useState(true);
   const [autoUnsubscribeSaving, setAutoUnsubscribeSaving] = useState(false);
+  const [timezone, setTimezone] = useState('');
+  const [timezoneLoading, setTimezoneLoading] = useState(true);
+  const [timezoneSaving, setTimezoneSaving] = useState(false);
+  const [timeZoneOptions, setTimeZoneOptions] = useState([]);
+  const browserTimezone = getBrowserTimeZone();
 
   useEffect(() => {
+    if (typeof Intl.supportedValuesOf === 'function') {
+      try {
+        setTimeZoneOptions(Intl.supportedValuesOf('timeZone'));
+      } catch (error) {
+        console.error('Error loading timezone options:', error);
+      }
+    }
+
     const fetchData = async () => {
       try {
-        const [apiKeyResponse, optOutResponse, telnyxResponse, autoUnsubscribeResponse] = await Promise.all([
+        const [apiKeyResponse, optOutResponse, telnyxResponse, autoUnsubscribeResponse, timezoneResponse] = await Promise.all([
           fetch('/api/user/api-key'),
           fetch('/api/user/opt-out-text'),
           fetch('/api/user/telnyx-settings'),
           fetch('/api/user/auto-unsubscribe'),
+          fetch('/api/user/timezone'),
         ]);
         
         if (apiKeyResponse.ok) {
@@ -54,6 +69,11 @@ export default function Settings() {
           const autoUnsubscribeData = await autoUnsubscribeResponse.json();
           setAutoUnsubscribe(autoUnsubscribeData.autoUnsubscribeOnFailure ?? true);
         }
+
+        if (timezoneResponse.ok) {
+          const timezoneData = await timezoneResponse.json();
+          setTimezone(timezoneData.timezone || '');
+        }
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
@@ -61,6 +81,7 @@ export default function Settings() {
         setOptOutLoading(false);
         setTelnyxLoading(false);
         setAutoUnsubscribeLoading(false);
+        setTimezoneLoading(false);
       }
     };
     fetchData();
@@ -144,6 +165,37 @@ export default function Settings() {
       alert('Failed to save auto-unsubscribe setting');
     } finally {
       setAutoUnsubscribeSaving(false);
+    }
+  };
+
+  const handleSaveTimezone = async () => {
+    const trimmedTimeZone = timezone.trim();
+    if (!trimmedTimeZone || !isValidTimeZone(trimmedTimeZone)) {
+      alert('Please enter a valid timezone like America/New_York.');
+      return;
+    }
+
+    setTimezoneSaving(true);
+    try {
+      const response = await fetch('/api/user/timezone', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timezone: trimmedTimeZone }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setTimezone(data.timezone || '');
+        alert('Timezone saved successfully!');
+      } else {
+        const errorData = await response.json();
+        alert(errorData.error || 'Failed to save timezone');
+      }
+    } catch (error) {
+      console.error('Error saving timezone:', error);
+      alert('Failed to save timezone');
+    } finally {
+      setTimezoneSaving(false);
     }
   };
 
@@ -517,6 +569,69 @@ if (hrms && conversionOccurred) {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Timezone Card */}
+        <div className={styles.settingsCard}>
+          <div className={styles.cardHeader}>
+            <h2>Timezone</h2>
+            <span className={styles.cardBadge}>Scheduling</span>
+          </div>
+          <div className={styles.cardContent}>
+            <p className={styles.cardDescription}>
+              This timezone is used when scheduling sends and redirect changes.
+            </p>
+            {timezoneLoading ? (
+              <div className={styles.loading}>Loading...</div>
+            ) : (
+              <>
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-primary)', fontSize: '0.875rem', fontWeight: 500 }}>
+                    Preferred Timezone (IANA)
+                  </label>
+                  <input
+                    type="text"
+                    list="timezone-options"
+                    value={timezone}
+                    onChange={(e) => setTimezone(e.target.value)}
+                    placeholder={browserTimezone}
+                    className={styles.optOutTextarea}
+                    style={{ marginTop: 0 }}
+                  />
+                  <datalist id="timezone-options">
+                    {timeZoneOptions.map((zone) => (
+                      <option key={zone} value={zone} />
+                    ))}
+                  </datalist>
+                  <small style={{ display: 'block', marginTop: '0.25rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                    Browser timezone detected: {browserTimezone}
+                  </small>
+                </div>
+                <div className={styles.optOutActions}>
+                  <button
+                    onClick={() => setTimezone(browserTimezone)}
+                    className={styles.saveButton}
+                    type="button"
+                    style={{ marginRight: '0.5rem' }}
+                  >
+                    Use Browser Timezone
+                  </button>
+                  <button
+                    onClick={handleSaveTimezone}
+                    disabled={timezoneSaving}
+                    className={styles.saveButton}
+                  >
+                    {timezoneSaving ? 'Saving...' : 'Save Timezone'}
+                  </button>
+                </div>
+                {timezone && (
+                  <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--border-radius-sm)', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                    Active timezone: <strong>{timezone}</strong>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         {/* Standard Opt-Out Language Card */}

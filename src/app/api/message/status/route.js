@@ -4,6 +4,17 @@ import { serverLog } from '@/lib/serverLogger';
 import { findRecentMessageForRecipient, updateMessageRecord } from '@/lib/actions/messages';
 import { getUnsubscribeReason } from '@/lib/errorParsing';
 
+const DEBUG_TELNYX_WEBHOOK = true;
+
+function debugWebhook(label, payload) {
+  if (!DEBUG_TELNYX_WEBHOOK) return;
+  try {
+    console.log(`[Telnyx Webhook Debug] ${label}: ${JSON.stringify(payload)}`);
+  } catch {
+    console.log(`[Telnyx Webhook Debug] ${label}:`, payload);
+  }
+}
+
 /**
  * Telnyx Webhook Handler for Message Status Updates
  * 
@@ -63,6 +74,20 @@ export async function POST(request) {
     const completedAt = payload.completed_at || null;
     const errors = payload.errors || [];
 
+    debugWebhook('received', {
+      eventType: event_type,
+      telnyxMessageId,
+      status,
+      toNumber,
+      messagingProfileId,
+      sentAt,
+      completedAt,
+      errors,
+      occurredAt: body?.data?.occurred_at,
+      payloadTo: payload?.to,
+      payloadStatus: payload?.status
+    });
+
     // Only log final status (delivered or failed), not intermediate "sent" status
 
     // Find the user by messaging profile ID
@@ -77,10 +102,18 @@ export async function POST(request) {
     });
 
     if (!user) {
+      debugWebhook('user-not-found', { messagingProfileId, telnyxMessageId, toNumber, status });
       console.warn(`[Telnyx Webhook] No user found for messaging profile: ${messagingProfileId}`);
       // Still return 200 to acknowledge receipt
       return NextResponse.json({ success: true, message: 'Webhook received but user not found' });
     }
+
+    debugWebhook('user-resolved', {
+      userId: user.id,
+      autoUnsubscribeOnFailure: user.autoUnsubscribeOnFailure,
+      telnyxMessageId,
+      status
+    });
 
     // Update message record if it exists
     let messageRecord = null;
@@ -129,6 +162,13 @@ export async function POST(request) {
               to: linkedMessage.to,
               errorMessage: linkedMessage.errorMessage
             };
+            debugWebhook('message-linked-via-fallback', {
+              fallbackMessageId: linkedMessage.id,
+              telnyxMessageId,
+              toNumber,
+              status,
+              contactId: linkedMessage.contactId
+            });
 
             console.warn(
               `[Telnyx Webhook] Linked missing message by recipient fallback for telnyxMessageId: ${telnyxMessageId}`
@@ -136,6 +176,7 @@ export async function POST(request) {
           } else {
             // Message record doesn't exist - this can happen if message was sent outside our system
             // or if the record was never created. Log a warning but continue processing.
+            debugWebhook('message-not-found', { telnyxMessageId, toNumber, status });
             console.warn(`[Telnyx Webhook] Message record not found for telnyxMessageId: ${telnyxMessageId}`);
           }
         } else {
@@ -158,6 +199,11 @@ export async function POST(request) {
             to: updatedMessage.to,
             errorMessage: updatedMessage.errorMessage
           };
+          debugWebhook('message-updated', {
+            telnyxMessageId,
+            status,
+            messageRecord
+          });
         }
       } catch (error) {
         // Only log if it's not a "record not found" error (which is already handled above)
@@ -176,6 +222,15 @@ export async function POST(request) {
         toNumber) {
       try {
         const unsubscribeReason = getUnsubscribeReason(status, errors);
+        debugWebhook('unsubscribe-evaluation', {
+          telnyxMessageId,
+          status,
+          toNumber,
+          contactId: messageRecord.contactId,
+          autoUnsubscribeEnabled,
+          errors,
+          unsubscribeReason
+        });
         
         if (unsubscribeReason) {
           // Unsubscribe the contact
@@ -193,9 +248,19 @@ export async function POST(request) {
           if (updateResult.count > 0) {
             // Simple one-line log for auto-unsubscribe (error already logged above)
             console.log(`⚠️ Auto-unsubscribed: ${toNumber} (${unsubscribeReason})`);
+            debugWebhook('unsubscribe-applied', {
+              contactId: messageRecord.contactId,
+              toNumber,
+              unsubscribeReason
+            });
           }
         } else {
           console.log(`ℹ️ Delivery failure did not qualify for auto-unsubscribe: ${toNumber}`);
+          debugWebhook('unsubscribe-skipped', {
+            contactId: messageRecord.contactId,
+            toNumber,
+            reason: 'no-unsubscribe-reason'
+          });
         }
       } catch (unsubscribeError) {
         console.error(`[Telnyx Webhook] Error auto-unsubscribing contact:`, unsubscribeError);
@@ -220,6 +285,13 @@ export async function POST(request) {
           : 'Message delivery failed';
         console.log(`❌ ${toNumber}: ${errorMsg}`);
       }
+      debugWebhook('finalized-event-processed', {
+        eventType: event_type,
+        telnyxMessageId,
+        toNumber,
+        status,
+        errors
+      });
     }
 
     return NextResponse.json({ success: true });

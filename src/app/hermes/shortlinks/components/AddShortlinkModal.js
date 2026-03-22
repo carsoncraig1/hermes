@@ -5,8 +5,14 @@ import styles from './AddShortlinkModal.module.css'
 import { addShortlink } from '@/lib/actions/shortlinks'
 import { getCampaigns } from '@/lib/actions/campaigns'
 import { createScheduledRedirect } from '@/lib/actions/scheduledRedirects'
+import {
+  formatDateTimeInTimeZone,
+  getCurrentDateInputValueInTimeZone,
+  getEffectiveTimeZone,
+  zonedDateTimeToUtcDate
+} from '@/lib/timezone'
 
-export default function AddShortlinkModal({ onClose, onAdd }) {
+export default function AddShortlinkModal({ onClose, onAdd, userTimezone = null }) {
   const [type, setType] = useState('dynamic') // 'dynamic' or 'legacy'
   const [nickname, setNickname] = useState('')
   const [slug, setSlug] = useState('')
@@ -29,6 +35,8 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
   const [scheduleDate, setScheduleDate] = useState('')
   const [scheduleTime, setScheduleTime] = useState('')
   const [scheduledDestination, setScheduledDestination] = useState('')
+  const effectiveTimezone = getEffectiveTimeZone(userTimezone)
+  const minScheduleDate = getCurrentDateInputValueInTimeZone(effectiveTimezone)
 
   useEffect(() => {
     const loadCampaigns = async () => {
@@ -95,7 +103,13 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
         }
         
         // Validate scheduled time is in the future
-        const scheduledDateTime = new Date(`${scheduleDate}T${scheduleTime}`)
+        const scheduledDateTime = zonedDateTimeToUtcDate(`${scheduleDate}T${scheduleTime}`, effectiveTimezone)
+        if (!scheduledDateTime || Number.isNaN(scheduledDateTime.getTime())) {
+          alert('Please provide a valid scheduled date and time')
+          setLoading(false)
+          return
+        }
+
         if (scheduledDateTime <= new Date()) {
           alert('Scheduled time must be in the future')
           setLoading(false)
@@ -118,7 +132,7 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
       
       // Create scheduled redirect if enabled
       if (scheduleRedirect && shortlink.id) {
-        const scheduledDateTime = new Date(`${scheduleDate}T${scheduleTime}`)
+        const scheduledDateTime = zonedDateTimeToUtcDate(`${scheduleDate}T${scheduleTime}`, effectiveTimezone)
         await createScheduledRedirect({
           shortlinkId: shortlink.id,
           newDestination: scheduledDestination,
@@ -318,7 +332,7 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
                 <span>Schedule Redirect Change</span>
               </label>
               <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.5rem', display: 'block' }}>
-                Times are interpreted in your local timezone ({Intl.DateTimeFormat().resolvedOptions().timeZone})
+                Times are interpreted in your configured timezone ({effectiveTimezone})
               </small>
             </div>
 
@@ -343,7 +357,7 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
                       type="date"
                       value={scheduleDate}
                       onChange={(e) => setScheduleDate(e.target.value)}
-                      min={new Date().toISOString().split('T')[0]}
+                      min={minScheduleDate}
                       className={styles.input}
                       required={scheduleRedirect}
                     />
@@ -364,7 +378,10 @@ export default function AddShortlinkModal({ onClose, onAdd }) {
                 {scheduleDate && scheduleTime && (
                   <div className={styles.schedulePreview}>
                     <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                      Redirect will change on {new Date(`${scheduleDate}T${scheduleTime}`).toLocaleString()} ({Intl.DateTimeFormat().resolvedOptions().timeZone})
+                      Redirect will change on {formatDateTimeInTimeZone(
+                        zonedDateTimeToUtcDate(`${scheduleDate}T${scheduleTime}`, effectiveTimezone),
+                        effectiveTimezone
+                      )} ({effectiveTimezone})
                     </small>
                   </div>
                 )}

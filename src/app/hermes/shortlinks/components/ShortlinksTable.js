@@ -6,7 +6,7 @@ import { getShortlinks, deleteShortlink, updateShortlink, toggleShortlinkStatus 
 import AddShortlinkModal from './AddShortlinkModal'
 import EditShortlinkModal from './EditShortlinkModal'
 
-export default function ShortlinksTable({ initialShortlinks }) {
+export default function ShortlinksTable({ initialShortlinks, userTimezone }) {
   const [shortlinks, setShortlinks] = useState(initialShortlinks)
   const [filteredShortlinks, setFilteredShortlinks] = useState(initialShortlinks)
   const [loading, setLoading] = useState(false)
@@ -206,6 +206,7 @@ export default function ShortlinksTable({ initialShortlinks }) {
       {editingShortlink && (
         <EditShortlinkModal
           shortlink={editingShortlink}
+          userTimezone={userTimezone}
           onClose={() => setEditingShortlink(null)}
           onUpdate={handleUpdate}
         />
@@ -213,6 +214,7 @@ export default function ShortlinksTable({ initialShortlinks }) {
 
       {showAddModal && (
         <AddShortlinkModal
+          userTimezone={userTimezone}
           onClose={() => setShowAddModal(false)}
           onAdd={handleAdd}
         />

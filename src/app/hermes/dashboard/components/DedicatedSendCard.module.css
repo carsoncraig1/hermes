@@ -367,6 +367,12 @@
   cursor: not-allowed;
 }
 
+.timezoneHelp {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
+
 .scheduleInfo {
   padding: 1rem;
   background: rgba(255, 165, 0, 0.1);

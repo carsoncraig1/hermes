@@ -25,6 +25,7 @@ export default async function Dashboard() {
           <div className="campaign-cards-container">
             <DedicatedSendCard 
               initialCampaigns={dashboardData.dedicatedSendCampaigns}
+              userTimezone={dashboardData.userTimezone}
             />
             <ManualFireCard 
               initialCampaigns={dashboardData.workflowCampaigns}

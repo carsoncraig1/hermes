@@ -23,6 +23,7 @@ model User {
   password                 String? // For credentials provider (hashed)
   apiKey                   String?   @unique // Hermes API key for external API access
   standardOptOutText       String? // Standard opt-out language to append to messages
+  timezone                 String? // Preferred IANA timezone used for scheduling UI
   telnyxApiKey             String? // Telnyx API key for SMS sending
   telnyxPhoneNumber        String? // Telnyx phone number to use as sender
   telnyxMessagingProfileId String? // Telnyx messaging profile ID

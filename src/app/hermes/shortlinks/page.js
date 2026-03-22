@@ -1,11 +1,15 @@
 import { getShortlinks } from '@/lib/actions/shortlinks'
+import { getUserTimezone } from '@/lib/actions/user'
 import ShortlinksTable from './components/ShortlinksTable'
 
 // Force dynamic rendering to avoid build-time database calls
 export const dynamic = 'force-dynamic'
 
 export default async function Shortlinks() {
-  const initialShortlinks = await getShortlinks()
+  const [initialShortlinks, userTimezone] = await Promise.all([
+    getShortlinks(),
+    getUserTimezone()
+  ]);
 
   return (
     <div className="dashboard-container">
@@ -18,7 +22,7 @@ export default async function Shortlinks() {
         />
       </header>
       <div className="dashboard-content">
-        <ShortlinksTable initialShortlinks={initialShortlinks} />
+        <ShortlinksTable initialShortlinks={initialShortlinks} userTimezone={userTimezone} />
       </div>
     </div>
   )

@@ -2,9 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { getCampaignContactCount, executeDedicatedSend } from '@/lib/actions/campaigns';
+import {
+  formatDateTimeInTimeZone,
+  getCurrentDateTimeInputValueInTimeZone,
+  getEffectiveTimeZone,
+  zonedDateTimeToUtcDate
+} from '@/lib/timezone';
 import styles from './DedicatedSendCard.module.css';
 
-export default function DedicatedSendCard({ initialCampaigns = [] }) {
+export default function DedicatedSendCard({ initialCampaigns = [], userTimezone = null }) {
   // OPTIMIZED: Use pre-fetched campaigns from server
   const [campaigns, setCampaigns] = useState(initialCampaigns);
   const [selectedCampaignId, setSelectedCampaignId] = useState('');
@@ -14,6 +20,8 @@ export default function DedicatedSendCard({ initialCampaigns = [] }) {
   const [executing, setExecuting] = useState(false);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduledDateTime, setScheduledDateTime] = useState('');
+  const effectiveTimezone = getEffectiveTimeZone(userTimezone);
+  const minScheduledDateTime = getCurrentDateTimeInputValueInTimeZone(effectiveTimezone);
 
   // No initial fetch needed - data comes from server
 
@@ -49,8 +57,18 @@ export default function DedicatedSendCard({ initialCampaigns = [] }) {
 
     setExecuting(true);
     try {
+      const scheduledUtcDate = scheduleEnabled && scheduledDateTime
+        ? zonedDateTimeToUtcDate(scheduledDateTime, effectiveTimezone)
+        : null;
+
+      if (scheduleEnabled && (!scheduledUtcDate || Number.isNaN(scheduledUtcDate.getTime()))) {
+        alert('Please enter a valid scheduled date and time.');
+        setExecuting(false);
+        return;
+      }
+
       const scheduledAt = scheduleEnabled && scheduledDateTime 
-        ? new Date(scheduledDateTime).toISOString() 
+        ? scheduledUtcDate.toISOString()
         : null;
       
       const result = await executeDedicatedSend(selectedCampaignId, scheduledAt);
@@ -62,8 +80,8 @@ export default function DedicatedSendCard({ initialCampaigns = [] }) {
       setScheduledDateTime('');
       
       if (result.scheduled) {
-        const scheduledDate = new Date(result.scheduledAt);
-        alert(`Campaign scheduled successfully!\n\nScheduled for: ${scheduledDate.toLocaleString()}\nJob ID: ${result.jobId}`);
+        const scheduledDate = formatDateTimeInTimeZone(result.scheduledAt, effectiveTimezone);
+        alert(`Campaign scheduled successfully!\n\nScheduled for: ${scheduledDate} (${effectiveTimezone})\nJob ID: ${result.jobId}`);
       } else {
         alert('Campaign executed successfully!');
       }
@@ -136,10 +154,13 @@ export default function DedicatedSendCard({ initialCampaigns = [] }) {
                 type="datetime-local"
                 value={scheduledDateTime}
                 onChange={(e) => setScheduledDateTime(e.target.value)}
-                min={new Date().toISOString().slice(0, 16)}
+                min={minScheduledDateTime}
                 disabled={loading || executing}
                 className={styles.datetimeInput}
               />
+              <small className={styles.timezoneHelp}>
+                Timezone: {effectiveTimezone}
+              </small>
             </div>
           )}
 
@@ -182,7 +203,10 @@ export default function DedicatedSendCard({ initialCampaigns = [] }) {
                 <div className={styles.scheduleInfo}>
                   <label>Scheduled For:</label>
                   <div className={styles.scheduledDateTime}>
-                    {new Date(scheduledDateTime).toLocaleString()}
+                    {formatDateTimeInTimeZone(
+                      zonedDateTimeToUtcDate(scheduledDateTime, effectiveTimezone),
+                      effectiveTimezone
+                    )} ({effectiveTimezone})
                   </div>
                 </div>
               )}

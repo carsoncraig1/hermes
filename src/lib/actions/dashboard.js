@@ -66,7 +66,10 @@ export async function getDashboardData(timeRange = 'today') {
     workflowCampaigns,
     
     // Recent logs (limited)
-    recentLogs
+    recentLogs,
+
+    // User display settings
+    userSettings
   ] = await Promise.all([
     // Subscribed contacts count
     prisma.contact.count({
@@ -161,6 +164,11 @@ export async function getDashboardData(timeRange = 'today') {
       where: { userId },
       orderBy: { createdAt: 'desc' },
       take: 50
+    }),
+
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { timezone: true }
     })
   ]);
   
@@ -255,7 +263,8 @@ export async function getDashboardData(timeRange = 'today') {
     
     // Metadata
     timeRange,
-    fetchedAt: new Date().toISOString()
+    fetchedAt: new Date().toISOString(),
+    userTimezone: userSettings?.timezone || null
   };
 }
 
