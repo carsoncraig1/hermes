@@ -684,7 +684,7 @@ if (hrms && conversionOccurred) {
                     <li>When a message fails with <code>sending_failed</code> or <code>delivery_failed</code> status</li>
                     <li>The system analyzes error messages for keywords indicating invalid numbers</li>
                     <li>If detected, the contact is automatically unsubscribed</li>
-                    <li>The unsubscribe reason is tracked: <code>delivery_failed</code>, <code>sending_failed</code>, or <code>carrier_opt_out</code></li>
+                    <li>The unsubscribe reason is tracked: <code>invalid_number</code>, <code>landline_or_non_routable</code>, or <code>carrier_opt_out</code></li>
                     <li>Temporary errors (network issues, timeouts) are ignored</li>
                   </ul>
                 </div>

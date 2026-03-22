@@ -301,6 +301,55 @@ export async function updateMessageRecord(telnyxMessageId, updates) {
 }
 
 /**
+ * Find a recent outbound message for a recipient when telnyxMessageId linkage is missing.
+ * This is a fallback for webhook processing when telnyxMessageId was not persisted.
+ * @param {string} userId - User ID
+ * @param {string} toNumber - Recipient phone number
+ * @returns {Promise<Object|null>} - Candidate message record or null
+ */
+export async function findRecentMessageForRecipient(userId, toNumber) {
+  if (!userId || !toNumber) return null;
+
+  const normalizeDigits = (value) => String(value || '').replace(/\D/g, '');
+  const incomingDigits = normalizeDigits(toNumber);
+  if (!incomingDigits) return null;
+
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  const candidates = await prisma.message.findMany({
+    where: {
+      userId,
+      direction: 'outbound',
+      contactId: { not: null },
+      telnyxMessageId: null,
+      createdAt: { gte: cutoff },
+      status: { in: ['queued', 'sending', 'sent', 'delivery_unconfirmed', 'sending_failed'] }
+    },
+    select: {
+      id: true,
+      contactId: true,
+      to: true,
+      errorMessage: true,
+      createdAt: true
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 200
+  });
+
+  const match = candidates.find((message) => {
+    const messageDigits = normalizeDigits(message.to);
+    if (!messageDigits) return false;
+    return (
+      messageDigits === incomingDigits ||
+      messageDigits.endsWith(incomingDigits) ||
+      incomingDigits.endsWith(messageDigits)
+    );
+  });
+
+  return match || null;
+}
+
+/**
  * Get message analytics for a user
  * @param {string} userId - User ID
  * @param {Object} filters - Optional filters

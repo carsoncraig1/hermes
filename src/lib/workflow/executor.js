@@ -3,6 +3,7 @@
 import prisma from '@/lib/prisma';
 import { sendMessage as telnyxSendMessage } from '@/lib/telnyx';
 import { serverLog } from '@/lib/serverLogger';
+import { isContactEligibleForSend } from '@/lib/contactEligibility';
 
 // Resolve shortlink URLs in message text
 async function resolveShortlinkUrls(messageText, userId) {
@@ -27,9 +28,9 @@ async function sendMessage(contact, messageText, userId, campaignId = null) {
   }
 
   // Enforce subscription check - only send to subscribed contacts
-  if (!contact.subscribed) {
-    console.log(`Skipping message to unsubscribed contact: ${contact.phone}`);
-    return { success: false, error: 'Contact is not subscribed' };
+  if (!isContactEligibleForSend(contact)) {
+    console.log(`Skipping message to ineligible contact: ${contact.phone}`);
+    return { success: false, error: 'Contact is not eligible for sending' };
   }
 
   try {

@@ -4,39 +4,7 @@
  */
 
 /**
- * Keywords that indicate an invalid or unreachable phone number
- */
-const INVALID_NUMBER_KEYWORDS = [
-  'invalid',
-  'unreachable',
-  'undeliverable',
-  'not found',
-  'disconnected',
-  'not in service',
-  'out of service',
-  'no longer in service',
-  'cannot be reached',
-  'invalid number',
-  'invalid destination',
-  'invalid recipient',
-  'number not found',
-  'number disconnected',
-  'number unreachable',
-  'carrier rejected',
-  'rejected by carrier',
-  'blocked',
-  'block rule',
-  'block',
-  'opt-out',
-  'opt out',
-  'do not contact',
-  'dnc', // Do Not Call
-  'blacklist',
-  'blacklisted',
-];
-
-/**
- * Keywords that indicate carrier-level opt-out or blocking
+ * Keywords that indicate a carrier-level opt-out or block
  */
 const CARRIER_OPT_OUT_KEYWORDS = [
   'opt-out',
@@ -49,6 +17,48 @@ const CARRIER_OPT_OUT_KEYWORDS = [
   'carrier blocked',
   'block rule',
   'blocked',
+  'already blocked',
+];
+
+/**
+ * Keywords that indicate landline/non-routable/non-SMS-capable numbers
+ */
+const LANDLINE_OR_NON_ROUTABLE_KEYWORDS = [
+  'landline',
+  'fixed line',
+  'non-routable',
+  'non routable',
+  'not routable',
+  'non-routable wireless',
+  'not sms capable',
+  'sms not supported',
+  'no sms',
+  'text not supported',
+  'wireless number is not routable',
+];
+
+/**
+ * Keywords that indicate permanent invalid or unreachable destinations
+ */
+const INVALID_NUMBER_KEYWORDS = [
+  'invalid number',
+  'invalid destination',
+  'invalid recipient',
+  'destination number was deemed invalid',
+  'destination phone number was deemed invalid',
+  'number not found',
+  'number disconnected',
+  'number unreachable',
+  'cannot be reached',
+  'disconnected',
+  'not in service',
+  'out of service',
+  'no longer in service',
+  'unreachable destination',
+  'undeliverable',
+  'carrier rejected',
+  'recipient carrier did not accept',
+  'rejected by carrier',
 ];
 
 /**
@@ -57,14 +67,64 @@ const CARRIER_OPT_OUT_KEYWORDS = [
 const TEMPORARY_ERROR_KEYWORDS = [
   'temporary',
   'retry',
+  'rate limit',
   'timeout',
-  'network',
   'congestion',
   'busy',
-  'unavailable',
+  'temporarily unavailable',
+  'temporary unavailable',
   'try again',
-  'later',
+  'try later',
+  'please retry',
 ];
+
+/**
+ * Build normalized searchable text from provider errors.
+ * Includes structured fields so code-only errors are still classified.
+ * @param {string|Array|Object} errorMessage
+ * @returns {string}
+ */
+function buildErrorText(errorMessage) {
+  if (!errorMessage) return '';
+
+  if (Array.isArray(errorMessage)) {
+    return errorMessage
+      .map((e) => {
+        if (typeof e === 'object' && e !== null) {
+          return [
+            e.code,
+            e.detail,
+            e.title,
+            e.message,
+            e.reason,
+            e.description,
+          ]
+            .filter(Boolean)
+            .join(' ');
+        }
+        return String(e);
+      })
+      .join(' ')
+      .toLowerCase();
+  }
+
+  if (typeof errorMessage === 'object') {
+    return [
+      errorMessage.code,
+      errorMessage.detail,
+      errorMessage.title,
+      errorMessage.message,
+      errorMessage.reason,
+      errorMessage.description,
+      JSON.stringify(errorMessage),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+  }
+
+  return String(errorMessage).toLowerCase();
+}
 
 /**
  * Parse error message to determine if it indicates an invalid/unreachable number
@@ -82,36 +142,10 @@ export function parseDeliveryError(errorMessage) {
     };
   }
 
-  // Handle array of error objects (from Telnyx webhook)
-  let errorText = '';
-  if (Array.isArray(errorMessage)) {
-    errorText = errorMessage
-      .map(e => e.detail || e.title || e.message || String(e))
-      .join(' ')
-      .toLowerCase();
-  } else if (typeof errorMessage === 'object') {
-    errorText = (errorMessage.detail || errorMessage.title || errorMessage.message || JSON.stringify(errorMessage)).toLowerCase();
-  } else {
-    errorText = String(errorMessage).toLowerCase();
-  }
+  const errorText = buildErrorText(errorMessage);
 
-  // Check for temporary errors first (these should NOT trigger unsubscribe)
-  const isTemporary = TEMPORARY_ERROR_KEYWORDS.some(keyword => 
-    errorText.includes(keyword)
-  );
-
-  if (isTemporary) {
-    return {
-      isInvalidNumber: false,
-      isCarrierOptOut: false,
-      isTemporary: true,
-      reason: 'temporary_error',
-      confidence: 'high'
-    };
-  }
-
-  // Check for carrier-level opt-out
-  const isCarrierOptOut = CARRIER_OPT_OUT_KEYWORDS.some(keyword => 
+  // Check for carrier-level opt-out first
+  const isCarrierOptOut = CARRIER_OPT_OUT_KEYWORDS.some((keyword) =>
     errorText.includes(keyword)
   );
 
@@ -125,16 +159,36 @@ export function parseDeliveryError(errorMessage) {
     };
   }
 
+  // Explicit classification for landline/non-routable numbers
+  const isLandlineOrNonRoutable = LANDLINE_OR_NON_ROUTABLE_KEYWORDS.some(
+    (keyword) => errorText.includes(keyword)
+  );
+
+  if (isLandlineOrNonRoutable) {
+    return {
+      isInvalidNumber: true,
+      isCarrierOptOut: false,
+      isTemporary: false,
+      reason: 'landline_or_non_routable',
+      confidence: 'high'
+    };
+  }
+
   // Check for invalid number keywords
-  const matchingKeywords = INVALID_NUMBER_KEYWORDS.filter(keyword => 
+  const matchingKeywords = INVALID_NUMBER_KEYWORDS.filter((keyword) =>
     errorText.includes(keyword)
   );
 
-  if (matchingKeywords.length > 0) {
-    // Higher confidence if multiple keywords match
-    const confidence = matchingKeywords.length >= 2 ? 'high' : 
-                      matchingKeywords.length === 1 ? 'medium' : 'low';
-    
+  // 40310 is treated as hard invalid destination (Telnyx invalid "to" address)
+  const hasHardInvalidCode = errorText.includes('40310');
+  if (matchingKeywords.length > 0 || hasHardInvalidCode) {
+    const confidence =
+      hasHardInvalidCode || matchingKeywords.length >= 2
+        ? 'high'
+        : matchingKeywords.length === 1
+          ? 'medium'
+          : 'low';
+
     return {
       isInvalidNumber: true,
       isCarrierOptOut: false,
@@ -145,6 +199,21 @@ export function parseDeliveryError(errorMessage) {
     };
   }
 
+  // Check for temporary errors first (these should NOT trigger unsubscribe)
+  const isTemporary = TEMPORARY_ERROR_KEYWORDS.some(keyword =>
+    errorText.includes(keyword)
+  );
+
+  if (isTemporary) {
+    return {
+      isInvalidNumber: false,
+      isCarrierOptOut: false,
+      isTemporary: true,
+      reason: 'temporary_error',
+      confidence: 'high'
+    };
+  }
+
   return {
     isInvalidNumber: false,
     isCarrierOptOut: false,
@@ -152,6 +221,19 @@ export function parseDeliveryError(errorMessage) {
     reason: null,
     confidence: 'low'
   };
+}
+
+/**
+ * Determine permanent unsubscribe reason from delivery error details.
+ * @param {string|Array|Object} errorMessage - Error message payload
+ * @returns {string|null} - Canonical reason or null for non-permanent failures
+ */
+export function getPermanentUnsubscribeReason(errorMessage) {
+  const parsed = parseDeliveryError(errorMessage);
+  if (parsed.isInvalidNumber && !parsed.isTemporary) {
+    return parsed.reason || 'permanent_delivery_failure';
+  }
+  return null;
 }
 
 /**
@@ -166,15 +248,6 @@ export function getUnsubscribeReason(status, errorMessage) {
     return null;
   }
 
-  const parsed = parseDeliveryError(errorMessage);
-  
-  if (parsed.isInvalidNumber && !parsed.isTemporary) {
-    if (parsed.isCarrierOptOut) {
-      return 'carrier_opt_out';
-    }
-    return parsed.reason || 'delivery_failed';
-  }
-
-  return null;
+  return getPermanentUnsubscribeReason(errorMessage);
 }
 

@@ -1,6 +1,7 @@
 'use server'
 
 import prisma from '@/lib/prisma'
+import { isContactEligibleForSend } from '@/lib/contactEligibility'
 
 const PAGE_SIZE = 1000 // Process 1000 contacts at a time
 
@@ -49,7 +50,7 @@ export async function getCampaignContactsPaginated(campaignId, page = 0, pageSiz
     ])
     
     return {
-      contacts,
+      contacts: contacts.filter(isContactEligibleForSend),
       hasMore: (page + 1) * pageSize < total,
       total
     }
@@ -101,7 +102,7 @@ export async function getCampaignContactsPaginated(campaignId, page = 0, pageSiz
   ])
 
   return {
-    contacts,
+    contacts: contacts.filter(isContactEligibleForSend),
     hasMore: (page + 1) * pageSize < total,
     total
   }
@@ -137,7 +138,7 @@ export async function getContactsForManualFirePaginated(
       prisma.contact.count({ where: whereConditions })
     ])
     
-    return { contacts, hasMore: (page + 1) * pageSize < total, total }
+    return { contacts: contacts.filter(isContactEligibleForSend), hasMore: (page + 1) * pageSize < total, total }
   }
 
   // Build OR conditions for tags and sources
@@ -183,7 +184,7 @@ export async function getContactsForManualFirePaginated(
   ])
 
   return {
-    contacts,
+    contacts: contacts.filter(isContactEligibleForSend),
     hasMore: (page + 1) * pageSize < total,
     total
   }

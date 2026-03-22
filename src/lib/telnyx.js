@@ -7,7 +7,7 @@ import { validateMessage } from '@/lib/messageUtils';
 import { checkRateLimit, createMessageRecord } from '@/lib/actions/messages';
 import { createMessageClickCodes } from '@/lib/messageClickCodes';
 import { serverLog } from '@/lib/serverLogger';
-import { parseDeliveryError } from '@/lib/errorParsing';
+import { getPermanentUnsubscribeReason } from '@/lib/errorParsing';
 
 /**
  * Normalize phone number to E.164 format for Telnyx
@@ -469,9 +469,11 @@ export async function sendMessage({
     const loggedTo = errorNormalizedTo || (typeof normalizedTo !== 'undefined' ? normalizedTo : null) || to || 'unknown';
     const loggedProfileId = errorSettings?.messagingProfileId || (typeof settings !== 'undefined' ? settings?.messagingProfileId : null) || 'unknown';
     
-    // Check if this is a 40310 error (invalid 'to' address) and auto-unsubscribe if enabled
-    const isInvalidNumberError = String(errorCode) === '40310';
-    if (isInvalidNumberError && contactId && finalUserId) {
+    // Auto-unsubscribe for permanently ineligible destinations
+    const unsubscribeReason = getPermanentUnsubscribeReason(
+      errorDetails?.errors || error.raw?.errors || errorDetails || errorMessage
+    );
+    if (unsubscribeReason && contactId && finalUserId) {
       try {
         // Get user's auto-unsubscribe setting
         const user = await prisma.user.findUnique({
@@ -479,33 +481,32 @@ export async function sendMessage({
           select: { autoUnsubscribeOnFailure: true }
         });
 
-        if (user?.autoUnsubscribeOnFailure !== false) {
-          // Parse the error to confirm it's an invalid number
-          const errorParsed = parseDeliveryError(errorDetails?.errors || errorMessage);
-          
-          if (errorParsed.isInvalidNumber || errorCode === '40310') {
-            // Unsubscribe the contact
-            const updateResult = await prisma.contact.updateMany({
-              where: {
-                id: contactId,
-                userId: finalUserId
-              },
-              data: {
-                subscribed: false,
-                unsubscribeReason: 'invalid_number'
-              }
-            });
-
-            if (updateResult.count > 0) {
-              // Simple one-line log for auto-unsubscribe (error already logged above)
-              console.log(`⚠️ Auto-unsubscribed: ${loggedTo} (invalid number)`);
+        if ((user?.autoUnsubscribeOnFailure ?? true) === true) {
+          // Unsubscribe the contact
+          const updateResult = await prisma.contact.updateMany({
+            where: {
+              id: contactId,
+              userId: finalUserId
+            },
+            data: {
+              subscribed: false,
+              unsubscribeReason
             }
+          });
+
+          if (updateResult.count > 0) {
+            // Simple one-line log for auto-unsubscribe (error already logged above)
+            console.log(`⚠️ Auto-unsubscribed: ${loggedTo} (${unsubscribeReason})`);
           }
+        } else {
+          console.log(`ℹ️ Auto-unsubscribe disabled for ${loggedTo} (reason: ${unsubscribeReason})`);
         }
       } catch (unsubscribeError) {
-        console.error('Error auto-unsubscribing contact on 40310 error:', unsubscribeError);
+        console.error('Error auto-unsubscribing contact on send failure:', unsubscribeError);
         // Continue processing even if unsubscribe fails
       }
+    } else if (contactId && finalUserId) {
+      console.log(`ℹ️ Send failure did not qualify for auto-unsubscribe: ${loggedTo}`);
     }
 
     // Log message send failure (simple one-line format)

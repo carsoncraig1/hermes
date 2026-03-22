@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { auth } from '@/lib/auth'
 import { serverLog } from '@/lib/serverLogger'
+import { isContactEligibleForSend } from '@/lib/contactEligibility'
 
 async function getUserId() {
   const session = await auth()
@@ -409,7 +410,7 @@ export async function executeManualFire(campaignId, { selectedTags = [], selecte
       
       // Filter valid contacts AND deduplicate (skip contacts already sent in this execution)
       let validContacts = contacts.filter(c => {
-        if (!c.phone || !c.subscribed) return false
+        if (!isContactEligibleForSend(c)) return false
         if (sentContactIds.has(c.id)) {
           console.log(`Skipping duplicate contact ${c.id} (${c.phone}) - already processed in this job`)
           return false
@@ -1207,7 +1208,7 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
       
       // Filter valid contacts AND deduplicate (skip contacts already sent in this execution)
       let validContacts = contacts.filter(c => {
-        if (!c.phone || !c.subscribed) return false
+        if (!isContactEligibleForSend(c)) return false
         if (sentContactIds.has(c.id)) {
           console.log(`Skipping duplicate contact ${c.id} (${c.phone}) - already sent in this job`)
           return false
@@ -1244,8 +1245,7 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
                 campaignId: campaignIdInt,
                 telnyxConfig,           // Pre-fetched config (avoids 2 DB queries per message)
                 skipRateLimit: true,     // Already checked at batch level
-                skipSubscriptionCheck: true  // Contacts already filtered for subscribed=true
-              }),
+                              }),
               {
                 maxRetries: 3,
                 initialDelay: 1000,

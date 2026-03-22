@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { serverLog } from '@/lib/serverLogger';
-import { updateMessageRecord } from '@/lib/actions/messages';
-import { parseDeliveryError, getUnsubscribeReason } from '@/lib/errorParsing';
+import { findRecentMessageForRecipient, updateMessageRecord } from '@/lib/actions/messages';
+import { getUnsubscribeReason } from '@/lib/errorParsing';
 
 /**
  * Telnyx Webhook Handler for Message Status Updates
@@ -109,9 +109,35 @@ export async function POST(request) {
         const updatedMessage = await updateMessageRecord(telnyxMessageId, updateData);
         
         if (!updatedMessage) {
-          // Message record doesn't exist - this can happen if message was sent outside our system
-          // or if the record was never created. Log a warning but continue processing.
-          console.warn(`[Telnyx Webhook] Message record not found for telnyxMessageId: ${telnyxMessageId}`);
+          // Message record doesn't exist - fall back to recent outbound message by recipient.
+          const fallbackMessage = await findRecentMessageForRecipient(user.id, toNumber);
+
+          if (fallbackMessage) {
+            const linkedMessage = await prisma.message.update({
+              where: { id: fallbackMessage.id },
+              data: {
+                ...updateData,
+                costAmount: updateData.costAmount !== null && updateData.costAmount !== undefined
+                  ? parseFloat(updateData.costAmount)
+                  : null,
+                telnyxMessageId
+              }
+            });
+
+            messageRecord = {
+              contactId: linkedMessage.contactId,
+              to: linkedMessage.to,
+              errorMessage: linkedMessage.errorMessage
+            };
+
+            console.warn(
+              `[Telnyx Webhook] Linked missing message by recipient fallback for telnyxMessageId: ${telnyxMessageId}`
+            );
+          } else {
+            // Message record doesn't exist - this can happen if message was sent outside our system
+            // or if the record was never created. Log a warning but continue processing.
+            console.warn(`[Telnyx Webhook] Message record not found for telnyxMessageId: ${telnyxMessageId}`);
+          }
         } else {
           // Update Contact.lastMessageSent when message is delivered, sent, or unconfirmed
           if (updatedMessage.contactId && (status === 'delivered' || status === 'sent' || status === 'delivery_unconfirmed' || status === 'sending')) {
@@ -143,7 +169,8 @@ export async function POST(request) {
     }
 
     // Handle auto-unsubscribe on delivery failures
-    if (user.autoUnsubscribeOnFailure && 
+    const autoUnsubscribeEnabled = (user.autoUnsubscribeOnFailure ?? true) === true;
+    if (autoUnsubscribeEnabled &&
         (status === 'sending_failed' || status === 'delivery_failed') &&
         messageRecord?.contactId &&
         toNumber) {
@@ -151,8 +178,6 @@ export async function POST(request) {
         const unsubscribeReason = getUnsubscribeReason(status, errors);
         
         if (unsubscribeReason) {
-          const errorParsed = parseDeliveryError(errors);
-          
           // Unsubscribe the contact
           const updateResult = await prisma.contact.updateMany({
             where: {
@@ -169,11 +194,19 @@ export async function POST(request) {
             // Simple one-line log for auto-unsubscribe (error already logged above)
             console.log(`⚠️ Auto-unsubscribed: ${toNumber} (${unsubscribeReason})`);
           }
+        } else {
+          console.log(`ℹ️ Delivery failure did not qualify for auto-unsubscribe: ${toNumber}`);
         }
       } catch (unsubscribeError) {
         console.error(`[Telnyx Webhook] Error auto-unsubscribing contact:`, unsubscribeError);
         // Continue processing even if unsubscribe fails
       }
+    } else if (
+      (status === 'sending_failed' || status === 'delivery_failed') &&
+      !autoUnsubscribeEnabled &&
+      toNumber
+    ) {
+      console.log(`ℹ️ Auto-unsubscribe disabled for ${toNumber} (delivery failure)`);
     }
 
     // Only log final status (delivered or failed) - one line per message

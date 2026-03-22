@@ -130,12 +130,10 @@ export async function executeDelayedAction(actionId) {
  * DISABLED: Automated delayed action processing is disabled - only manual sends are allowed
  */
 export async function processDelayedActions() {
-  // DISABLED: Automated processing is disabled
-  console.log('[DISABLED] processDelayedActions() called but automated processing is disabled');
-  return;
-  
-  /* DISABLED CODE BELOW
   const actions = await getReadyDelayedActions(100)
+  // #region agent log
+  fetch('http://127.0.0.1:7914/ingest/e456b1d5-4367-4e1a-abc7-876a56bf30dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe3f2d'},body:JSON.stringify({sessionId:'fe3f2d',runId:'post-fix',hypothesisId:'H2',location:'src/lib/delayedWorkflow.js:136',message:'delayed actions fetched for processing',data:{readyActionsCount:actions.length},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   
   // Process in parallel with limit
   const BATCH_SIZE = 10
@@ -145,6 +143,8 @@ export async function processDelayedActions() {
       batch.map(action => executeDelayedAction(action.id))
     )
   }
-  END DISABLED CODE */
+  // #region agent log
+  fetch('http://127.0.0.1:7914/ingest/e456b1d5-4367-4e1a-abc7-876a56bf30dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe3f2d'},body:JSON.stringify({sessionId:'fe3f2d',runId:'post-fix',hypothesisId:'H2',location:'src/lib/delayedWorkflow.js:147',message:'delayed actions processing loop complete',data:{processedBatches:Math.ceil(actions.length/BATCH_SIZE)},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
 }
 
