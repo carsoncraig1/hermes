@@ -333,24 +333,24 @@ model Message {
 
 model SpamFilterEvent {
   id                Int       @id @default(autoincrement())
-  eventKey          String    @unique // Idempotency key (e.g. telnyxMessageId:errorCode)
-  userId            String
+  eventKey          String    @unique @map("event_key") // Idempotency key (e.g. telnyxMessageId:errorCode)
+  userId            String    @map("user_id")
   user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  campaignId        Int?
+  campaignId        Int?      @map("campaign_id")
   campaign          Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  messageId         String?
+  messageId         String?   @map("message_id")
   message           Message?  @relation(fields: [messageId], references: [id], onDelete: SetNull)
-  providerMessageId String?
-  fromNumber        String?
-  toNumber          String?
+  providerMessageId String?   @map("provider_message_id")
+  fromNumber        String?   @map("from_number")
+  toNumber          String?   @map("to_number")
   carrier           String?
-  lineType          String?
-  errorCode         String
-  errorTitle        String?
-  errorDetail       String?   @db.Text
-  occurredAt        DateTime
-  rawPayload        Json?
-  createdAt         DateTime  @default(now())
+  lineType          String?   @map("line_type")
+  errorCode         String    @map("error_code")
+  errorTitle        String?   @map("error_title")
+  errorDetail       String?   @db.Text @map("error_detail")
+  occurredAt        DateTime  @map("occurred_at")
+  rawPayload        Json?     @map("raw_payload")
+  createdAt         DateTime  @default(now()) @map("created_at")
 
   @@index([userId, occurredAt])
   @@index([userId, campaignId, occurredAt])
