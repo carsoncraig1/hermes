@@ -4,7 +4,7 @@ import { findRecentMessageForRecipient, updateMessageRecord } from '@/lib/action
 import { trackSpamFilterEvent } from '@/lib/actions/spamTracking';
 import { getUnsubscribeReason } from '@/lib/errorParsing';
 
-const DEBUG_TELNYX_WEBHOOK = true;
+const DEBUG_TELNYX_WEBHOOK = process.env.DEBUG_TELNYX_WEBHOOK === 'true';
 
 function debugWebhook(label, payload) {
   if (!DEBUG_TELNYX_WEBHOOK) return;
