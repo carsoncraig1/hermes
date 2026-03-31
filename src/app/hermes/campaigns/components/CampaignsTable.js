@@ -18,6 +18,25 @@ export default function CampaignsTable({ initialCampaigns }) {
   const [editingWorkflowCampaign, setEditingWorkflowCampaign] = useState(null)
   const [loadingStats, setLoadingStats] = useState(new Set()) // Track which campaigns are loading stats
   const [loadedStats, setLoadedStats] = useState(new Set()) // Track which campaigns have loaded full stats
+  const [phoneNumberMap, setPhoneNumberMap] = useState(new Map())
+
+  useEffect(() => {
+    const loadPhoneNumbers = async () => {
+      try {
+        const response = await fetch('/api/user/phone-numbers')
+        if (!response.ok) return
+        const data = await response.json()
+        const map = new Map()
+        ;(data.phoneNumbers || []).forEach(number => {
+          map.set(number.id, `${number.friendlyName || 'Unnamed'} (${number.phoneNumber})`)
+        })
+        setPhoneNumberMap(map)
+      } catch (error) {
+        console.error('Error loading phone numbers for campaign target labels:', error)
+      }
+    }
+    loadPhoneNumbers()
+  }, [])
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -138,6 +157,18 @@ export default function CampaignsTable({ initialCampaigns }) {
     return <div className={styles.loading}>Loading...</div>
   }
 
+  const renderTargetLabel = (target) => {
+    if (target.targetType === 'ALL_SUBSCRIBED') return 'All Subscribed'
+    if (target.targetType === 'TAG') return `Tag: ${target.tag?.name || 'Unknown'}`
+    if (target.targetType === 'SOURCE') return `Source: ${target.sourceValue}`
+    if (target.targetType === 'LIST') {
+      const listId = parseInt(target.sourceValue, 10)
+      const listLabel = phoneNumberMap.get(listId)
+      return `List: ${listLabel || `#${target.sourceValue}`}`
+    }
+    return target.targetType
+  }
+
   return (
     <div className={styles.tableContainer}>
       <div className={styles.tableHeader}>
@@ -233,7 +264,7 @@ export default function CampaignsTable({ initialCampaigns }) {
                     <>
                       {campaign.targets?.map(target => (
                         <span key={target.id} className={styles.campaign}>
-                          {target.targetType === 'ALL_SUBSCRIBED' ? 'All Subscribed' : target.tag?.name}
+                          {renderTargetLabel(target)}
                         </span>
                       )) || <span className={styles.noCampaign}>No targets</span>}
                     </>

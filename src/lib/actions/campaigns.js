@@ -66,7 +66,7 @@ async function associateShortlinksWithCampaign(campaignId, message, userId, tx) 
   }
 }
 
-export async function createCampaign({ name, message, targetAllSubscribed, selectedTags, selectedSources, workflow }) {
+export async function createCampaign({ name, message, targetAllSubscribed, selectedTags, selectedSources, selectedLists, workflow }) {
   try {
     const userId = await getUserId()
     
@@ -157,6 +157,17 @@ export async function createCampaign({ name, message, targetAllSubscribed, selec
             }))
           })
         }
+
+        // Create targets for list assignment (phone-number list)
+        if (selectedLists && selectedLists.length > 0) {
+          await tx.campaignTarget.createMany({
+            data: selectedLists.map(listId => ({
+              campaignId: campaign.id,
+              targetType: 'LIST',
+              sourceValue: String(listId)
+            }))
+          })
+        }
       }
 
       // Associate shortlinks with campaign
@@ -211,7 +222,7 @@ export async function getCampaignContacts(campaignId) {
     })
   }
 
-  // Get contacts with matching tags or sources
+  // Get contacts with matching tags, sources, or assigned phone-number list
   const tagIds = campaign.targets
     .filter(target => target.targetType === 'TAG')
     .map(target => target.tagId)
@@ -221,13 +232,18 @@ export async function getCampaignContacts(campaignId) {
     .map(target => target.sourceValue)
     .filter(Boolean)
 
+  const listIds = campaign.targets
+    .filter(target => target.targetType === 'LIST')
+    .map(target => parseInt(target.sourceValue, 10))
+    .filter(Number.isInteger)
+
   const whereConditions = {
     userId,
     subscribed: true,
   }
 
-  // Build OR conditions for tags and sources
-  if (tagIds.length > 0 || sourceValues.length > 0) {
+  // Build OR conditions for tags, sources, and list assignment
+  if (tagIds.length > 0 || sourceValues.length > 0 || listIds.length > 0) {
     const orConditions = []
     
     if (tagIds.length > 0) {
@@ -249,6 +265,14 @@ export async function getCampaignContacts(campaignId) {
         }
       })
     }
+
+    if (listIds.length > 0) {
+      orConditions.push({
+        assignedPhoneNumberId: {
+          in: listIds
+        }
+      })
+    }
     
     whereConditions.OR = orConditions
   }
@@ -259,7 +283,7 @@ export async function getCampaignContacts(campaignId) {
 }
 
 // Get contacts by tags and/or sources for manual fire
-export async function getContactsForManualFire({ selectedTags = [], selectedSources = [], targetAllSubscribed = false }) {
+export async function getContactsForManualFire({ selectedTags = [], selectedSources = [], selectedLists = [], targetAllSubscribed = false }) {
   try {
     const userId = await getUserId()
     
@@ -278,7 +302,7 @@ export async function getContactsForManualFire({ selectedTags = [], selectedSour
     }
     
     // Build OR conditions for tags and sources
-    if (selectedTags.length > 0 || selectedSources.length > 0) {
+    if (selectedTags.length > 0 || selectedSources.length > 0 || selectedLists.length > 0) {
       const orConditions = []
       
       if (selectedTags.length > 0) {
@@ -313,6 +337,19 @@ export async function getContactsForManualFire({ selectedTags = [], selectedSour
           }
         })
       }
+
+      if (selectedLists.length > 0) {
+        const listIds = selectedLists
+          .map(value => parseInt(value, 10))
+          .filter(Number.isInteger)
+        if (listIds.length > 0) {
+          orConditions.push({
+            assignedPhoneNumberId: {
+              in: listIds
+            }
+          })
+        }
+      }
       
       if (orConditions.length > 0) {
         whereConditions.OR = orConditions
@@ -331,7 +368,7 @@ export async function getContactsForManualFire({ selectedTags = [], selectedSour
 // Execute manual fire workflow (with job queue, pagination, retry, and batched stats)
 export async function executeManualFire(
   campaignId,
-  { selectedTags = [], selectedSources = [], targetAllSubscribed = false },
+  { selectedTags = [], selectedSources = [], selectedLists = [], targetAllSubscribed = false },
   existingJobId = null,
   executionUserId = null
 ) {
@@ -368,7 +405,7 @@ export async function executeManualFire(
     
     // Get total contact count (first page to get total)
     const firstPage = await getContactsForManualFirePaginated(
-      { selectedTags, selectedSources, targetAllSubscribed },
+      { selectedTags, selectedSources, selectedLists, targetAllSubscribed },
       0,
       1,
       userId
@@ -414,7 +451,7 @@ export async function executeManualFire(
         jobType: 'manual_fire',
         totalContacts: firstPage.total,
         totalBatches,
-        metadata: { selectedTags, selectedSources, targetAllSubscribed },
+        metadata: { selectedTags, selectedSources, selectedLists, targetAllSubscribed },
         startImmediately: true // Start with 'processing' status to prevent race conditions
       })
       jobId = job.id
@@ -438,7 +475,7 @@ export async function executeManualFire(
     
     while (hasMore) {
       let { contacts, hasMore: more } = await getContactsForManualFirePaginated(
-        { selectedTags, selectedSources, targetAllSubscribed },
+        { selectedTags, selectedSources, selectedLists, targetAllSubscribed },
         page,
         1000, // Load 1000 contacts per page
         userId
@@ -803,7 +840,7 @@ export async function deleteCampaign(id) {
   }
 }
 
-export async function updateCampaign({ id, name, message, targetAllSubscribed, selectedTags, selectedSources }) {
+export async function updateCampaign({ id, name, message, targetAllSubscribed, selectedTags, selectedSources, selectedLists }) {
   try {
     const userId = await getUserId()
     
@@ -856,6 +893,17 @@ export async function updateCampaign({ id, name, message, targetAllSubscribed, s
               campaignId: id,
               targetType: 'SOURCE',
               sourceValue
+            }))
+          })
+        }
+
+        // Create targets for list assignment (phone-number list)
+        if (selectedLists && selectedLists.length > 0) {
+          await tx.campaignTarget.createMany({
+            data: selectedLists.map(listId => ({
+              campaignId: id,
+              targetType: 'LIST',
+              sourceValue: String(listId)
             }))
           })
         }

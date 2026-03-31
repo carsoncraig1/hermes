@@ -37,6 +37,7 @@ export async function GET(request) {
           result = await executeManualFire(job.campaignId, {
             selectedTags: metadata.selectedTags || [],
             selectedSources: metadata.selectedSources || [],
+            selectedLists: metadata.selectedLists || [],
             targetAllSubscribed: metadata.targetAllSubscribed || false
           }, job.id, job.userId)
         }

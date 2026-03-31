@@ -149,8 +149,15 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
   const [selectedSources, setSelectedSources] = useState(
     campaign?.targets?.filter(target => target.targetType === 'SOURCE').map(target => target.sourceValue) || []
   )
+  const [selectedLists, setSelectedLists] = useState(
+    campaign?.targets
+      ?.filter(target => target.targetType === 'LIST')
+      .map(target => parseInt(target.sourceValue, 10))
+      .filter(Number.isInteger) || []
+  )
   const [availableTags, setAvailableTags] = useState([])
   const [availableSources, setAvailableSources] = useState([])
+  const [availableLists, setAvailableLists] = useState([])
   const [availableShortlinks, setAvailableShortlinks] = useState([])
   const [optOutText, setOptOutText] = useState('')
   const [loading, setLoading] = useState(false)
@@ -181,10 +188,11 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [tags, shortlinks, optOutRes] = await Promise.all([
+        const [tags, shortlinks, optOutRes, phoneNumbersRes] = await Promise.all([
           getTags(),
           getShortlinks(),
-          fetch('/api/user/opt-out-text')
+          fetch('/api/user/opt-out-text'),
+          fetch('/api/user/phone-numbers')
         ])
         setAvailableTags(tags)
         setAvailableShortlinks(shortlinks)
@@ -196,6 +204,10 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
         const contacts = await getContacts()
         const uniqueSources = [...new Set(contacts.map(c => c.source).filter(Boolean))].sort()
         setAvailableSources(uniqueSources)
+        if (phoneNumbersRes.ok) {
+          const data = await phoneNumbersRes.json()
+          setAvailableLists(data.phoneNumbers || [])
+        }
       } catch (error) {
         console.error('Error loading data:', error)
       }
@@ -229,7 +241,8 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
           message: messageWithMarkers,
           targetAllSubscribed,
           selectedTags: targetAllSubscribed ? [] : selectedTags,
-          selectedSources: targetAllSubscribed ? [] : selectedSources
+          selectedSources: targetAllSubscribed ? [] : selectedSources,
+          selectedLists: targetAllSubscribed ? [] : selectedLists
         })
         onUpdate?.(updatedCampaign)
       } else {
@@ -238,7 +251,8 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
           message: messageWithMarkers,
           targetAllSubscribed,
           selectedTags: targetAllSubscribed ? [] : selectedTags,
-          selectedSources: targetAllSubscribed ? [] : selectedSources
+          selectedSources: targetAllSubscribed ? [] : selectedSources,
+          selectedLists: targetAllSubscribed ? [] : selectedLists
         })
         onAdd?.(newCampaign)
       }
@@ -377,6 +391,7 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
                   if (e.target.checked) {
                     setSelectedTags([])
                     setSelectedSources([])
+                    setSelectedLists([])
                   }
                 }}
                 className={styles.checkbox}
@@ -412,9 +427,21 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
                   />
                 </div>
 
-                {selectedTags.length === 0 && selectedSources.length === 0 && (
+                <div className={styles.targetingGroup}>
+                  <label className={styles.targetingLabel}>Select Lists (Optional)</label>
+                  <SearchableMultiSelect
+                    options={availableLists}
+                    selected={selectedLists}
+                    onSelectionChange={setSelectedLists}
+                    placeholder="Search and select lists..."
+                    getOptionLabel={(list) => `${list.friendlyName || 'Unnamed'} (${list.phoneNumber})`}
+                    getOptionValue={(list) => list.id}
+                  />
+                </div>
+
+                {selectedTags.length === 0 && selectedSources.length === 0 && selectedLists.length === 0 && (
                   <div className={styles.warning}>
-                    Please select at least one tag or source (or target all subscribed)
+                    Please select at least one tag, source, or list (or target all subscribed)
                   </div>
                 )}
               </div>
@@ -431,7 +458,7 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
             </button>
             <button 
               type="submit" 
-              disabled={loading || (!targetAllSubscribed && selectedTags.length === 0 && selectedSources.length === 0)}
+              disabled={loading || (!targetAllSubscribed && selectedTags.length === 0 && selectedSources.length === 0 && selectedLists.length === 0)}
               className={styles.submitButton}
             >
               {loading ? (isEditMode ? 'Saving...' : 'Creating...') : (isEditMode ? 'Save Changes' : 'Create Campaign')}

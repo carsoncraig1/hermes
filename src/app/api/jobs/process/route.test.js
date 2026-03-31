@@ -55,6 +55,7 @@ describe('/api/jobs/process route', () => {
         metadata: {
           selectedTags: ['vip'],
           selectedSources: ['webform'],
+          selectedLists: [7],
           targetAllSubscribed: false
         }
       }
@@ -73,6 +74,7 @@ describe('/api/jobs/process route', () => {
       {
         selectedTags: ['vip'],
         selectedSources: ['webform'],
+        selectedLists: [7],
         targetAllSubscribed: false
       },
       'job_manual',

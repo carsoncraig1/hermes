@@ -19,22 +19,25 @@ export default function ManualFireCard({ initialCampaigns = [] }) {
   const [targetAllSubscribed, setTargetAllSubscribed] = useState(false);
   const [selectedTags, setSelectedTags] = useState([]);
   const [selectedSources, setSelectedSources] = useState([]);
+  const [selectedLists, setSelectedLists] = useState([]);
   const [availableTags, setAvailableTags] = useState([]);
   const [availableSources, setAvailableSources] = useState([]);
+  const [availableLists, setAvailableLists] = useState([]);
 
   // Only load tags and sources (campaigns already pre-fetched)
   useEffect(() => {
     loadTags();
     loadSources();
+    loadLists();
   }, []);
 
   useEffect(() => {
-    if (selectedCampaignId && (targetAllSubscribed || selectedTags.length > 0 || selectedSources.length > 0)) {
+    if (selectedCampaignId && (targetAllSubscribed || selectedTags.length > 0 || selectedSources.length > 0 || selectedLists.length > 0)) {
       loadContactCount();
     } else {
       setContactCount(null);
     }
-  }, [selectedCampaignId, targetAllSubscribed, selectedTags, selectedSources]);
+  }, [selectedCampaignId, targetAllSubscribed, selectedTags, selectedSources, selectedLists]);
 
   const loadTags = async () => {
     try {
@@ -55,12 +58,24 @@ export default function ManualFireCard({ initialCampaigns = [] }) {
     }
   };
 
+  const loadLists = async () => {
+    try {
+      const response = await fetch('/api/user/phone-numbers');
+      if (!response.ok) return;
+      const data = await response.json();
+      setAvailableLists(data.phoneNumbers || []);
+    } catch (error) {
+      console.error('Error loading lists:', error);
+    }
+  };
+
   const loadContactCount = async () => {
     try {
       setLoading(true);
       const contacts = await getContactsForManualFire({
         selectedTags: selectedTags.map(tag => tag.name || tag),
         selectedSources,
+        selectedLists,
         targetAllSubscribed
       });
       setContactCount(contacts.length);
@@ -86,6 +101,7 @@ export default function ManualFireCard({ initialCampaigns = [] }) {
       await executeManualFire(selectedCampaignId, {
         selectedTags: selectedTags.map(tag => tag.name || tag),
         selectedSources,
+        selectedLists,
         targetAllSubscribed
       });
       setShowConfirmModal(false);
@@ -94,6 +110,7 @@ export default function ManualFireCard({ initialCampaigns = [] }) {
       setTargetAllSubscribed(false);
       setSelectedTags([]);
       setSelectedSources([]);
+      setSelectedLists([]);
       alert('Workflow executed successfully!');
     } catch (error) {
       console.error('Error executing workflow:', error);
@@ -143,6 +160,7 @@ export default function ManualFireCard({ initialCampaigns = [] }) {
                       if (e.target.checked) {
                         setSelectedTags([]);
                         setSelectedSources([]);
+                        setSelectedLists([]);
                       }
                     }}
                     className={styles.checkbox}
@@ -200,9 +218,32 @@ export default function ManualFireCard({ initialCampaigns = [] }) {
                       </div>
                     </div>
 
-                    {selectedTags.length === 0 && selectedSources.length === 0 && (
+                    <div className={styles.formGroup}>
+                      <label>Select Lists (Optional)</label>
+                      <div className={styles.tagsGrid}>
+                        {availableLists.map(list => (
+                          <label key={list.id} className={styles.tagLabel}>
+                            <input
+                              type="checkbox"
+                              checked={selectedLists.includes(list.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedLists([...selectedLists, list.id]);
+                                } else {
+                                  setSelectedLists(selectedLists.filter(id => id !== list.id));
+                                }
+                              }}
+                              className={styles.checkbox}
+                            />
+                            {(list.friendlyName || 'Unnamed')} ({list.phoneNumber})
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {selectedTags.length === 0 && selectedSources.length === 0 && selectedLists.length === 0 && (
                       <div className={styles.warning}>
-                        Please select at least one tag or source (or target all subscribed)
+                        Please select at least one tag, source, or list (or target all subscribed)
                       </div>
                     )}
                   </div>
@@ -226,7 +267,7 @@ export default function ManualFireCard({ initialCampaigns = [] }) {
 
           <button
             onClick={handleExecute}
-            disabled={!selectedCampaignId || !contactCount || contactCount === 0 || loading || executing || (!targetAllSubscribed && selectedTags.length === 0 && selectedSources.length === 0)}
+            disabled={!selectedCampaignId || !contactCount || contactCount === 0 || loading || executing || (!targetAllSubscribed && selectedTags.length === 0 && selectedSources.length === 0 && selectedLists.length === 0)}
             className={styles.executeButton}
           >
             {executing ? 'Executing...' : 'Fire Sequence'}
@@ -268,6 +309,14 @@ export default function ManualFireCard({ initialCampaigns = [] }) {
                       {selectedSources.length > 0 && (
                         <div>
                           <strong>Sources:</strong> {selectedSources.join(', ')}
+                        </div>
+                      )}
+                      {selectedLists.length > 0 && (
+                        <div>
+                          <strong>Lists:</strong> {selectedLists.map(id => {
+                            const list = availableLists.find(item => item.id === id);
+                            return list ? `${list.friendlyName || 'Unnamed'} (${list.phoneNumber})` : String(id);
+                          }).join(', ')}
                         </div>
                       )}
                     </>

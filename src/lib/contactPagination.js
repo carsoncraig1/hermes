@@ -77,7 +77,7 @@ export async function getCampaignContactsPaginated(campaignId, page = 0, pageSiz
     }
   }
 
-  // Get contacts with matching tags or sources
+  // Get contacts with matching tags, sources, or assigned phone-number list
   const tagIds = campaign.targets
     .filter(target => target.targetType === 'TAG')
     .map(target => target.tagId)
@@ -87,8 +87,13 @@ export async function getCampaignContactsPaginated(campaignId, page = 0, pageSiz
     .map(target => target.sourceValue)
     .filter(Boolean)
 
-  // Build OR conditions for tags and sources
-  if (tagIds.length > 0 || sourceValues.length > 0) {
+  const listIds = campaign.targets
+    .filter(target => target.targetType === 'LIST')
+    .map(target => parseInt(target.sourceValue, 10))
+    .filter(Number.isInteger)
+
+  // Build OR conditions for tags, sources, and list assignment
+  if (tagIds.length > 0 || sourceValues.length > 0 || listIds.length > 0) {
     const orConditions = []
     
     if (tagIds.length > 0) {
@@ -104,6 +109,12 @@ export async function getCampaignContactsPaginated(campaignId, page = 0, pageSiz
     if (sourceValues.length > 0) {
       orConditions.push({
         source: { in: sourceValues }
+      })
+    }
+
+    if (listIds.length > 0) {
+      orConditions.push({
+        assignedPhoneNumberId: { in: listIds }
       })
     }
     
@@ -158,7 +169,7 @@ export async function getCampaignContactsPaginated(campaignId, page = 0, pageSiz
  * @returns {Promise<{contacts: Array, hasMore: boolean, total: number}>}
  */
 export async function getContactsForManualFirePaginated(
-  { selectedTags = [], selectedSources = [], targetAllSubscribed = false },
+  { selectedTags = [], selectedSources = [], selectedLists = [], targetAllSubscribed = false },
   page = 0,
   pageSize = PAGE_SIZE,
   executionUserId = null
@@ -206,7 +217,7 @@ export async function getContactsForManualFirePaginated(
   }
 
   // Build OR conditions for tags and sources
-  if (selectedTags.length > 0 || selectedSources.length > 0) {
+  if (selectedTags.length > 0 || selectedSources.length > 0 || selectedLists.length > 0) {
     const orConditions = []
     
     if (selectedTags.length > 0) {
@@ -230,6 +241,17 @@ export async function getContactsForManualFirePaginated(
       orConditions.push({
         source: { in: selectedSources }
       })
+    }
+
+    if (selectedLists.length > 0) {
+      const listIds = selectedLists
+        .map(value => parseInt(value, 10))
+        .filter(Number.isInteger)
+      if (listIds.length > 0) {
+        orConditions.push({
+          assignedPhoneNumberId: { in: listIds }
+        })
+      }
     }
     
     if (orConditions.length > 0) {

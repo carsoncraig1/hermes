@@ -17,22 +17,44 @@ export default function EditCampaignModal({ campaign, onClose, onUpdate }) {
       .filter(target => target.targetType === 'TAG')
       .map(target => target.tagId)
   )
+  const [selectedSources, setSelectedSources] = useState(
+    campaign.targets
+      .filter(target => target.targetType === 'SOURCE')
+      .map(target => target.sourceValue)
+  )
+  const [selectedLists, setSelectedLists] = useState(
+    campaign.targets
+      .filter(target => target.targetType === 'LIST')
+      .map(target => parseInt(target.sourceValue, 10))
+      .filter(Number.isInteger)
+  )
   const [availableTags, setAvailableTags] = useState([])
+  const [availableSources, setAvailableSources] = useState([])
+  const [availableLists, setAvailableLists] = useState([])
   const [optOutText, setOptOutText] = useState('')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [tags, optOutRes] = await Promise.all([
+        const [tags, optOutRes, phoneNumbersRes] = await Promise.all([
           getTags(),
-          fetch('/api/user/opt-out-text')
+          fetch('/api/user/opt-out-text'),
+          fetch('/api/user/phone-numbers')
         ])
         setAvailableTags(tags)
         if (optOutRes.ok) {
           const { optOutText: text } = await optOutRes.json()
           setOptOutText(text || '')
         }
+        if (phoneNumbersRes.ok) {
+          const data = await phoneNumbersRes.json()
+          setAvailableLists(data.phoneNumbers || [])
+        }
+        const { getContacts } = await import('@/lib/actions/contacts')
+        const contacts = await getContacts()
+        const uniqueSources = [...new Set(contacts.map(c => c.source).filter(Boolean))].sort()
+        setAvailableSources(uniqueSources)
       } catch (error) {
         console.error('Error loading data:', error)
       }
@@ -50,7 +72,9 @@ export default function EditCampaignModal({ campaign, onClose, onUpdate }) {
         name,
         message,
         targetAllSubscribed,
-        selectedTags: targetAllSubscribed ? [] : selectedTags
+        selectedTags: targetAllSubscribed ? [] : selectedTags,
+        selectedSources: targetAllSubscribed ? [] : selectedSources,
+        selectedLists: targetAllSubscribed ? [] : selectedLists
       })
       onUpdate(updatedCampaign)
       onClose()
@@ -146,6 +170,8 @@ export default function EditCampaignModal({ campaign, onClose, onUpdate }) {
                   setTargetAllSubscribed(e.target.checked)
                   if (e.target.checked) {
                     setSelectedTags([])
+                    setSelectedSources([])
+                    setSelectedLists([])
                   }
                 }}
                 className={styles.checkbox}
@@ -169,9 +195,47 @@ export default function EditCampaignModal({ campaign, onClose, onUpdate }) {
                     </label>
                   ))}
                 </div>
-                {selectedTags.length === 0 && (
+                <label style={{ marginTop: '1rem', display: 'block' }}>Select Sources</label>
+                <div className={styles.tagsGrid}>
+                  {availableSources.map(source => (
+                    <label key={source} className={styles.tagLabel}>
+                      <input
+                        type="checkbox"
+                        checked={selectedSources.includes(source)}
+                        onChange={() => {
+                          setSelectedSources(prev =>
+                            prev.includes(source) ? prev.filter(s => s !== source) : [...prev, source]
+                          )
+                        }}
+                        className={styles.checkbox}
+                      />
+                      {source}
+                    </label>
+                  ))}
+                </div>
+
+                <label style={{ marginTop: '1rem', display: 'block' }}>Select Lists</label>
+                <div className={styles.tagsGrid}>
+                  {availableLists.map(list => (
+                    <label key={list.id} className={styles.tagLabel}>
+                      <input
+                        type="checkbox"
+                        checked={selectedLists.includes(list.id)}
+                        onChange={() => {
+                          setSelectedLists(prev =>
+                            prev.includes(list.id) ? prev.filter(id => id !== list.id) : [...prev, list.id]
+                          )
+                        }}
+                        className={styles.checkbox}
+                      />
+                      {(list.friendlyName || 'Unnamed')} ({list.phoneNumber})
+                    </label>
+                  ))}
+                </div>
+
+                {selectedTags.length === 0 && selectedSources.length === 0 && selectedLists.length === 0 && (
                   <div className={styles.warning}>
-                    Please select at least one tag
+                    Please select at least one tag, source, or list
                   </div>
                 )}
               </div>
@@ -188,7 +252,7 @@ export default function EditCampaignModal({ campaign, onClose, onUpdate }) {
             </button>
             <button 
               type="submit" 
-              disabled={loading || (!targetAllSubscribed && selectedTags.length === 0)}
+              disabled={loading || (!targetAllSubscribed && selectedTags.length === 0 && selectedSources.length === 0 && selectedLists.length === 0)}
               className={styles.submitButton}
             >
               {loading ? 'Saving...' : 'Save Changes'}
