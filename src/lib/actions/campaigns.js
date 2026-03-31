@@ -1098,7 +1098,8 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
   const { createSendJob, claimAndStartJob, updateSendJobProgress, completeSendJob, failSendJob, getSendJob } = await import('@/lib/sendJob')
   const { retryWithBackoff, isRetryableError } = await import('@/lib/retry')
   const { getCampaignContactsPaginated } = await import('@/lib/contactPagination')
-  const { getTelnyxConfig, sendMessageBulkOptimized, normalizePhoneForTelnyx } = await import('@/lib/telnyx')
+  const { getTelnyxConfig, sendMessageBulkOptimized } = await import('@/lib/telnyx')
+  const { normalizePhoneForTelnyx } = await import('@/lib/phoneUtils')
   const { createMessageClickCodesBatch } = await import('@/lib/messageClickCodes')
   
   let jobId = existingJobId

@@ -8,41 +8,7 @@ import { checkRateLimit, createMessageRecord } from '@/lib/actions/messages';
 import { createMessageClickCodes } from '@/lib/messageClickCodes';
 import { serverLog } from '@/lib/serverLogger';
 import { getPermanentUnsubscribeReason } from '@/lib/errorParsing';
-
-/**
- * Normalize phone number to E.164 format for Telnyx
- * Ensures phone numbers are in the format +1XXXXXXXXXX
- */
-export function normalizePhoneForTelnyx(phone) {
-  if (!phone) return null;
-  
-  // If already in E.164 format, return as-is
-  if (phone.startsWith('+')) {
-    return phone;
-  }
-  
-  // Remove all non-digit characters
-  const digits = phone.replace(/\D/g, '');
-  
-  // If it has 11 digits and starts with 1, add +
-  if (digits.length === 11 && digits[0] === '1') {
-    return `+${digits}`;
-  }
-  
-  // If it has 10 digits, assume US number and add +1
-  if (digits.length === 10) {
-    return `+1${digits}`;
-  }
-  
-  // If it has 11 digits but doesn't start with 1, might be missing country code
-  // Try adding +1 prefix
-  if (digits.length === 11) {
-    return `+${digits}`;
-  }
-  
-  // Return as-is if we can't normalize (let Telnyx validate)
-  return phone;
-}
+import { normalizePhoneForTelnyx } from '@/lib/phoneUtils';
 
 /**
  * Bulk-send optimized Telnyx sender.
