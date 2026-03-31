@@ -106,33 +106,32 @@ export async function getSpamRateAnalytics(timeRange = 'today', limit = 10) {
 export async function getSpamRateAnalyticsForUser(userId, timeRange = 'today', limit = 10) {
   const { start, end } = getTimeRangeBounds(timeRange);
 
-  const [events, totalOutboundMessages, messageByCampaign, messageBySender, outboundCreatedAt] = await Promise.all([
-    prisma.spamFilterEvent.findMany({
-      where: {
-        userId,
-        errorCode: '40002',
-        occurredAt: { gte: start, lte: end }
-      },
-      select: {
-        id: true,
-        campaignId: true,
-        fromNumber: true,
-        toNumber: true,
-        carrier: true,
-        lineType: true,
-        errorCode: true,
-        errorTitle: true,
-        errorDetail: true,
-        occurredAt: true,
-        campaign: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      },
-      orderBy: { occurredAt: 'desc' }
-    }),
+  const eventsPromise = prisma.$queryRaw`
+    SELECT
+      sfe.id,
+      sfe.campaign_id AS "campaignId",
+      sfe.from_number AS "fromNumber",
+      sfe.to_number AS "toNumber",
+      sfe.carrier,
+      sfe.line_type AS "lineType",
+      sfe.error_code AS "errorCode",
+      sfe.error_title AS "errorTitle",
+      sfe.error_detail AS "errorDetail",
+      sfe.occurred_at AS "occurredAt",
+      c.id AS "campaignRefId",
+      c.name AS "campaignName"
+    FROM "spam_filter_events" sfe
+    LEFT JOIN "campaigns" c ON c.id = sfe.campaign_id
+    WHERE
+      sfe.user_id = ${userId}
+      AND sfe.error_code = '40002'
+      AND sfe.occurred_at >= ${start}
+      AND sfe.occurred_at <= ${end}
+    ORDER BY sfe.occurred_at DESC
+  `;
+
+  const [eventRows, totalOutboundMessages, messageByCampaign, messageBySender, outboundCreatedAt] = await Promise.all([
+    eventsPromise,
     prisma.message.count({
       where: {
         userId,
@@ -171,6 +170,23 @@ export async function getSpamRateAnalyticsForUser(userId, timeRange = 'today', l
       }
     })
   ]);
+
+  const events = eventRows.map((row) => ({
+    id: row.id,
+    campaignId: row.campaignId,
+    fromNumber: row.fromNumber,
+    toNumber: row.toNumber,
+    carrier: row.carrier,
+    lineType: row.lineType,
+    errorCode: row.errorCode,
+    errorTitle: row.errorTitle,
+    errorDetail: row.errorDetail,
+    occurredAt: row.occurredAt,
+    campaign: row.campaignRefId ? {
+      id: row.campaignRefId,
+      name: row.campaignName
+    } : null
+  }));
 
   const spamCount = events.length;
   const spamRate = totalOutboundMessages > 0 ? (spamCount / totalOutboundMessages) * 100 : 0;

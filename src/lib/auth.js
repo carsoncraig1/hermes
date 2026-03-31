@@ -81,6 +81,35 @@ export const authOptions = {
 
 // Helper to get session in server components/actions
 export async function auth() {
+  if (process.env.NODE_ENV === 'development') {
+    const prisma = (await import("@/lib/prisma")).default
+    const devUserId = process.env.DEV_AUTH_USER_ID
+
+    const user = devUserId
+      ? await prisma.user.findUnique({
+          where: { id: devUserId },
+          select: { id: true, email: true, name: true, image: true }
+        })
+      : await prisma.user.findFirst({
+          orderBy: { createdAt: 'asc' },
+          select: { id: true, email: true, name: true, image: true }
+        })
+
+    if (!user) {
+      throw new Error('Development auth bypass enabled but no user found. Set DEV_AUTH_USER_ID or create a user.')
+    }
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        image: user.image
+      },
+      expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    }
+  }
+
   const { getServerSession } = await import("next-auth")
   return getServerSession(authOptions)
 }

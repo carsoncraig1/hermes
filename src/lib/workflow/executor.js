@@ -21,7 +21,7 @@ async function resolveShortlinkUrls(messageText, userId) {
 }
 
 // Send message function with real Telnyx integration
-async function sendMessage(contact, messageText, userId, campaignId = null) {
+async function sendMessage(contact, messageText, userId, campaignId = null, optOutText = null) {
   if (!contact.phone || !messageText) {
     console.error('Missing phone or message text');
     return { success: false, error: 'Missing phone or message text' };
@@ -37,16 +37,10 @@ async function sendMessage(contact, messageText, userId, campaignId = null) {
     // Resolve shortlink URLs (keep them for tracking)
     const resolvedMessage = await resolveShortlinkUrls(messageText, userId);
     
-    // Get user's standard opt-out text if set
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { standardOptOutText: true }
-    });
-    
     // Build the message with opt-out text if available
     let finalMessage = resolvedMessage;
-    if (user?.standardOptOutText) {
-      finalMessage = `${resolvedMessage}\n\n${user.standardOptOutText}`;
+    if (optOutText) {
+      finalMessage = `${resolvedMessage}\n\n${optOutText}`;
     }
     
     // Send via Telnyx with contact and campaign IDs for tracking
@@ -57,17 +51,6 @@ async function sendMessage(contact, messageText, userId, campaignId = null) {
       contactId: contact.id,
       campaignId: campaignId
     });
-    
-    // Update campaign stats if campaignId is provided
-    if (campaignId && result.success) {
-      await prisma.campaign.update({
-        where: { id: campaignId },
-        data: {
-          messagesSent: { increment: 1 },
-          lastMessageSent: new Date()
-        }
-      });
-    }
     
     return result;
   } catch (error) {
@@ -421,6 +404,11 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
   }
 
   const { nodes, edges } = workflow;
+  const userSettings = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { standardOptOutText: true }
+  });
+  const optOutText = userSettings?.standardOptOutText || null;
 
   const startNodeId = options?.startNodeId || null;
   const startNode = startNodeId
@@ -557,7 +545,7 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
       case 'action':
         // Execute action
         if (currentNode.data?.message) {
-          const sendResult = await sendMessage(contact, currentNode.data.message, userId, campaignId);
+          const sendResult = await sendMessage(contact, currentNode.data.message, userId, campaignId, optOutText);
           
           // Log action node execution
           await serverLog(

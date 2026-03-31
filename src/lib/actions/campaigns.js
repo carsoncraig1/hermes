@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client'
 import { auth } from '@/lib/auth'
 import { serverLog } from '@/lib/serverLogger'
 import { isContactEligibleForSend } from '@/lib/contactEligibility'
+import crypto from 'crypto'
 
 async function getUserId() {
   const session = await auth()
@@ -377,8 +378,8 @@ export async function executeManualFire(
       throw new Error('No contacts found matching the selected criteria')
     }
     
-    // Calculate batches - optimize for rate limit (1200/min = 20/sec)
-    const BATCH_SIZE = 20 // Match rate limit: 20 messages/second
+    // Larger batches are feasible now that message DB operations are bulked per group.
+    const BATCH_SIZE = 20
     const totalBatches = Math.ceil(firstPage.total / BATCH_SIZE)
     
     if (jobId) {
@@ -1095,11 +1096,10 @@ export async function getCampaignContactCount(campaignId) {
 // @param {string|null} existingJobId - Optional existing job ID to use (for scheduled jobs processed by job processor)
 export async function executeDedicatedSend(campaignId, scheduledAt = null, existingJobId = null, executionUserId = null) {
   const { createSendJob, claimAndStartJob, updateSendJobProgress, completeSendJob, failSendJob, getSendJob } = await import('@/lib/sendJob')
-  const { checkRateLimit } = await import('@/lib/actions/messages')
-  const { incrementRateLimitCache } = await import('@/lib/rateLimitCache')
   const { retryWithBackoff, isRetryableError } = await import('@/lib/retry')
   const { getCampaignContactsPaginated } = await import('@/lib/contactPagination')
-  const { sendMessage, getTelnyxConfig } = await import('@/lib/telnyx')
+  const { getTelnyxConfig, sendMessageBulkOptimized, normalizePhoneForTelnyx } = await import('@/lib/telnyx')
+  const { createMessageClickCodesBatch } = await import('@/lib/messageClickCodes')
   
   let jobId = existingJobId
   const campaignIdInt = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId
@@ -1133,7 +1133,7 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
     }
     
     // Calculate batches - optimize for rate limit (1200/min = 20/sec)
-    const BATCH_SIZE = 20 // Match rate limit: 20 messages/second
+    const BATCH_SIZE = 50
     const totalBatches = Math.ceil(firstPage.total / BATCH_SIZE)
     
     // If using existing job (scheduled job picked up by cron processor)
@@ -1211,13 +1211,26 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
       }
     }
     
-    // Pre-fetch user settings and Telnyx config ONCE (optimization: avoid per-message DB lookups)
-    const [user, telnyxConfig] = await Promise.all([
+    // Pre-fetch user settings, Telnyx config, and revolver numbers once.
+    const [user, telnyxConfig, phoneNumbers] = await Promise.all([
       prisma.user.findUnique({
         where: { id: userId },
-        select: { standardOptOutText: true }
+        select: {
+          standardOptOutText: true,
+          telnyxPhoneNumber: true,
+          telnyxMessagingProfileId: true
+        }
       }),
-      getTelnyxConfig(userId)
+      getTelnyxConfig(userId),
+      prisma.phoneNumber.findMany({
+        where: { userId, enabled: true },
+        select: {
+          id: true,
+          phoneNumber: true,
+          messagingProfileId: true,
+          rateLimit: true
+        }
+      }).catch(() => [])
     ])
     
     // Validate Telnyx config before starting
@@ -1229,6 +1242,25 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
     if (user?.standardOptOutText) {
       messageText = `${campaign.message}\n\n${user.standardOptOutText}`
     }
+
+    const phoneNumberConfigMap = new Map()
+    for (const number of phoneNumbers) {
+      phoneNumberConfigMap.set(number.id, {
+        key: number.id,
+        phoneNumber: number.phoneNumber,
+        messagingProfileId: number.messagingProfileId || telnyxConfig.messagingProfileId,
+        rateLimit: number.rateLimit || 1200,
+        telnyxClient: telnyxConfig.client
+      })
+    }
+
+    phoneNumberConfigMap.set('legacy', {
+      key: 'legacy',
+      phoneNumber: user?.telnyxPhoneNumber || telnyxConfig.phoneNumber,
+      messagingProfileId: user?.telnyxMessagingProfileId || telnyxConfig.messagingProfileId,
+      rateLimit: 1200,
+      telnyxClient: telnyxConfig.client
+    })
     
     let successCount = 0
     let failCount = 0
@@ -1261,58 +1293,160 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
         // Mark contacts as sent BEFORE sending to prevent race conditions
         batch.forEach(contact => sentContactIds.add(contact.id))
         
-        // Check rate limit
-        const rateLimit = await checkRateLimit(userId, 1200, 30000, true)
-        if (!rateLimit.allowed) {
-          const waitTime = rateLimit.retryAfter || 1000
-          await new Promise(resolve => setTimeout(resolve, waitTime))
+        // Group batch contacts by assigned phone number (fallback to legacy sender).
+        const groupedByNumber = new Map()
+        for (const contact of batch) {
+          const groupKey = contact.assignedPhoneNumberId || 'legacy'
+          if (!groupedByNumber.has(groupKey)) groupedByNumber.set(groupKey, [])
+          groupedByNumber.get(groupKey).push(contact)
         }
-        
-        // Execute batch with retry
-        // OPTIMIZED: Pass pre-fetched telnyxConfig, skip per-message rate limit and subscription checks
+
         const batchStartTime = Date.now()
-        let results = await Promise.allSettled(
-          batch.map(contact =>
-            retryWithBackoff(
-              () => sendMessage({
-                to: contact.phone,
-                text: messageText,
+        const groupedEntries = [...groupedByNumber.entries()]
+        let groupOutcomes = await Promise.allSettled(
+          groupedEntries.map(async ([groupKey, groupContacts]) => {
+            const groupConfig = phoneNumberConfigMap.get(groupKey) || phoneNumberConfigMap.get('legacy')
+            if (!groupConfig?.phoneNumber) {
+              throw new Error(`Missing sender number for group ${String(groupKey)}`)
+            }
+
+            // Phase 1: bulk create queued message records.
+            const contactMessagePairs = []
+            const messageRecords = groupContacts.map(contact => {
+              const messageId = crypto.randomUUID()
+              contactMessagePairs.push({ contactId: contact.id, messageId })
+              return {
+                id: messageId,
                 userId,
                 contactId: contact.id,
                 campaignId: campaignIdInt,
-                telnyxConfig,           // Pre-fetched config (avoids 2 DB queries per message)
-                skipRateLimit: true,     // Already checked at batch level
-                              }),
-              {
-                maxRetries: 3,
-                initialDelay: 1000,
-                shouldRetry: isRetryableError
+                from: groupConfig.phoneNumber,
+                to: contact.phone,
+                text: messageText,
+                type: 'SMS',
+                parts: 1,
+                status: 'queued',
+                direction: 'outbound',
               }
+            })
+            await prisma.message.createMany({ data: messageRecords })
+            const contactToMessageId = new Map(contactMessagePairs.map(pair => [pair.contactId, pair.messageId]))
+
+            // Phase 2: bulk create click codes.
+            const contactTextMap = await createMessageClickCodesBatch(messageText, contactMessagePairs, userId)
+
+            // Phase 3: fire Telnyx calls in parallel with retry.
+            const telnyxResults = await Promise.allSettled(
+              groupContacts.map(contact =>
+                retryWithBackoff(
+                  () => sendMessageBulkOptimized({
+                    telnyxClient: groupConfig.telnyxClient,
+                    from: groupConfig.phoneNumber,
+                    to: normalizePhoneForTelnyx(contact.phone),
+                    text: contactTextMap.get(contact.id) || messageText,
+                    messagingProfileId: groupConfig.messagingProfileId,
+                  }),
+                  {
+                    maxRetries: 3,
+                    initialDelay: 1000,
+                    shouldRetry: isRetryableError
+                  }
+                )
+              )
             )
-              .then(result => {
-                incrementRateLimitCache(userId).catch(() => {})
-                return { success: result.success, contact }
-              })
-              .catch(error => {
-                console.error(`Error sending to ${contact.phone}:`, error)
-                return { success: false, contact, error }
-              })
-          )
+
+            // Phase 4: bulk update messages + contacts.
+            const now = new Date()
+            const messageUpdates = []
+            const successfulContactIds = []
+            let groupSuccessCount = 0
+            let groupFailCount = 0
+
+            telnyxResults.forEach((result, index) => {
+              const contact = groupContacts[index]
+              const messageId = contactToMessageId.get(contact.id)
+              const textForContact = contactTextMap.get(contact.id) || messageText
+
+              if (result.status === 'fulfilled' && result.value.success) {
+                groupSuccessCount++
+                successfulContactIds.push(contact.id)
+                const sendResult = result.value
+                const status = sendResult.initialStatus || 'queued'
+                messageUpdates.push(
+                  prisma.message.update({
+                    where: { id: messageId },
+                    data: {
+                      telnyxMessageId: sendResult.telnyxMessageId,
+                      status,
+                      costAmount: (status === 'sent' || status === 'delivered' || status === 'delivery_unconfirmed') && sendResult.costAmount
+                        ? parseFloat(sendResult.costAmount)
+                        : null,
+                      costCurrency: sendResult.costCurrency || 'USD',
+                      sentAt: (status === 'sent' || status === 'sending') ? now : null,
+                      text: textForContact,
+                      telnyxMetadata: sendResult.rawData ? JSON.parse(JSON.stringify(sendResult.rawData)) : null,
+                    }
+                  })
+                )
+              } else {
+                groupFailCount++
+                const errorMessage = result.status === 'rejected'
+                  ? (result.reason?.message || 'Unknown send error')
+                  : 'Send failed'
+                messageUpdates.push(
+                  prisma.message.update({
+                    where: { id: messageId },
+                    data: {
+                      status: 'sending_failed',
+                      failedAt: now,
+                      errorMessage
+                    }
+                  })
+                )
+              }
+            })
+
+            const txOperations = [...messageUpdates]
+            if (successfulContactIds.length > 0) {
+              txOperations.push(
+                prisma.contact.updateMany({
+                  where: { id: { in: successfulContactIds } },
+                  data: { lastMessageSent: now }
+                })
+              )
+            }
+            if (txOperations.length > 0) {
+              await prisma.$transaction(txOperations)
+            }
+
+            const perNumberMinBatchTime = Math.ceil((groupContacts.length / (groupConfig.rateLimit || 1200)) * 60000)
+            return {
+              successCount: groupSuccessCount,
+              failCount: groupFailCount,
+              groupSize: groupContacts.length,
+              minBatchTime: perNumberMinBatchTime
+            }
+          })
         )
-        
-        // Count results
-        const batchSuccessCount = results.filter(r => 
-          r.status === 'fulfilled' && r.value.success
-        ).length
-        
-        results.forEach(result => {
-          processedContacts++
-          if (result.status === 'fulfilled' && result.value.success) {
-            successCount++
+
+        let batchSuccessCount = 0
+        let batchFailCount = 0
+        let waitTarget = 0
+        groupOutcomes.forEach((groupResult, index) => {
+          if (groupResult.status === 'fulfilled') {
+            batchSuccessCount += groupResult.value.successCount
+            batchFailCount += groupResult.value.failCount
+            waitTarget = Math.max(waitTarget, groupResult.value.minBatchTime || 0)
           } else {
-            failCount++
+            const failedContacts = groupedEntries[index]?.[1]?.length || 0
+            batchFailCount += failedContacts
+            console.error(`Group send failed for dedicated send batch:`, groupResult.reason)
           }
         })
+
+        processedContacts += batch.length
+        successCount += batchSuccessCount
+        failCount += batchFailCount
         
         // Update job progress (async, don't wait)
         updateSendJobProgress(jobId, {
@@ -1333,17 +1467,16 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
           }).catch(() => {}) // Don't block on DB update
         }
         
-        // Explicit memory cleanup after batch processing
-        batch = null
-        results = null
-        
-        // Dynamic delay: ensure we don't exceed 20 messages/second
-        // If batch took less than 1 second, wait the remainder
+        // Dynamic delay per-number-group: wait for the slowest group's min batch time.
         const batchDuration = Date.now() - batchStartTime
-        const minBatchTime = 1000 // 1 second for 20 messages = 20/sec
+        const minBatchTime = waitTarget || Math.ceil((batch.length / 1200) * 60000)
         if (batchDuration < minBatchTime && (i + BATCH_SIZE < validContacts.length || hasMore)) {
           await new Promise(resolve => setTimeout(resolve, minBatchTime - batchDuration))
         }
+
+        // Explicit memory cleanup after batch processing
+        batch = null
+        groupOutcomes = null
       }
       
       // Clear page data from memory after processing all batches

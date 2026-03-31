@@ -42,6 +42,27 @@ export async function getCampaignContactsPaginated(campaignId, page = 0, pageSiz
     const [contacts, total] = await Promise.all([
       prisma.contact.findMany({
         where: whereConditions,
+        select: {
+          id: true,
+          userId: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          clickid: true,
+          source: true,
+          age: true,
+          ip: true,
+          useragent: true,
+          referrer: true,
+          subscribed: true,
+          unsubscribeReason: true,
+          lastMessageSent: true,
+          hasClicked: true,
+          assignedPhoneNumberId: true,
+          createdAt: true,
+          updatedAt: true
+        },
         skip: page * pageSize,
         take: pageSize,
         orderBy: { id: 'asc' } // Consistent ordering for pagination
@@ -94,6 +115,27 @@ export async function getCampaignContactsPaginated(campaignId, page = 0, pageSiz
   const [contacts, total] = await Promise.all([
     prisma.contact.findMany({
       where: whereConditions,
+      select: {
+        id: true,
+        userId: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        clickid: true,
+        source: true,
+        age: true,
+        ip: true,
+        useragent: true,
+        referrer: true,
+        subscribed: true,
+        unsubscribeReason: true,
+        lastMessageSent: true,
+        hasClicked: true,
+        assignedPhoneNumberId: true,
+        createdAt: true,
+        updatedAt: true
+      },
       skip: page * pageSize,
       take: pageSize,
       orderBy: { id: 'asc' }
@@ -132,6 +174,27 @@ export async function getContactsForManualFirePaginated(
     const [contacts, total] = await Promise.all([
       prisma.contact.findMany({
         where: whereConditions,
+        select: {
+          id: true,
+          userId: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          clickid: true,
+          source: true,
+          age: true,
+          ip: true,
+          useragent: true,
+          referrer: true,
+          subscribed: true,
+          unsubscribeReason: true,
+          lastMessageSent: true,
+          hasClicked: true,
+          assignedPhoneNumberId: true,
+          createdAt: true,
+          updatedAt: true
+        },
         skip: page * pageSize,
         take: pageSize,
         orderBy: { id: 'asc' }
@@ -177,6 +240,27 @@ export async function getContactsForManualFirePaginated(
   const [contacts, total] = await Promise.all([
     prisma.contact.findMany({
       where: whereConditions,
+      select: {
+        id: true,
+        userId: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        clickid: true,
+        source: true,
+        age: true,
+        ip: true,
+        useragent: true,
+        referrer: true,
+        subscribed: true,
+        unsubscribeReason: true,
+        lastMessageSent: true,
+        hasClicked: true,
+        assignedPhoneNumberId: true,
+        createdAt: true,
+        updatedAt: true
+      },
       skip: page * pageSize,
       take: pageSize,
       orderBy: { id: 'asc' }

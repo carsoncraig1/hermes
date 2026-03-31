@@ -4,6 +4,9 @@ import prisma from '@/lib/prisma';
 import { auth } from '@/lib/auth';
 import { getSpamRateAnalyticsForUser } from '@/lib/actions/spamTracking';
 
+const DASHBOARD_CACHE_TTL_MS = 30 * 1000;
+const dashboardCache = new Map();
+
 async function getUserId() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -49,6 +52,17 @@ function getTimeRangeBounds(timeRange = 'today') {
 export async function getDashboardData(timeRange = 'today') {
   const userId = await getUserId();
   const { start, end } = getTimeRangeBounds(timeRange);
+  const cacheKey = `${userId}:${timeRange}`;
+  const now = Date.now();
+  const cached = dashboardCache.get(cacheKey);
+
+  if (cached && cached.expiresAt > now) {
+    return cached.data;
+  }
+
+  if (cached) {
+    dashboardCache.delete(cacheKey);
+  }
   
   // Run ALL queries in parallel for maximum speed
   const [
@@ -211,8 +225,8 @@ export async function getDashboardData(timeRange = 'today') {
   
   // Net contact growth
   const netGrowth = newContactsCount - unsubscribedCount;
-  
-  return {
+
+  const result = {
     // Contact stats
     contactStats: {
       subscribedCount,
@@ -274,6 +288,13 @@ export async function getDashboardData(timeRange = 'today') {
     fetchedAt: new Date().toISOString(),
     userTimezone: userSettings?.timezone || null
   };
+
+  dashboardCache.set(cacheKey, {
+    data: result,
+    expiresAt: now + DASHBOARD_CACHE_TTL_MS
+  });
+
+  return result;
 }
 
 /**

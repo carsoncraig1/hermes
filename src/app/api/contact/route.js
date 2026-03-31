@@ -142,7 +142,10 @@ export async function POST(request) {
         userId,
         phone: normalizedPhone
       },
-      include: {
+      select: {
+        id: true,
+        clickid: true,
+        assignedPhoneNumberId: true,
         tags: true
       }
     })
@@ -290,6 +293,38 @@ export async function POST(request) {
       //     console.error('Error triggering workflows:', err);
       //   });
       // }
+    }
+
+    // === REVOLVER: Assign phone number to new/unassigned contact ===
+    if (!existingContact?.assignedPhoneNumberId) {
+      try {
+        const availableNumbers = await prisma.phoneNumber.findMany({
+          where: {
+            userId,
+            enabled: true,
+            acceptingNewLeads: true,
+          },
+          select: {
+            id: true,
+            phoneNumber: true,
+            _count: { select: { contacts: true } }
+          },
+          orderBy: { createdAt: 'asc' }
+        })
+
+        if (availableNumbers.length > 0) {
+          const leastLoaded = availableNumbers.reduce((min, num) =>
+            num._count.contacts < min._count.contacts ? num : min
+          )
+
+          await prisma.contact.update({
+            where: { id: contact.id },
+            data: { assignedPhoneNumberId: leastLoaded.id }
+          })
+        }
+      } catch (assignError) {
+        console.error('Error assigning phone number to contact:', assignError)
+      }
     }
 
     return Response.json(contact, { status: existingContact ? 200 : 201 })

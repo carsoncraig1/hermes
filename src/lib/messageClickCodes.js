@@ -198,6 +198,89 @@ export async function createMessageClickCodes(messageId, messageText, contactId,
 }
 
 /**
+ * Create MessageClickCode records in bulk for a batch of contacts/messages.
+ * Returns per-contact modified text with contact-specific click codes embedded.
+ * @param {string} messageText
+ * @param {Array<{contactId:number,messageId:string}>} contactMessagePairs
+ * @param {string} userId
+ * @returns {Promise<Map<number,string>>}
+ */
+export async function createMessageClickCodesBatch(messageText, contactMessagePairs, userId) {
+  const contactTextMap = new Map();
+  if (!messageText || !Array.isArray(contactMessagePairs) || contactMessagePairs.length === 0) {
+    return contactTextMap;
+  }
+
+  const shortlinkRefs = extractShortlinksFromText(messageText);
+  if (shortlinkRefs.length === 0) {
+    return contactTextMap;
+  }
+
+  const shortlinkIds = [...new Set(shortlinkRefs.map(s => s.shortlinkId))];
+  const shortlinkRecords = await prisma.shortlink.findMany({
+    where: {
+      userId,
+      id: { in: shortlinkIds },
+    },
+    select: { id: true },
+  });
+
+  const validShortlinkIds = new Set(shortlinkRecords.map(s => s.id));
+  const validRefs = shortlinkRefs
+    .filter(ref => validShortlinkIds.has(ref.shortlinkId))
+    .sort((a, b) => b.index - a.index);
+
+  if (validRefs.length === 0) {
+    return contactTextMap;
+  }
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 30);
+
+  const totalCodes = contactMessagePairs.length * validRefs.length;
+  const allCodes = await Promise.all(
+    Array.from({ length: totalCodes }, () => generateUniqueClickCode())
+  );
+
+  const codeData = [];
+  let codeIndex = 0;
+
+  for (const { contactId, messageId } of contactMessagePairs) {
+    let modifiedText = messageText;
+
+    for (let i = 0; i < validRefs.length; i++) {
+      const ref = validRefs[i];
+      const code = allCodes[codeIndex + i];
+      const newUrl = `https://txt.cx/${code}`;
+
+      codeData.push({
+        code,
+        shortlinkId: ref.shortlinkId,
+        messageId,
+        contactId,
+        userId,
+        expiresAt,
+      });
+
+      modifiedText =
+        modifiedText.substring(0, ref.index) +
+        newUrl +
+        modifiedText.substring(ref.index + ref.fullUrl.length);
+    }
+
+    contactTextMap.set(contactId, modifiedText);
+    codeIndex += validRefs.length;
+  }
+
+  await prisma.messageClickCode.createMany({
+    data: codeData,
+    skipDuplicates: true,
+  });
+
+  return contactTextMap;
+}
+
+/**
  * Lookup MessageClickCode by code
  * @param {string} code - Click code to lookup
  * @returns {Promise<MessageClickCode|null>} - MessageClickCode record or null

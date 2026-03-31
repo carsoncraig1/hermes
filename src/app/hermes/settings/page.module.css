@@ -309,3 +309,172 @@
   margin-top: 1rem;
 }
 
+.phoneTableWrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--border-radius-md);
+}
+
+.phoneTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.phoneTable th,
+.phoneTable td {
+  border-bottom: 1px solid var(--border-primary);
+  padding: 0.625rem;
+  text-align: left;
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.phoneTable th {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+}
+
+.phoneRowDisabled {
+  opacity: 0.6;
+}
+
+.phoneInput {
+  width: 100%;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  border-radius: var(--border-radius-sm);
+  padding: 0.4rem 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.phoneInputSmall {
+  width: 90px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  border-radius: var(--border-radius-sm);
+  padding: 0.35rem 0.45rem;
+  font-size: 0.8125rem;
+}
+
+.typeBadge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+}
+
+.leadBadge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: var(--border-radius-sm);
+  background: color-mix(in srgb, var(--accent-orange) 18%, transparent);
+  color: var(--accent-orange);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  transition: .2s;
+  border-radius: 999px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 2px;
+  top: 2px;
+  background-color: var(--text-muted);
+  transition: .2s;
+  border-radius: 50%;
+}
+
+.switch input:checked + .slider {
+  background-color: color-mix(in srgb, var(--accent-orange) 22%, var(--bg-tertiary));
+  border-color: var(--accent-orange);
+}
+
+.switch input:checked + .slider:before {
+  transform: translateX(18px);
+  background-color: var(--accent-orange);
+}
+
+.phoneSummary {
+  margin-top: 0.85rem;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.migrateRow {
+  margin-top: 0.85rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mutedText {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.addPhoneForm {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border-primary);
+  padding-top: 1rem;
+}
+
+.addPhoneForm h3 {
+  margin: 0 0 0.7rem 0;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.addPhoneGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 0.6rem;
+}
+
+.dangerButton {
+  background: transparent;
+  color: #ff6b6b;
+  border: 1px solid #ff6b6b;
+  border-radius: var(--border-radius-sm);
+  padding: 0.35rem 0.6rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.dangerButton:hover:not(:disabled) {
+  background: color-mix(in srgb, #ff6b6b 12%, transparent);
+}
+

@@ -96,8 +96,8 @@ export async function POST(request) {
 
     // Only log final status (delivered or failed), not intermediate "sent" status
 
-    // Find the user by messaging profile ID
-    const user = await prisma.user.findFirst({
+    // First try legacy user messaging profile, then revolver phone-number profile mapping.
+    let user = await prisma.user.findFirst({
       where: {
         telnyxMessagingProfileId: messagingProfileId
       },
@@ -106,6 +106,22 @@ export async function POST(request) {
         autoUnsubscribeOnFailure: true
       }
     });
+
+    if (!user) {
+      const phoneNumber = await prisma.phoneNumber.findFirst({
+        where: { messagingProfileId },
+        select: { userId: true }
+      })
+      if (phoneNumber) {
+        user = await prisma.user.findUnique({
+          where: { id: phoneNumber.userId },
+          select: {
+            id: true,
+            autoUnsubscribeOnFailure: true
+          }
+        })
+      }
+    }
 
     if (!user) {
       debugWebhook('user-not-found', { messagingProfileId, telnyxMessageId, toNumber, status });

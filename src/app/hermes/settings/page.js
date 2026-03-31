@@ -29,6 +29,17 @@ export default function Settings() {
   const [timezoneLoading, setTimezoneLoading] = useState(true);
   const [timezoneSaving, setTimezoneSaving] = useState(false);
   const [timeZoneOptions, setTimeZoneOptions] = useState([]);
+  const [phoneNumbers, setPhoneNumbers] = useState([]);
+  const [unassignedContacts, setUnassignedContacts] = useState(0);
+  const [phoneNumbersLoading, setPhoneNumbersLoading] = useState(true);
+  const [phoneNumbersSaving, setPhoneNumbersSaving] = useState(false);
+  const [migrateLoading, setMigrateLoading] = useState(false);
+  const [newPhoneNumber, setNewPhoneNumber] = useState({
+    phoneNumber: '',
+    friendlyName: '',
+    type: 'toll_free',
+    messagingProfileId: '',
+  });
   const browserTimezone = getBrowserTimeZone();
 
   useEffect(() => {
@@ -42,12 +53,13 @@ export default function Settings() {
 
     const fetchData = async () => {
       try {
-        const [apiKeyResponse, optOutResponse, telnyxResponse, autoUnsubscribeResponse, timezoneResponse] = await Promise.all([
+        const [apiKeyResponse, optOutResponse, telnyxResponse, autoUnsubscribeResponse, timezoneResponse, phoneNumbersResponse] = await Promise.all([
           fetch('/api/user/api-key'),
           fetch('/api/user/opt-out-text'),
           fetch('/api/user/telnyx-settings'),
           fetch('/api/user/auto-unsubscribe'),
           fetch('/api/user/timezone'),
+          fetch('/api/user/phone-numbers'),
         ]);
         
         if (apiKeyResponse.ok) {
@@ -74,6 +86,12 @@ export default function Settings() {
           const timezoneData = await timezoneResponse.json();
           setTimezone(timezoneData.timezone || '');
         }
+        
+        if (phoneNumbersResponse.ok) {
+          const phoneNumbersData = await phoneNumbersResponse.json();
+          setPhoneNumbers(phoneNumbersData.phoneNumbers || []);
+          setUnassignedContacts(phoneNumbersData.unassignedContacts || 0);
+        }
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
@@ -82,6 +100,7 @@ export default function Settings() {
         setTelnyxLoading(false);
         setAutoUnsubscribeLoading(false);
         setTimezoneLoading(false);
+        setPhoneNumbersLoading(false);
       }
     };
     fetchData();
@@ -196,6 +215,123 @@ export default function Settings() {
       alert('Failed to save timezone');
     } finally {
       setTimezoneSaving(false);
+    }
+  };
+
+  const formatPhoneNumber = (value) => {
+    if (!value) return '';
+    const digits = value.replace(/\D/g, '');
+    const base = digits.startsWith('1') && digits.length === 11 ? digits.slice(1) : digits;
+    if (base.length !== 10) return value;
+    return `(${base.slice(0, 3)}) ${base.slice(3, 6)}-${base.slice(6)}`;
+  };
+
+  const truncateProfileId = (value) => {
+    if (!value) return '';
+    if (value.length <= 16) return value;
+    return `${value.slice(0, 8)}...${value.slice(-4)}`;
+  };
+
+  const fetchPhoneNumbers = async () => {
+    const response = await fetch('/api/user/phone-numbers');
+    if (!response.ok) {
+      throw new Error('Failed to fetch phone numbers');
+    }
+    const data = await response.json();
+    setPhoneNumbers(data.phoneNumbers || []);
+    setUnassignedContacts(data.unassignedContacts || 0);
+  };
+
+  const handleAddPhoneNumber = async () => {
+    if (!/^\+1\d{10}$/.test(newPhoneNumber.phoneNumber.trim())) {
+      alert('Phone number must be in E.164 format (+1XXXXXXXXXX)');
+      return;
+    }
+
+    setPhoneNumbersSaving(true);
+    try {
+      const response = await fetch('/api/user/phone-numbers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPhoneNumber),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to add phone number');
+      }
+      setNewPhoneNumber({
+        phoneNumber: '',
+        friendlyName: '',
+        type: 'toll_free',
+        messagingProfileId: '',
+      });
+      await fetchPhoneNumbers();
+    } catch (error) {
+      alert(error.message || 'Failed to add phone number');
+    } finally {
+      setPhoneNumbersSaving(false);
+    }
+  };
+
+  const handleUpdatePhoneNumber = async (id, updates, optimisticUpdater = null) => {
+    const previous = phoneNumbers;
+    if (optimisticUpdater) {
+      setPhoneNumbers(optimisticUpdater(previous));
+    }
+    try {
+      const response = await fetch('/api/user/phone-numbers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...updates }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update phone number');
+      }
+      await fetchPhoneNumbers();
+    } catch (error) {
+      if (optimisticUpdater) setPhoneNumbers(previous);
+      alert(error.message || 'Failed to update phone number');
+    }
+  };
+
+  const handleDeletePhoneNumber = async (id) => {
+    if (!confirm('Delete this phone number? Assigned contacts will become unassigned.')) return;
+    setPhoneNumbersSaving(true);
+    try {
+      const response = await fetch('/api/user/phone-numbers', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete phone number');
+      }
+      await fetchPhoneNumbers();
+    } catch (error) {
+      alert(error.message || 'Failed to delete phone number');
+    } finally {
+      setPhoneNumbersSaving(false);
+    }
+  };
+
+  const handleMigrateContacts = async () => {
+    setMigrateLoading(true);
+    try {
+      const response = await fetch('/api/user/phone-numbers/migrate', {
+        method: 'POST',
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Migration failed');
+      }
+      await fetchPhoneNumbers();
+      alert(`Migrated ${data.migratedCount || 0} contacts`);
+    } catch (error) {
+      alert(error.message || 'Migration failed');
+    } finally {
+      setMigrateLoading(false);
     }
   };
 
@@ -744,6 +880,190 @@ if (hrms && conversionOccurred) {
                   >
                     {telnyxSaving ? 'Saving...' : 'Save Telnyx Settings'}
                   </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Phone Numbers (Revolver) Card */}
+        <div className={styles.settingsCard}>
+          <div className={styles.cardHeader}>
+            <h2>Phone Numbers (Revolver)</h2>
+            <span className={styles.cardBadge}>Multi-Number</span>
+          </div>
+          <div className={styles.cardContent}>
+            <p className={styles.cardDescription}>
+              Manage multiple sending numbers, per-number rate limits, and whether each number can accept new leads.
+            </p>
+            {phoneNumbersLoading ? (
+              <div className={styles.loading}>Loading...</div>
+            ) : (
+              <>
+                <div className={styles.phoneTableWrapper}>
+                  <table className={styles.phoneTable}>
+                    <thead>
+                      <tr>
+                        <th>Phone Number</th>
+                        <th>Friendly Name</th>
+                        <th>Type</th>
+                        <th>Messaging Profile</th>
+                        <th>Assigned Contacts</th>
+                        <th>Rate Limit (MPM)</th>
+                        <th>Enabled</th>
+                        <th>Accepting New Leads</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {phoneNumbers.map((number) => (
+                        <tr key={number.id} className={!number.enabled ? styles.phoneRowDisabled : ''}>
+                          <td>{formatPhoneNumber(number.phoneNumber)}</td>
+                          <td>
+                            <input
+                              className={styles.phoneInput}
+                              value={number.friendlyName || ''}
+                              onChange={(e) =>
+                                setPhoneNumbers(prev => prev.map(n => n.id === number.id ? { ...n, friendlyName: e.target.value } : n))
+                              }
+                              onBlur={() => handleUpdatePhoneNumber(number.id, { friendlyName: number.friendlyName || '' })}
+                              placeholder="Optional"
+                            />
+                          </td>
+                          <td>
+                            <span className={styles.typeBadge}>{number.type}</span>
+                          </td>
+                          <td title={number.messagingProfileId || ''}>
+                            <input
+                              className={styles.phoneInput}
+                              value={number.messagingProfileId || ''}
+                              onChange={(e) =>
+                                setPhoneNumbers(prev => prev.map(n => n.id === number.id ? { ...n, messagingProfileId: e.target.value } : n))
+                              }
+                              onBlur={() => handleUpdatePhoneNumber(number.id, { messagingProfileId: number.messagingProfileId || '' })}
+                              placeholder="Uses global profile if blank"
+                            />
+                            <div className={styles.mutedText}>{truncateProfileId(number.messagingProfileId || '')}</div>
+                          </td>
+                          <td>{number._count?.contacts || 0}</td>
+                          <td>
+                            <input
+                              className={styles.phoneInputSmall}
+                              type="number"
+                              min={1}
+                              value={number.rateLimit}
+                              onChange={(e) =>
+                                setPhoneNumbers(prev => prev.map(n => n.id === number.id ? { ...n, rateLimit: Number(e.target.value) || 1 } : n))
+                              }
+                              onBlur={() => handleUpdatePhoneNumber(number.id, { rateLimit: number.rateLimit })}
+                            />
+                          </td>
+                          <td>
+                            <label className={styles.switch}>
+                              <input
+                                type="checkbox"
+                                checked={number.enabled}
+                                onChange={(e) => {
+                                  const enabled = e.target.checked;
+                                  handleUpdatePhoneNumber(
+                                    number.id,
+                                    { enabled, acceptingNewLeads: enabled ? number.acceptingNewLeads : false },
+                                    (prev) => prev.map(n => n.id === number.id
+                                      ? { ...n, enabled, acceptingNewLeads: enabled ? n.acceptingNewLeads : false }
+                                      : n
+                                    )
+                                  );
+                                }}
+                              />
+                              <span className={styles.slider} />
+                            </label>
+                          </td>
+                          <td>
+                            <label className={styles.switch}>
+                              <input
+                                type="checkbox"
+                                checked={number.acceptingNewLeads}
+                                disabled={!number.enabled}
+                                onChange={(e) => {
+                                  const acceptingNewLeads = e.target.checked;
+                                  handleUpdatePhoneNumber(
+                                    number.id,
+                                    { acceptingNewLeads },
+                                    (prev) => prev.map(n => n.id === number.id ? { ...n, acceptingNewLeads } : n)
+                                  );
+                                }}
+                              />
+                              <span className={styles.slider} />
+                            </label>
+                            {!number.acceptingNewLeads && (
+                              <span className={styles.leadBadge}>Not accepting leads</span>
+                            )}
+                          </td>
+                          <td>
+                            <button
+                              className={styles.dangerButton}
+                              onClick={() => handleDeletePhoneNumber(number.id)}
+                              disabled={phoneNumbersSaving}
+                              type="button"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className={styles.phoneSummary}>
+                  {phoneNumbers.filter(n => n.enabled).length} numbers active, {phoneNumbers.filter(n => n.acceptingNewLeads).length} accepting leads, {phoneNumbers.reduce((sum, n) => sum + (n._count?.contacts || 0), 0)} total contacts assigned
+                </div>
+
+                {unassignedContacts > 0 && (
+                  <div className={styles.migrateRow}>
+                    <span className={styles.mutedText}>{unassignedContacts} contacts are unassigned.</span>
+                    <button className={styles.saveButton} onClick={handleMigrateContacts} disabled={migrateLoading}>
+                      {migrateLoading ? 'Migrating...' : 'Migrate Existing Contacts'}
+                    </button>
+                  </div>
+                )}
+
+                <div className={styles.addPhoneForm}>
+                  <h3>Add Phone Number</h3>
+                  <div className={styles.addPhoneGrid}>
+                    <input
+                      className={styles.phoneInput}
+                      placeholder="+15551234567"
+                      value={newPhoneNumber.phoneNumber}
+                      onChange={(e) => setNewPhoneNumber(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                    />
+                    <input
+                      className={styles.phoneInput}
+                      placeholder="Friendly name (optional)"
+                      value={newPhoneNumber.friendlyName}
+                      onChange={(e) => setNewPhoneNumber(prev => ({ ...prev, friendlyName: e.target.value }))}
+                    />
+                    <select
+                      className={styles.phoneInput}
+                      value={newPhoneNumber.type}
+                      onChange={(e) => setNewPhoneNumber(prev => ({ ...prev, type: e.target.value }))}
+                    >
+                      <option value="toll_free">toll_free</option>
+                      <option value="local">local</option>
+                      <option value="short_code">short_code</option>
+                    </select>
+                    <input
+                      className={styles.phoneInput}
+                      placeholder="Messaging profile ID (optional)"
+                      value={newPhoneNumber.messagingProfileId}
+                      onChange={(e) => setNewPhoneNumber(prev => ({ ...prev, messagingProfileId: e.target.value }))}
+                    />
+                  </div>
+                  <div className={styles.optOutActions}>
+                    <button className={styles.saveButton} onClick={handleAddPhoneNumber} disabled={phoneNumbersSaving}>
+                      {phoneNumbersSaving ? 'Saving...' : 'Add Phone Number'}
+                    </button>
+                  </div>
                 </div>
               </>
             )}

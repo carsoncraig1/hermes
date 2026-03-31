@@ -86,16 +86,27 @@ export async function POST(request) {
           });
         }
         
-        // Find which user this message belongs to based on the 'to' phone number
-        // The 'to' number should match a user's telnyxPhoneNumber (normalized)
-        const user = await prisma.user.findFirst({
+        // First resolve user via revolver PhoneNumber table, then fallback to legacy user setting.
+        let user = null
+        const phoneNumberRecord = await prisma.phoneNumber.findFirst({
           where: {
-            telnyxPhoneNumber: normalizedTo
+            phoneNumber: normalizedTo,
+            enabled: true
           },
-          select: {
-            id: true
-          }
-        });
+          select: { userId: true }
+        })
+        if (phoneNumberRecord) {
+          user = { id: phoneNumberRecord.userId }
+        } else {
+          user = await prisma.user.findFirst({
+            where: {
+              telnyxPhoneNumber: normalizedTo
+            },
+            select: {
+              id: true
+            }
+          })
+        }
 
         if (!user) {
           // If we can't determine the user, log it but don't unsubscribe

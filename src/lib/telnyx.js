@@ -13,7 +13,7 @@ import { getPermanentUnsubscribeReason } from '@/lib/errorParsing';
  * Normalize phone number to E.164 format for Telnyx
  * Ensures phone numbers are in the format +1XXXXXXXXXX
  */
-function normalizePhoneForTelnyx(phone) {
+export function normalizePhoneForTelnyx(phone) {
   if (!phone) return null;
   
   // If already in E.164 format, return as-is
@@ -42,6 +42,37 @@ function normalizePhoneForTelnyx(phone) {
   
   // Return as-is if we can't normalize (let Telnyx validate)
   return phone;
+}
+
+/**
+ * Bulk-send optimized Telnyx sender.
+ * Performs only the Telnyx API call and returns normalized response metadata.
+ */
+export async function sendMessageBulkOptimized({
+  telnyxClient,
+  from,
+  to,
+  text,
+  messagingProfileId,
+}) {
+  const response = await telnyxClient.messages.create({
+    from,
+    to: [to],
+    text,
+    type: 'SMS',
+    messaging_profile_id: messagingProfileId,
+    webhook_url: 'https://txt.cx/api/message/status',
+    webhook_failover_url: '',
+  });
+
+  return {
+    success: true,
+    telnyxMessageId: response.data?.id,
+    initialStatus: response.data?.to?.[0]?.status || response.data?.status || 'queued',
+    costAmount: response.data?.cost?.amount || null,
+    costCurrency: response.data?.cost?.currency || 'USD',
+    rawData: response.data,
+  };
 }
 
 /**

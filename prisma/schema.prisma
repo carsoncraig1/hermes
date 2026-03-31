@@ -45,6 +45,7 @@ model User {
   rateLimitCache         RateLimitCache?
   scheduledShortlinkRedirects ScheduledShortlinkRedirect[]
   spamFilterEvents       SpamFilterEvent[]
+  phoneNumbers           PhoneNumber[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -126,6 +127,8 @@ model Contact {
   unsubscribeReason      String? // Reason for unsubscription: "STOP", "delivery_failed", "sending_failed", "manual", etc.
   lastMessageSent        DateTime?
   hasClicked             Boolean  @default(false) // Whether this contact has clicked on any links in messages
+  assignedPhoneNumberId  Int?
+  assignedPhoneNumber    PhoneNumber?             @relation(fields: [assignedPhoneNumberId], references: [id], onDelete: SetNull)
   tags                   Tag[]
   messages               Message[]
   messageClickCodes      MessageClickCode[]
@@ -133,7 +136,32 @@ model Contact {
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 
+  @@index([userId, subscribed])
+  @@index([userId, createdAt])
+  @@index([userId, updatedAt])
   @@map("contacts")
+}
+
+model PhoneNumber {
+  id                   Int      @id @default(autoincrement())
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phoneNumber          String
+  friendlyName         String?
+  type                 String   @default("toll_free")
+  messagingProfileId   String?
+  enabled              Boolean  @default(true)
+  acceptingNewLeads    Boolean  @default(true)
+  rateLimit            Int      @default(1200)
+  currentMonthMessages Int      @default(0)
+  contacts             Contact[]
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([userId, phoneNumber])
+  @@index([userId, enabled])
+  @@index([userId, acceptingNewLeads])
+  @@map("phone_numbers")
 }
 
 model Campaign {
@@ -324,6 +352,8 @@ model Message {
   spamFilterEvents  SpamFilterEvent[]
 
   @@index([userId, createdAt])
+  @@index([userId, direction, status, createdAt])
+  @@index([userId, direction, createdAt])
   @@index([contactId])
   @@index([campaignId])
   @@index([status])

@@ -2,6 +2,11 @@ import { NextResponse } from "next/server"
 
 export async function middleware(request) {
   const pathname = request.nextUrl.pathname
+
+  // Development-only auth bypass so local dev is never blocked by auth config.
+  if (process.env.NODE_ENV === 'development') {
+    return NextResponse.next()
+  }
   
   // Skip middleware for static files and API routes
   if (

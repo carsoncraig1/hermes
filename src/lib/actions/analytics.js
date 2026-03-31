@@ -2,6 +2,7 @@
 
 import prisma from '@/lib/prisma';
 import { auth } from '@/lib/auth';
+import { Prisma } from '@prisma/client';
 
 async function getUserId() {
   const session = await auth();
@@ -261,110 +262,192 @@ export async function getCampaignsWithROAS(filters = {}) {
       }
     } : {};
 
-    const campaigns = await prisma.campaign.findMany({
+    const campaignsPromise = prisma.campaign.findMany({
       where: { userId },
-      include: {
-        revenueEvents: {
-          where: dateFilter,
-          select: {
-            payout: true,
-            createdAt: true
-          }
-        },
-        messages: {
-          where: {
-            direction: 'outbound',
-            status: 'delivered', // Only delivered messages are billed by Telnyx
-            ...dateFilter
-          },
-          select: {
-            costAmount: true,
-            status: true
-          }
-        },
-        shortlinks: {
-          select: {
-            clicks: true,
-            opens: true
-          }
-        },
+      select: {
+        id: true,
+        name: true,
         targets: {
-          include: {
-            tag: true
+          select: {
+            targetType: true,
+            tagId: true,
+            sourceValue: true
           }
         }
       }
     });
 
-    // Get contact counts for each campaign
-    const campaignContactCounts = await Promise.all(
-      campaigns.map(async (campaign) => {
-        // Check if campaign targets all subscribed contacts
-        const targetsAllSubscribed = campaign.targets.some(t => t.targetType === 'ALL_SUBSCRIBED');
-        
-        if (targetsAllSubscribed) {
-          // Count all subscribed contacts for the user
-          const count = await prisma.contact.count({
-            where: {
-              userId,
-              subscribed: true
+    const costByCampaignPromise = prisma.message.groupBy({
+      by: ['campaignId'],
+      where: {
+        userId,
+        campaignId: { not: null },
+        direction: 'outbound',
+        status: 'delivered', // Only delivered messages are billed by Telnyx
+        ...dateFilter
+      },
+      _sum: { costAmount: true },
+      _count: true
+    });
+
+    const revenueByCampaignPromise = prisma.revenueEvent.groupBy({
+      by: ['campaignId'],
+      where: {
+        userId,
+        campaignId: { not: null },
+        ...dateFilter
+      },
+      _sum: { payout: true },
+      _count: true
+    });
+
+    const shortlinkByCampaignPromise = prisma.shortlink.groupBy({
+      by: ['campaignId'],
+      where: {
+        userId,
+        campaignId: { not: null }
+      },
+      _sum: { clicks: true, opens: true }
+    });
+
+    const campaigns = await campaignsPromise;
+
+    const allSubscribedCountPromise = prisma.contact.count({
+      where: {
+        userId,
+        subscribed: true
+      }
+    });
+
+    // Reuse identical targeting queries instead of issuing one count per campaign.
+    const signatureToCountPromise = new Map();
+    const campaignContactSignature = new Map();
+    const allSubscribedCampaignIds = new Set();
+
+    campaigns.forEach(campaign => {
+      const targetsAllSubscribed = campaign.targets.some(t => t.targetType === 'ALL_SUBSCRIBED');
+      if (targetsAllSubscribed) {
+        allSubscribedCampaignIds.add(campaign.id);
+        return;
+      }
+
+      const tagIds = [...new Set(
+        campaign.targets
+          .filter(t => t.targetType === 'TAG' && t.tagId)
+          .map(t => t.tagId)
+      )].sort((a, b) => a - b);
+
+      const sourceValues = [...new Set(
+        campaign.targets
+          .filter(t => t.targetType === 'SOURCE' && t.sourceValue)
+          .map(t => t.sourceValue)
+      )].sort();
+
+      const signature = `tags:${tagIds.join(',')}|sources:${sourceValues.join(',')}`;
+      campaignContactSignature.set(campaign.id, signature);
+
+      if (signatureToCountPromise.has(signature)) {
+        return;
+      }
+
+      const whereConditions = {
+        userId,
+        subscribed: true
+      };
+
+      if (tagIds.length > 0 || sourceValues.length > 0) {
+        whereConditions.OR = [];
+
+        if (tagIds.length > 0) {
+          whereConditions.OR.push({
+            tags: {
+              some: {
+                id: { in: tagIds }
+              }
             }
           });
-          return { campaignId: campaign.id, contactCount: count };
-        } else {
-          // Count contacts by tags and sources
-          const tagIds = campaign.targets
-            .filter(t => t.targetType === 'TAG' && t.tagId)
-            .map(t => t.tagId);
-          const sourceValues = campaign.targets
-            .filter(t => t.targetType === 'SOURCE' && t.sourceValue)
-            .map(t => t.sourceValue);
-
-          const whereConditions = {
-            userId,
-            subscribed: true
-          };
-
-          if (tagIds.length > 0 || sourceValues.length > 0) {
-            whereConditions.OR = [];
-            
-            if (tagIds.length > 0) {
-              whereConditions.OR.push({
-                tags: {
-                  some: {
-                    id: { in: tagIds }
-                  }
-                }
-              });
-            }
-            
-            if (sourceValues.length > 0) {
-              whereConditions.OR.push({
-                source: { in: sourceValues }
-              });
-            }
-          }
-
-          const count = await prisma.contact.count({
-            where: whereConditions
-          });
-          return { campaignId: campaign.id, contactCount: count };
         }
-      })
-    );
 
-    const contactCountMap = new Map(
-      campaignContactCounts.map(item => [item.campaignId, item.contactCount])
-    );
+        if (sourceValues.length > 0) {
+          whereConditions.OR.push({
+            source: { in: sourceValues }
+          });
+        }
+      }
+
+      signatureToCountPromise.set(signature, prisma.contact.count({ where: whereConditions }));
+    });
+
+    const [
+      costByCampaign,
+      revenueByCampaign,
+      shortlinkByCampaign,
+      allSubscribedCount,
+      ...signatureCounts
+    ] = await Promise.all([
+      costByCampaignPromise,
+      revenueByCampaignPromise,
+      shortlinkByCampaignPromise,
+      allSubscribedCountPromise,
+      ...Array.from(signatureToCountPromise.values())
+    ]);
+
+    const costMap = new Map();
+    costByCampaign.forEach(stat => {
+      if (stat.campaignId) {
+        costMap.set(stat.campaignId, {
+          cost: stat._sum?.costAmount ? parseFloat(stat._sum.costAmount.toString()) : 0,
+          messages: stat._count
+        });
+      }
+    });
+
+    const revenueMap = new Map();
+    revenueByCampaign.forEach(stat => {
+      if (stat.campaignId) {
+        revenueMap.set(stat.campaignId, {
+          revenue: stat._sum?.payout ? parseFloat(stat._sum.payout.toString()) : 0,
+          revenueEvents: stat._count
+        });
+      }
+    });
+
+    const shortlinkMap = new Map();
+    shortlinkByCampaign.forEach(stat => {
+      if (stat.campaignId) {
+        shortlinkMap.set(stat.campaignId, {
+          clicks: stat._sum?.clicks || 0,
+          opens: stat._sum?.opens || 0
+        });
+      }
+    });
+
+    const signatureCountMap = new Map();
+    Array.from(signatureToCountPromise.keys()).forEach((signature, index) => {
+      signatureCountMap.set(signature, signatureCounts[index]);
+    });
+
+    const contactCountMap = new Map();
+    campaigns.forEach(campaign => {
+      if (allSubscribedCampaignIds.has(campaign.id)) {
+        contactCountMap.set(campaign.id, allSubscribedCount);
+      } else {
+        const signature = campaignContactSignature.get(campaign.id);
+        contactCountMap.set(campaign.id, signature ? (signatureCountMap.get(signature) || 0) : 0);
+      }
+    });
 
     return campaigns.map(campaign => {
-      const revenue = campaign.revenueEvents.reduce((sum, event) => sum + parseFloat(event.payout.toString()), 0);
-      // Messages are already filtered to sent/delivered at database level
-      const cost = campaign.messages.reduce((sum, msg) => sum + (msg.costAmount ? parseFloat(msg.costAmount.toString()) : 0), 0);
-      const clicks = campaign.shortlinks.reduce((sum, s) => sum + s.clicks, 0);
-      const opens = campaign.shortlinks.reduce((sum, s) => sum + s.opens, 0);
+      const revenueStats = revenueMap.get(campaign.id) || { revenue: 0, revenueEvents: 0 };
+      const costStats = costMap.get(campaign.id) || { cost: 0, messages: 0 };
+      const shortlinkStats = shortlinkMap.get(campaign.id) || { clicks: 0, opens: 0 };
+
+      const revenue = revenueStats.revenue;
+      const cost = costStats.cost;
+      const clicks = shortlinkStats.clicks;
+      const opens = shortlinkStats.opens;
       const roas = cost > 0 ? (revenue / cost) : 0;
-      const conversionRate = clicks > 0 ? (campaign.revenueEvents.length / clicks) * 100 : 0;
+      const conversionRate = clicks > 0 ? (revenueStats.revenueEvents / clicks) * 100 : 0;
       const contactCount = contactCountMap.get(campaign.id) || 0;
       const costPerClick = clicks > 0 ? (cost / clicks) : 0;
       const epc = clicks > 0 ? (revenue / clicks) : 0; // Earnings per click
@@ -380,8 +463,8 @@ export async function getCampaignsWithROAS(filters = {}) {
         roas,
         conversionRate,
         epc,
-        revenueEvents: campaign.revenueEvents.length,
-        messages: campaign.messages.length,
+        revenueEvents: revenueStats.revenueEvents,
+        messages: costStats.messages,
         opens
       };
     });
@@ -503,7 +586,11 @@ export async function getMessageAnalytics(filters = {}) {
       ...dateFilter
     };
 
-    const [total, delivered, failed, sent, queued, totalCost, messages] = await Promise.all([
+    const dateSql = filters.dateRange
+      ? Prisma.sql` AND "createdAt" >= ${new Date(filters.dateRange.start)} AND "createdAt" <= ${new Date(filters.dateRange.end)}`
+      : Prisma.empty;
+
+    const [total, delivered, failed, sent, queued, totalCost, dateStatusRows] = await Promise.all([
       prisma.message.count({ where }),
       prisma.message.count({ where: { ...where, status: 'delivered' } }),
       prisma.message.count({ 
@@ -526,28 +613,32 @@ export async function getMessageAnalytics(filters = {}) {
         },
         _sum: { costAmount: true }
       }),
-      prisma.message.findMany({
-        where,
-        select: {
-          status: true,
-          createdAt: true
-        },
-        orderBy: {
-          createdAt: 'desc'
-        }
-      })
+      prisma.$queryRaw`
+        SELECT
+          DATE("createdAt") AS "date",
+          "status",
+          COUNT(*)::int AS "count"
+        FROM "messages"
+        WHERE "userId" = ${userId}
+          AND "direction" = 'outbound'
+          ${dateSql}
+        GROUP BY DATE("createdAt"), "status"
+        ORDER BY DATE("createdAt") ASC
+      `
     ]);
 
-    // Group by date
     const byDate = {};
-    messages.forEach(msg => {
-      const date = new Date(msg.createdAt).toISOString().split('T')[0];
+    dateStatusRows.forEach(row => {
+      const date = new Date(row.date).toISOString().split('T')[0];
       if (!byDate[date]) {
         byDate[date] = { date, delivered: 0, sent: 0, failed: 0 };
       }
-      if (msg.status === 'delivered') byDate[date].delivered++;
-      else if (msg.status === 'sent') byDate[date].sent++;
-      else if (msg.status === 'sending_failed' || msg.status === 'delivery_failed') byDate[date].failed++;
+
+      const count = Number(row.count) || 0;
+
+      if (row.status === 'delivered') byDate[date].delivered += count;
+      else if (row.status === 'sent') byDate[date].sent += count;
+      else if (row.status === 'sending_failed' || row.status === 'delivery_failed') byDate[date].failed += count;
     });
 
     return {
