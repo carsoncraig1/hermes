@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   expandShortlinkDestinationMacros,
   MACRO_KEY_ALLOWLIST,
+  destinationTemplateUsesMacros,
+  destinationHasUnresolvedMacroSyntax,
 } from './shortlinkDestinationMacros';
 
 describe('expandShortlinkDestinationMacros', () => {
@@ -75,5 +77,15 @@ describe('expandShortlinkDestinationMacros', () => {
   it('documents allowlisted keys (regression guard)', () => {
     expect(MACRO_KEY_ALLOWLIST.has('firstName')).toBe(true);
     expect(MACRO_KEY_ALLOWLIST.has('tags')).toBe(false);
+  });
+
+  it('destinationTemplateUsesMacros detects placeholders', () => {
+    expect(destinationTemplateUsesMacros('https://x.com/?a={{firstName}}')).toBe(true);
+    expect(destinationTemplateUsesMacros('https://x.com/')).toBe(false);
+  });
+
+  it('destinationHasUnresolvedMacroSyntax after partial expansion', () => {
+    expect(destinationHasUnresolvedMacroSyntax('https://x.com/{{unknown}}')).toBe(true);
+    expect(destinationHasUnresolvedMacroSyntax('https://x.com/?n=Jane')).toBe(false);
   });
 });

@@ -15,6 +15,16 @@ const MACRO_KEY_ALLOWLIST = new Set([
 
 const MACRO_REGEX = /\{\{([a-zA-Z][a-zA-Z0-9_]*)\}\}/g;
 
+/** Detects allowlist-style {{field}} placeholders in a destination template */
+export function destinationTemplateUsesMacros(destination) {
+  return /\{\{[a-zA-Z][a-zA-Z0-9_]*\}\}/.test(destination || '');
+}
+
+/** True if the string still contains a {{word}} pattern (after expansion: unknown keys or skipped expansion) */
+export function destinationHasUnresolvedMacroSyntax(destination) {
+  return /\{\{[a-zA-Z][a-zA-Z0-9_]*\}\}/.test(destination || '');
+}
+
 function fullNameFromContact(contact) {
   if (!contact) return '';
   const parts = [contact.firstName, contact.lastName].filter(Boolean);

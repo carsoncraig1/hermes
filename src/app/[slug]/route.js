@@ -3,14 +3,19 @@ import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { createClickWithHrms, appendHrmsToUrl, generateHrms } from '@/lib/revenue'
 import { lookupMessageClickCode, markCodeAsClicked, markCodeAsOpened } from '@/lib/messageClickCodes'
-import { expandShortlinkDestinationMacros } from '@/lib/shortlinkDestinationMacros'
+import {
+  expandShortlinkDestinationMacros,
+  destinationTemplateUsesMacros,
+  destinationHasUnresolvedMacroSyntax,
+} from '@/lib/shortlinkDestinationMacros'
 
 // Bot/crawler User-Agent patterns for link preview fetching
 const BOT_PATTERNS = [
   'facebookexternalhit',   // Facebook, Instagram, Messenger
   'Facebot',               // Facebook
   'Twitterbot',            // Twitter/X
-  'WhatsApp',              // WhatsApp
+  // NOTE: Do not match plain "WhatsApp" — WhatsApp in-app WebView UAs contain that string, so real
+  // taps were misclassified as bots and destination URL macros were skipped.
   'TelegramBot',           // Telegram
   'LinkedInBot',           // LinkedIn
   'Slackbot',              // Slack
@@ -188,6 +193,13 @@ export async function GET(request, { params }) {
         console.log(`❌ Shortlink disabled: ${code}`)
         redirect('https://lp.stockstotrade.com/algo-trader')
       }
+
+      if (destinationTemplateUsesMacros(shortlink.destination)) {
+        const uaSnippet = userAgent.replace(/\s+/g, ' ').slice(0, 160)
+        console.log(
+          `[shortlink-macros] request code=${code} shortlinkId=${shortlink.id} isBot=${isBot} contactId=${messageClickCode.contactId ?? 'none'} uaSnippet=${JSON.stringify(uaSnippet)}`
+        )
+      }
     }
     
     // Track opens (bot/preview fetches) vs clicks (real users)
@@ -351,6 +363,12 @@ export async function GET(request, { params }) {
           macroContact,
           { expand: true }
         )
+
+        if (destinationTemplateUsesMacros(shortlink.destination)) {
+          console.log(
+            `[shortlink-macros] expand code=${code} contactLoaded=${Boolean(macroContact)} unresolvedAfterExpand=${destinationHasUnresolvedMacroSyntax(baseDestination)} newClick=${clickResult.isNewClick}`
+          )
+        }
 
         // Only proceed if this was a new click
         if (clickResult.isNewClick && clickResult.hrms) {
