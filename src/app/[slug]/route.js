@@ -3,11 +3,7 @@ import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { createClickWithHrms, appendHrmsToUrl, generateHrms } from '@/lib/revenue'
 import { lookupMessageClickCode, markCodeAsClicked, markCodeAsOpened } from '@/lib/messageClickCodes'
-import {
-  expandShortlinkDestinationMacros,
-  destinationTemplateUsesMacros,
-  destinationHasUnresolvedMacroSyntax,
-} from '@/lib/shortlinkDestinationMacros'
+import { expandShortlinkDestinationMacros } from '@/lib/shortlinkDestinationMacros'
 
 // Bot/crawler User-Agent patterns for link preview fetching
 const BOT_PATTERNS = [
@@ -193,12 +189,6 @@ export async function GET(request, { params }) {
         console.log(`❌ Shortlink disabled: ${code}`)
         redirect('https://lp.stockstotrade.com/algo-trader')
       }
-
-      const dest = shortlink.destination || ''
-      const uaSnippet = userAgent.replace(/\s+/g, ' ').slice(0, 160)
-      console.log(
-        `[shortlink-dynamic] hit code=${code} shortlinkId=${shortlink.id} nickname=${shortlink.nickname || ''} isBot=${isBot} contactId=${messageClickCode.contactId ?? 'none'} destLen=${dest.length} destHasDoubleBrace=${dest.includes('{{')} destUsesMacroSyntax=${destinationTemplateUsesMacros(dest)} uaSnippet=${JSON.stringify(uaSnippet)} destPreview=${JSON.stringify(dest.slice(0, 180))}`
-      )
     }
     
     // Track opens (bot/preview fetches) vs clicks (real users)
@@ -215,7 +205,7 @@ export async function GET(request, { params }) {
         })
         const openCount = (shortlink.opens ?? 0) + 1
         const shortlinkName = shortlink.nickname || shortlink.slug || `Shortlink #${shortlink.id}`
-        console.log(`👁️ Open: ${shortlinkName} (${openCount} opens)`)
+        console.log(`Shortlink open (${code}) ${shortlinkName} · ${openCount} opens`)
       } else {
         // Real user click - simple increment
         const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || null
@@ -246,7 +236,7 @@ export async function GET(request, { params }) {
         })
         const clickCount = updatedShortlink?.clicks ?? 0
         const shortlinkName = updatedShortlink?.nickname || updatedShortlink?.slug || `Shortlink #${shortlink.id}`
-        console.log(`✅ Click: ${shortlinkName} (${clickCount} clicks)`)
+        console.log(`Shortlink click (${code}) ${shortlinkName} · ${clickCount} total`)
       }
     } else {
       // Dynamic shortlink: full message-level tracking with HRMS
@@ -267,10 +257,7 @@ export async function GET(request, { params }) {
         ])
         const openCount = (shortlink.opens ?? 0) + 1
         const shortlinkName = shortlink.nickname || `Shortlink #${shortlink.id}`
-        console.log(`👁️ Open: ${shortlinkName} (${openCount} opens)`)
-        console.log(
-          `[shortlink-dynamic] botOrPreview path code=${code} — URL macros are not expanded here (preview privacy); final redirect target still has raw template if dest had {{placeholders}}`
-        )
+        console.log(`Shortlink open (${code}) ${shortlinkName} · ${openCount} opens`)
       } else {
         // Real user click - we have full message-level tracking!
         // Use atomic transaction to ensure one click per code, prevent race conditions
@@ -291,12 +278,6 @@ export async function GET(request, { params }) {
               age: true,
             },
           })
-        }
-
-        if (contactId && !macroContact) {
-          console.log(
-            `[shortlink-dynamic] macroContact NOT loaded code=${code} contactId=${contactId} shortlinkOwnerUserId=${shortlink.userId} (contact missing or userId mismatch)`
-          )
         }
 
         // Atomic transaction: check if clicked, mark as clicked, increment counter, create record - all or nothing
@@ -372,10 +353,6 @@ export async function GET(request, { params }) {
           { expand: true }
         )
 
-        console.log(
-          `[shortlink-dynamic] humanClick expand code=${code} contactLoaded=${Boolean(macroContact)} newClick=${clickResult.isNewClick} unresolvedAfterExpand=${destinationHasUnresolvedMacroSyntax(baseDestination)} basePreview=${JSON.stringify(baseDestination.slice(0, 200))}`
-        )
-
         // Only proceed if this was a new click
         if (clickResult.isNewClick && clickResult.hrms) {
           hrms = clickResult.hrms
@@ -388,11 +365,13 @@ export async function GET(request, { params }) {
           })
           const clickCount = updatedShortlink?.clicks ?? 0
           const shortlinkName = updatedShortlink?.nickname || `Shortlink #${shortlink.id}`
-          console.log(`✅ Click: ${shortlinkName} (${clickCount} clicks)`)
+          console.log(`Shortlink click (${code}) ${shortlinkName} · ${clickCount} total`)
         } else {
           // Code was already clicked - this is a refresh/retry, don't count it
           // Still redirect to destination but without HRMS tracking
           destinationWithHrms = baseDestination
+          const shortlinkName = shortlink.nickname || `Shortlink #${shortlink.id}`
+          console.log(`Shortlink click (${code}) ${shortlinkName} · repeat`)
         }
       }
     }

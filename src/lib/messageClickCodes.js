@@ -1,14 +1,5 @@
 import prisma from '@/lib/prisma';
 import crypto from 'crypto';
-import { destinationTemplateUsesMacros } from '@/lib/shortlinkDestinationMacros';
-
-function logClickCodeGen(phase, data) {
-  try {
-    console.log(`[click-code-gen] ${phase} ${JSON.stringify(data)}`);
-  } catch (e) {
-    console.log(`[click-code-gen] ${phase} (log serialization failed)`);
-  }
-}
 
 // Base62 character set: 0-9, A-Z, a-z (62 characters total)
 const BASE62_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
@@ -126,20 +117,11 @@ export function extractShortlinksFromText(messageText) {
  */
 export async function createMessageClickCodes(messageId, messageText, contactId, userId) {
   if (!messageText || !messageId) {
-    logClickCodeGen('createMessageClickCodes skip', { reason: 'no text or messageId', messageId, hasContactId: Boolean(contactId) });
     return { codes: [], modifiedText: messageText };
   }
   
   const shortlinkRefs = extractShortlinksFromText(messageText);
   if (shortlinkRefs.length === 0) {
-    logClickCodeGen('createMessageClickCodes skip', {
-      reason: 'no shortlink markers in message body',
-      messageId,
-      contactId,
-      messageLen: messageText.length,
-      hasShortlinkMarker: /\{\{SHORTLINK:\d+\}\}/.test(messageText),
-      hasLegacyShortlinkUrl: /https:\/\/txt\.cx\/shortlink-\d+/.test(messageText),
-    });
     return { codes: [], modifiedText: messageText };
   }
   
@@ -152,10 +134,7 @@ export async function createMessageClickCodes(messageId, messageText, contactId,
     },
     select: {
       id: true,
-      enabled: true,
-      destination: true,
-      nickname: true,
-      type: true,
+      enabled: true
     }
   });
   
@@ -165,32 +144,7 @@ export async function createMessageClickCodes(messageId, messageText, contactId,
   // Filter to only valid shortlink refs
   const validRefs = shortlinkRefs.filter(ref => validShortlinkIds.has(ref.shortlinkId));
   if (validRefs.length === 0) {
-    logClickCodeGen('createMessageClickCodes skip', {
-      reason: 'no valid shortlinks for user / all filtered',
-      messageId,
-      contactId,
-      requestedShortlinkIds: shortlinkIds,
-      ownedIds: shortlinkRecords.map(s => s.id),
-    });
     return { codes: [], modifiedText: messageText };
-  }
-
-  const shortlinkById = new Map(shortlinkRecords.map(s => [s.id, s]));
-  for (const ref of validRefs) {
-    const sl = shortlinkById.get(ref.shortlinkId);
-    const dest = sl?.destination || '';
-    logClickCodeGen('shortlink row at send time (macros expand on click, not here)', {
-      messageId,
-      contactId,
-      shortlinkId: ref.shortlinkId,
-      nickname: sl?.nickname ?? null,
-      type: sl?.type ?? null,
-      enabled: sl?.enabled ?? null,
-      destinationLen: dest.length,
-      destinationHasDoubleBrace: dest.includes('{{'),
-      destinationUsesMacroSyntax: destinationTemplateUsesMacros(dest),
-      destinationPreview: dest.slice(0, 160),
-    });
   }
   
   // Calculate expiration date (30 days from now)
@@ -239,13 +193,6 @@ export async function createMessageClickCodes(messageId, messageText, contactId,
     openedAt: null,
     createdAt: new Date()
   }));
-
-  logClickCodeGen('createMessageClickCodes done', {
-    messageId,
-    contactId,
-    codesCreated: generatedCodes.length,
-    emittedUrls: generatedCodes.map((c) => `https://txt.cx/${c}`),
-  });
   
   return { codes, modifiedText };
 }
@@ -261,22 +208,11 @@ export async function createMessageClickCodes(messageId, messageText, contactId,
 export async function createMessageClickCodesBatch(messageText, contactMessagePairs, userId) {
   const contactTextMap = new Map();
   if (!messageText || !Array.isArray(contactMessagePairs) || contactMessagePairs.length === 0) {
-    logClickCodeGen('createMessageClickCodesBatch skip', {
-      reason: 'no text or pairs',
-      pairCount: Array.isArray(contactMessagePairs) ? contactMessagePairs.length : 0,
-    });
     return contactTextMap;
   }
 
   const shortlinkRefs = extractShortlinksFromText(messageText);
   if (shortlinkRefs.length === 0) {
-    logClickCodeGen('createMessageClickCodesBatch skip', {
-      reason: 'no shortlink markers in campaign message',
-      pairCount: contactMessagePairs.length,
-      messageLen: messageText.length,
-      hasShortlinkMarker: /\{\{SHORTLINK:\d+\}\}/.test(messageText),
-      hasLegacyShortlinkUrl: /https:\/\/txt\.cx\/shortlink-\d+/.test(messageText),
-    });
     return contactTextMap;
   }
 
@@ -286,7 +222,7 @@ export async function createMessageClickCodesBatch(messageText, contactMessagePa
       userId,
       id: { in: shortlinkIds },
     },
-    select: { id: true, destination: true, nickname: true, type: true, enabled: true },
+    select: { id: true },
   });
 
   const validShortlinkIds = new Set(shortlinkRecords.map(s => s.id));
@@ -295,29 +231,7 @@ export async function createMessageClickCodesBatch(messageText, contactMessagePa
     .sort((a, b) => b.index - a.index);
 
   if (validRefs.length === 0) {
-    logClickCodeGen('createMessageClickCodesBatch skip', {
-      reason: 'no valid shortlinks for user',
-      pairCount: contactMessagePairs.length,
-      requestedShortlinkIds: shortlinkIds,
-      ownedIds: shortlinkRecords.map(s => s.id),
-    });
     return contactTextMap;
-  }
-
-  const shortlinkById = new Map(shortlinkRecords.map(s => [s.id, s]));
-  for (const ref of validRefs) {
-    const sl = shortlinkById.get(ref.shortlinkId);
-    const dest = sl?.destination || '';
-    logClickCodeGen('batch: shortlink row at send time (macros expand on txt.cx click)', {
-      shortlinkId: ref.shortlinkId,
-      nickname: sl?.nickname ?? null,
-      type: sl?.type ?? null,
-      pairCount: contactMessagePairs.length,
-      destinationLen: dest.length,
-      destinationHasDoubleBrace: dest.includes('{{'),
-      destinationUsesMacroSyntax: destinationTemplateUsesMacros(dest),
-      destinationPreview: dest.slice(0, 160),
-    });
   }
 
   const expiresAt = new Date();
@@ -361,16 +275,6 @@ export async function createMessageClickCodesBatch(messageText, contactMessagePa
   await prisma.messageClickCode.createMany({
     data: codeData,
     skipDuplicates: true,
-  });
-
-  logClickCodeGen('createMessageClickCodesBatch done', {
-    pairCount: contactMessagePairs.length,
-    codesInserted: codeData.length,
-    sampleByContact: contactMessagePairs.slice(0, 3).map(({ contactId }) => {
-      const t = contactTextMap.get(contactId) || '';
-      const m = t.match(/https:\/\/txt\.cx\/([a-zA-Z0-9]+)/g);
-      return { contactId, txtCxUrls: m || [] };
-    }),
   });
 
   return contactTextMap;
