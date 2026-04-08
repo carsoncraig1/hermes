@@ -217,6 +217,9 @@ export default function AddShortlinkModal({ onClose, onAdd, userTimezone = null 
                   className={styles.input}
                   required
                 />
+                <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+                  Optional per-recipient placeholders (dynamic shortlinks only): {'{{firstName}}'}, {'{{lastName}}'}, {'{{fullName}}'}, {'{{email}}'}, {'{{phone}}'}, {'{{source}}'}, {'{{age}}'}, {'{{id}}'}. Values are filled when the contact opens the link; they are not expanded for link-preview bots.
+                </small>
               </div>
 
               <div className={styles.formGroup}>

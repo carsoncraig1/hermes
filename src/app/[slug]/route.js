@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { createClickWithHrms, appendHrmsToUrl, generateHrms } from '@/lib/revenue'
 import { lookupMessageClickCode, markCodeAsClicked, markCodeAsOpened } from '@/lib/messageClickCodes'
+import { expandShortlinkDestinationMacros } from '@/lib/shortlinkDestinationMacros'
 
 // Bot/crawler User-Agent patterns for link preview fetching
 const BOT_PATTERNS = [
@@ -261,7 +262,23 @@ export async function GET(request, { params }) {
         // Use atomic transaction to ensure one click per code, prevent race conditions
         const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || null
         const referrer = request.headers.get('referer') || null
-        
+
+        let macroContact = null
+        if (contactId) {
+          macroContact = await prisma.contact.findFirst({
+            where: { id: contactId, userId: shortlink.userId },
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              phone: true,
+              source: true,
+              age: true,
+            },
+          })
+        }
+
         // Atomic transaction: check if clicked, mark as clicked, increment counter, create record - all or nothing
         const clickResult = await prisma.$transaction(async (tx) => {
           // Re-fetch the messageClickCode within transaction to get latest state
@@ -329,10 +346,16 @@ export async function GET(request, { params }) {
           return { isNewClick: true, hrms, contactId: currentCode.contactId }
         })
         
+        const baseDestination = expandShortlinkDestinationMacros(
+          shortlink.destination,
+          macroContact,
+          { expand: true }
+        )
+
         // Only proceed if this was a new click
         if (clickResult.isNewClick && clickResult.hrms) {
           hrms = clickResult.hrms
-          destinationWithHrms = appendHrmsToUrl(shortlink.destination, hrms)
+          destinationWithHrms = appendHrmsToUrl(baseDestination, hrms)
           
           // Get updated click count for logging
           const updatedShortlink = await prisma.shortlink.findUnique({
@@ -345,7 +368,7 @@ export async function GET(request, { params }) {
         } else {
           // Code was already clicked - this is a refresh/retry, don't count it
           // Still redirect to destination but without HRMS tracking
-          destinationWithHrms = shortlink.destination
+          destinationWithHrms = baseDestination
         }
       }
     }

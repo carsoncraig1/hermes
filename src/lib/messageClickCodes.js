@@ -294,6 +294,7 @@ export async function lookupMessageClickCode(code) {
       shortlink: {
         select: {
           id: true,
+          userId: true,
           destination: true,
           nickname: true,
           enabled: true,

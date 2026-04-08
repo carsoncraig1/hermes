@@ -269,6 +269,11 @@ export default function EditShortlinkModal({ shortlink, onClose, onUpdate, userT
               placeholder="Enter destination URL"
               className={styles.input}
             />
+            {!isLegacy && (
+              <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+                Optional per-recipient placeholders: {'{{firstName}}'}, {'{{lastName}}'}, {'{{fullName}}'}, {'{{email}}'}, {'{{phone}}'}, {'{{source}}'}, {'{{age}}'}, {'{{id}}'}. Filled when that contact clicks the link; not expanded for link-preview bots.
+              </small>
+            )}
           </div>
 
           {isLegacy && (
