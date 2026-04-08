@@ -194,12 +194,11 @@ export async function GET(request, { params }) {
         redirect('https://lp.stockstotrade.com/algo-trader')
       }
 
-      if (destinationTemplateUsesMacros(shortlink.destination)) {
-        const uaSnippet = userAgent.replace(/\s+/g, ' ').slice(0, 160)
-        console.log(
-          `[shortlink-macros] request code=${code} shortlinkId=${shortlink.id} isBot=${isBot} contactId=${messageClickCode.contactId ?? 'none'} uaSnippet=${JSON.stringify(uaSnippet)}`
-        )
-      }
+      const dest = shortlink.destination || ''
+      const uaSnippet = userAgent.replace(/\s+/g, ' ').slice(0, 160)
+      console.log(
+        `[shortlink-dynamic] hit code=${code} shortlinkId=${shortlink.id} nickname=${shortlink.nickname || ''} isBot=${isBot} contactId=${messageClickCode.contactId ?? 'none'} destLen=${dest.length} destHasDoubleBrace=${dest.includes('{{')} destUsesMacroSyntax=${destinationTemplateUsesMacros(dest)} uaSnippet=${JSON.stringify(uaSnippet)} destPreview=${JSON.stringify(dest.slice(0, 180))}`
+      )
     }
     
     // Track opens (bot/preview fetches) vs clicks (real users)
@@ -269,6 +268,9 @@ export async function GET(request, { params }) {
         const openCount = (shortlink.opens ?? 0) + 1
         const shortlinkName = shortlink.nickname || `Shortlink #${shortlink.id}`
         console.log(`👁️ Open: ${shortlinkName} (${openCount} opens)`)
+        console.log(
+          `[shortlink-dynamic] botOrPreview path code=${code} — URL macros are not expanded here (preview privacy); final redirect target still has raw template if dest had {{placeholders}}`
+        )
       } else {
         // Real user click - we have full message-level tracking!
         // Use atomic transaction to ensure one click per code, prevent race conditions
@@ -289,6 +291,12 @@ export async function GET(request, { params }) {
               age: true,
             },
           })
+        }
+
+        if (contactId && !macroContact) {
+          console.log(
+            `[shortlink-dynamic] macroContact NOT loaded code=${code} contactId=${contactId} shortlinkOwnerUserId=${shortlink.userId} (contact missing or userId mismatch)`
+          )
         }
 
         // Atomic transaction: check if clicked, mark as clicked, increment counter, create record - all or nothing
@@ -364,11 +372,9 @@ export async function GET(request, { params }) {
           { expand: true }
         )
 
-        if (destinationTemplateUsesMacros(shortlink.destination)) {
-          console.log(
-            `[shortlink-macros] expand code=${code} contactLoaded=${Boolean(macroContact)} unresolvedAfterExpand=${destinationHasUnresolvedMacroSyntax(baseDestination)} newClick=${clickResult.isNewClick}`
-          )
-        }
+        console.log(
+          `[shortlink-dynamic] humanClick expand code=${code} contactLoaded=${Boolean(macroContact)} newClick=${clickResult.isNewClick} unresolvedAfterExpand=${destinationHasUnresolvedMacroSyntax(baseDestination)} basePreview=${JSON.stringify(baseDestination.slice(0, 200))}`
+        )
 
         // Only proceed if this was a new click
         if (clickResult.isNewClick && clickResult.hrms) {
