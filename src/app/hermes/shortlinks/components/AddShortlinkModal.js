@@ -11,6 +11,7 @@ import {
   getEffectiveTimeZone,
   zonedDateTimeToUtcDate
 } from '@/lib/timezone'
+import { generateOCOLink, normalizeWebinarId } from '@/lib/ocoLink'
 
 export default function AddShortlinkModal({ onClose, onAdd, userTimezone = null }) {
   const [type, setType] = useState('dynamic') // 'dynamic' or 'legacy'
@@ -35,6 +36,7 @@ export default function AddShortlinkModal({ onClose, onAdd, userTimezone = null 
   const [scheduleDate, setScheduleDate] = useState('')
   const [scheduleTime, setScheduleTime] = useState('')
   const [scheduledDestination, setScheduledDestination] = useState('')
+  const [ocoWebinarId, setOcoWebinarId] = useState('')
   const effectiveTimezone = getEffectiveTimeZone(userTimezone)
   const minScheduleDate = getCurrentDateInputValueInTimeZone(effectiveTimezone)
 
@@ -86,6 +88,13 @@ export default function AddShortlinkModal({ onClose, onAdd, userTimezone = null 
       result += chars.charAt(Math.floor(Math.random() * chars.length))
     }
     setSlug(result)
+  }
+
+  const handleGenerateOCO = () => {
+    const url = generateOCOLink(ocoWebinarId)
+    if (!url) return
+    setDestination(url)
+    if (error) setError(null)
   }
 
   const handleSubmit = async (e) => {
@@ -203,6 +212,53 @@ export default function AddShortlinkModal({ onClose, onAdd, userTimezone = null 
                 />
                 <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
                   Spaces are not allowed in nicknames
+                </small>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label htmlFor="oco-webinar-id">Zoom Webinar ID</label>
+                <div className={styles.ocoRow}>
+                  <input
+                    id="oco-webinar-id"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={ocoWebinarId}
+                    onChange={(e) => {
+                      setOcoWebinarId(normalizeWebinarId(e.target.value))
+                    }}
+                    onPaste={(e) => {
+                      e.preventDefault()
+                      setOcoWebinarId(normalizeWebinarId(e.clipboardData.getData('text')))
+                    }}
+                    placeholder="e.g. 87824207928"
+                    className={styles.input}
+                  />
+                  <button
+                    type="button"
+                    className={styles.ocoGenerateButton}
+                    onClick={handleGenerateOCO}
+                    disabled={!normalizeWebinarId(ocoWebinarId)}
+                  >
+                    <svg
+                      className={styles.ocoZoomIcon}
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      aria-hidden
+                    >
+                      <path
+                        fill="currentColor"
+                        d="M4 8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1.535l2.562-1.281A1 1 0 0 1 21 9.168V14.832a1 1 0 0 1-1.438.914L17 14.465V16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8zm2 0v8h8V8H6zm9 1.465l3 1.5v2.07l-3 1.5v-5.07z"
+                      />
+                    </svg>
+                    Generate One-Click Link
+                  </button>
+                </div>
+                <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+                  Fills destination with a One-Click Open URL using {'{{firstName}}'}, {'{{lastName}}'}, {'{{email}}'}, and {'{{phone}}'} — expanded when the contact opens the link.
                 </small>
               </div>
 
