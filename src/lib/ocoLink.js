@@ -5,6 +5,16 @@
 
 export const OCO_BASE = 'https://oco.txt.cx/join';
 
+/** @typedef {'IFI' | 'TTT'} OCOBrand */
+
+/** @type {readonly OCOBrand[]} */
+export const OCO_BRANDS = Object.freeze(['IFI', 'TTT']);
+
+const BRAND_TO_Z = Object.freeze({
+  IFI: 'ifi',
+  TTT: 'ttt',
+});
+
 const HERMES_OCO_MACROS = {
   fn: '{{firstName}}',
   ln: '{{lastName}}',
@@ -23,11 +33,15 @@ export function normalizeWebinarId(input) {
 
 /**
  * @param {string} webinarId raw or partial ID (normalized before use)
+ * @param {OCOBrand} brand
  * @returns {string|null} full OCO URL, or null if no digits in webinarId
  */
-export function generateOCOLink(webinarId) {
+export function generateOCOLink(webinarId, brand) {
   const id = normalizeWebinarId(webinarId);
   if (!id) return null;
+
+  const z = BRAND_TO_Z[brand];
+  if (!z) return null;
 
   const params = new URLSearchParams({
     webinar_id: id,
@@ -35,6 +49,7 @@ export function generateOCOLink(webinarId) {
     ln: HERMES_OCO_MACROS.ln,
     email: HERMES_OCO_MACROS.email,
     ph: HERMES_OCO_MACROS.ph,
+    z,
   });
 
   return `${OCO_BASE}?${decodeURIComponent(params.toString())}`;

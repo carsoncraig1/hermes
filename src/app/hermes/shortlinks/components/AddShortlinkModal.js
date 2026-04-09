@@ -11,7 +11,7 @@ import {
   getEffectiveTimeZone,
   zonedDateTimeToUtcDate
 } from '@/lib/timezone'
-import { generateOCOLink, normalizeWebinarId } from '@/lib/ocoLink'
+import { generateOCOLink, normalizeWebinarId, OCO_BRANDS } from '@/lib/ocoLink'
 
 export default function AddShortlinkModal({ onClose, onAdd, userTimezone = null }) {
   const [type, setType] = useState('dynamic') // 'dynamic' or 'legacy'
@@ -37,6 +37,7 @@ export default function AddShortlinkModal({ onClose, onAdd, userTimezone = null 
   const [scheduleTime, setScheduleTime] = useState('')
   const [scheduledDestination, setScheduledDestination] = useState('')
   const [ocoWebinarId, setOcoWebinarId] = useState('')
+  const [ocoBrand, setOcoBrand] = useState('IFI')
   const effectiveTimezone = getEffectiveTimeZone(userTimezone)
   const minScheduleDate = getCurrentDateInputValueInTimeZone(effectiveTimezone)
 
@@ -91,7 +92,7 @@ export default function AddShortlinkModal({ onClose, onAdd, userTimezone = null 
   }
 
   const handleGenerateOCO = () => {
-    const url = generateOCOLink(ocoWebinarId)
+    const url = generateOCOLink(ocoWebinarId, ocoBrand)
     if (!url) return
     setDestination(url)
     if (error) setError(null)
@@ -213,6 +214,22 @@ export default function AddShortlinkModal({ onClose, onAdd, userTimezone = null 
                 <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
                   Spaces are not allowed in nicknames
                 </small>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label htmlFor="oco-brand">Brand</label>
+                <select
+                  id="oco-brand"
+                  value={ocoBrand}
+                  onChange={(e) => setOcoBrand(e.target.value)}
+                  className={styles.input}
+                >
+                  {OCO_BRANDS.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className={styles.formGroup}>
