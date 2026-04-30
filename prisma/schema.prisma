@@ -30,26 +30,27 @@ model User {
   autoUnsubscribeOnFailure Boolean   @default(true) // Automatically unsubscribe contacts on delivery failures
 
   // Relations to app data
-  accounts               Account[]
-  sessions               Session[]
-  contacts               Contact[]
-  campaigns              Campaign[]
-  tags                   Tag[]
-  shortlinks             Shortlink[]
-  consoleLogs            ConsoleLog[]
-  messages               Message[]
-  revenueEvents          RevenueEvent[]
-  messageClickCodes      MessageClickCode[]
-  sendJobs               SendJob[]
-  delayedWorkflowActions DelayedWorkflowAction[]
-  rateLimitCache         RateLimitCache?
+  accounts                    Account[]
+  sessions                    Session[]
+  contacts                    Contact[]
+  campaigns                   Campaign[]
+  tags                        Tag[]
+  shortlinks                  Shortlink[]
+  consoleLogs                 ConsoleLog[]
+  messages                    Message[]
+  revenueEvents               RevenueEvent[]
+  messageClickCodes           MessageClickCode[]
+  sendJobs                    SendJob[]
+  delayedWorkflowActions      DelayedWorkflowAction[]
+  rateLimitCache              RateLimitCache?
   scheduledShortlinkRedirects ScheduledShortlinkRedirect[]
-  spamFilterEvents       SpamFilterEvent[]
-  phoneNumbers           PhoneNumber[]
+  spamFilterEvents            SpamFilterEvent[]
+  phoneNumbers                PhoneNumber[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([telnyxMessagingProfileId])
   @@map("users")
 }
 
@@ -126,9 +127,9 @@ model Contact {
   subscribed             Boolean?
   unsubscribeReason      String? // Reason for unsubscription: "STOP", "delivery_failed", "sending_failed", "manual", etc.
   lastMessageSent        DateTime?
-  hasClicked             Boolean  @default(false) // Whether this contact has clicked on any links in messages
+  hasClicked             Boolean                 @default(false) // Whether this contact has clicked on any links in messages
   assignedPhoneNumberId  Int?
-  assignedPhoneNumber    PhoneNumber?             @relation(fields: [assignedPhoneNumberId], references: [id], onDelete: SetNull)
+  assignedPhoneNumber    PhoneNumber?            @relation(fields: [assignedPhoneNumberId], references: [id], onDelete: SetNull)
   tags                   Tag[]
   messages               Message[]
   messageClickCodes      MessageClickCode[]
@@ -143,24 +144,25 @@ model Contact {
 }
 
 model PhoneNumber {
-  id                   Int      @id @default(autoincrement())
+  id                   Int       @id @default(autoincrement())
   userId               String
-  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   phoneNumber          String
   friendlyName         String?
-  type                 String   @default("toll_free")
+  type                 String    @default("toll_free")
   messagingProfileId   String?
-  enabled              Boolean  @default(true)
-  acceptingNewLeads    Boolean  @default(true)
-  rateLimit            Int      @default(1200)
-  currentMonthMessages Int      @default(0)
+  enabled              Boolean   @default(true)
+  acceptingNewLeads    Boolean   @default(true)
+  rateLimit            Int       @default(1200)
+  currentMonthMessages Int       @default(0)
   contacts             Contact[]
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   @@unique([userId, phoneNumber])
   @@index([userId, enabled])
   @@index([userId, acceptingNewLeads])
+  @@index([messagingProfileId])
   @@map("phone_numbers")
 }
 
@@ -206,9 +208,9 @@ model Shortlink {
   id                Int                @id @default(autoincrement())
   userId            String
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type              String              @default("dynamic") // "dynamic" or "legacy"
+  type              String             @default("dynamic") // "dynamic" or "legacy"
   nickname          String? // Optional nickname for the shortlink (used for identification in UI)
-  slug              String?             @unique // 3-character slug for legacy shortlinks (e.g., "abc")
+  slug              String?            @unique // 3-character slug for legacy shortlinks (e.g., "abc")
   destination       String
   clicks            Int                @default(0) // Counter for total clicks
   opens             Int                @default(0) // Tracks preview fetches from messaging apps
@@ -227,23 +229,24 @@ model Shortlink {
   updatedAt         DateTime           @updatedAt
 
   scheduledRedirects ScheduledShortlinkRedirect[] // Scheduled redirect changes
+
   @@index([slug]) // Index for legacy shortlink lookups
   @@map("shortlinks")
 }
 
 // Scheduled shortlink redirect changes
 model ScheduledShortlinkRedirect {
-  id            Int       @id @default(autoincrement())
-  shortlinkId   Int
-  shortlink     Shortlink @relation(fields: [shortlinkId], references: [id], onDelete: Cascade)
-  userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  newDestination String   @db.Text
-  scheduledAt   DateTime  // When to change the redirect
-  status        String    @default("pending") // pending, completed, cancelled
-  executedAt    DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id             Int       @id @default(autoincrement())
+  shortlinkId    Int
+  shortlink      Shortlink @relation(fields: [shortlinkId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  newDestination String    @db.Text
+  scheduledAt    DateTime // When to change the redirect
+  status         String    @default("pending") // pending, completed, cancelled
+  executedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([status, scheduledAt]) // For finding redirects ready to execute
   @@index([shortlinkId])
@@ -377,7 +380,7 @@ model SpamFilterEvent {
   lineType          String?   @map("line_type")
   errorCode         String    @map("error_code")
   errorTitle        String?   @map("error_title")
-  errorDetail       String?   @db.Text @map("error_detail")
+  errorDetail       String?   @map("error_detail") @db.Text
   occurredAt        DateTime  @map("occurred_at")
   rawPayload        Json?     @map("raw_payload")
   createdAt         DateTime  @default(now()) @map("created_at")

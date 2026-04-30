@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { findRecentMessageForRecipient, updateMessageRecord } from '@/lib/actions/messages';
 import { trackSpamFilterEvent } from '@/lib/actions/spamTracking';
 import { getUnsubscribeReason } from '@/lib/errorParsing';
+import { getUserForMessagingProfile } from '@/lib/messagingProfileCache';
 
 const DEBUG_TELNYX_WEBHOOK = process.env.DEBUG_TELNYX_WEBHOOK === 'true';
 
@@ -96,32 +97,10 @@ export async function POST(request) {
 
     // Only log final status (delivered or failed), not intermediate "sent" status
 
-    // First try legacy user messaging profile, then revolver phone-number profile mapping.
-    let user = await prisma.user.findFirst({
-      where: {
-        telnyxMessagingProfileId: messagingProfileId
-      },
-      select: { 
-        id: true,
-        autoUnsubscribeOnFailure: true
-      }
-    });
-
-    if (!user) {
-      const phoneNumber = await prisma.phoneNumber.findFirst({
-        where: { messagingProfileId },
-        select: { userId: true }
-      })
-      if (phoneNumber) {
-        user = await prisma.user.findUnique({
-          where: { id: phoneNumber.userId },
-          select: {
-            id: true,
-            autoUnsubscribeOnFailure: true
-          }
-        })
-      }
-    }
+    // Resolve user from messaging profile id with a TTL cache to avoid hammering
+    // the DB on every Telnyx webhook (legacy user.telnyxMessagingProfileId, then
+    // revolver phone-number profile mapping).
+    const user = await getUserForMessagingProfile(messagingProfileId);
 
     if (!user) {
       debugWebhook('user-not-found', { messagingProfileId, telnyxMessageId, toNumber, status });
@@ -205,17 +184,16 @@ export async function POST(request) {
             console.warn(`[Telnyx Webhook] Message record not found for telnyxMessageId: ${telnyxMessageId}`);
           }
         } else {
-          // Update Contact.lastMessageSent when message is delivered, sent, or unconfirmed
+          // Fire-and-forget: lastMessageSent is best-effort and the webhook
+          // response doesn't depend on it. Don't hold a pool connection while
+          // the message-update transaction is already finishing.
           if (updatedMessage.contactId && (status === 'delivered' || status === 'sent' || status === 'delivery_unconfirmed' || status === 'sending')) {
-            try {
-              await prisma.contact.update({
-                where: { id: updatedMessage.contactId },
-                data: { lastMessageSent: new Date() }
-              });
-            } catch (err) {
+            prisma.contact.update({
+              where: { id: updatedMessage.contactId },
+              data: { lastMessageSent: new Date() }
+            }).catch((err) => {
               console.error('Error updating contact lastMessageSent:', err);
-              // Don't fail the whole operation if this update fails
-            }
+            });
           }
           
           // Get contactId from the updated message record
@@ -246,7 +224,10 @@ export async function POST(request) {
       const firstError = errors.find(err => String(err?.code || '') === '40002') || null;
       const toPayload = payload.to?.[0] || payload.to || {};
 
-      await trackSpamFilterEvent({
+      // Fire-and-forget: spam tracking is observability and the response
+      // doesn't depend on it. The .catch already swallows errors, so the
+      // outer await was just blocking pool connections needlessly.
+      trackSpamFilterEvent({
         userId: user.id,
         campaignId: messageRecord?.campaignId || null,
         messageId: messageRecord?.messageId || null,

@@ -1,5 +1,6 @@
 import { auth } from '@/lib/auth'
 import prisma from '@/lib/prisma'
+import { invalidateMessagingProfile } from '@/lib/messagingProfileCache'
 
 export async function GET() {
   try {
@@ -54,12 +55,19 @@ export async function PUT(request) {
       }
     }
 
+    const previous = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { telnyxMessagingProfileId: true },
+    })
+
+    const nextProfileId = telnyxMessagingProfileId?.trim() || null
+
     const user = await prisma.user.update({
       where: { id: session.user.id },
       data: {
         telnyxApiKey: telnyxApiKey?.trim() || null,
         telnyxPhoneNumber: telnyxPhoneNumber?.trim() || null,
-        telnyxMessagingProfileId: telnyxMessagingProfileId?.trim() || null,
+        telnyxMessagingProfileId: nextProfileId,
       },
       select: {
         telnyxApiKey: true,
@@ -67,6 +75,9 @@ export async function PUT(request) {
         telnyxMessagingProfileId: true,
       },
     })
+
+    invalidateMessagingProfile(previous?.telnyxMessagingProfileId)
+    invalidateMessagingProfile(nextProfileId)
 
     return Response.json({
       telnyxApiKey: user.telnyxApiKey || '',

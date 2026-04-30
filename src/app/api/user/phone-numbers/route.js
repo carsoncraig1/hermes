@@ -1,5 +1,6 @@
 import { auth } from '@/lib/auth'
 import prisma from '@/lib/prisma'
+import { invalidateMessagingProfile } from '@/lib/messagingProfileCache'
 
 const E164_US_REGEX = /^\+1\d{10}$/
 const ALLOWED_TYPES = new Set(['toll_free', 'local', 'short_code'])
@@ -109,6 +110,8 @@ export async function POST(request) {
       }
     })
 
+    invalidateMessagingProfile(messagingProfileId)
+
     return Response.json(created, { status: 201 })
   } catch (error) {
     if (error.message === 'Unauthorized') {
@@ -131,7 +134,7 @@ export async function PUT(request) {
 
     const existing = await prisma.phoneNumber.findFirst({
       where: { id, userId },
-      select: { id: true }
+      select: { id: true, messagingProfileId: true }
     })
     if (!existing) {
       return Response.json({ error: 'Phone number not found' }, { status: 404 })
@@ -172,6 +175,11 @@ export async function PUT(request) {
       }
     })
 
+    if (updateData.messagingProfileId !== undefined) {
+      invalidateMessagingProfile(existing.messagingProfileId)
+      invalidateMessagingProfile(updated.messagingProfileId)
+    }
+
     return Response.json(updated)
   } catch (error) {
     if (error.message === 'Unauthorized') {
@@ -194,7 +202,7 @@ export async function DELETE(request) {
 
     const existing = await prisma.phoneNumber.findFirst({
       where: { id, userId },
-      select: { id: true }
+      select: { id: true, messagingProfileId: true }
     })
     if (!existing) {
       return Response.json({ error: 'Phone number not found' }, { status: 404 })
@@ -209,6 +217,8 @@ export async function DELETE(request) {
         where: { id }
       })
     ])
+
+    invalidateMessagingProfile(existing.messagingProfileId)
 
     return Response.json({ success: true })
   } catch (error) {
