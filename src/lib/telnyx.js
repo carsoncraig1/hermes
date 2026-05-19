@@ -10,7 +10,7 @@ import { serverLog } from '@/lib/serverLogger';
 import { getPermanentUnsubscribeReason } from '@/lib/errorParsing';
 import { normalizePhoneForTelnyx } from '@/lib/phoneUtils';
 
-const OUTBOUND_SENDS_DISABLED = true;
+const OUTBOUND_SENDS_DISABLED = false;
 
 /**
  * Bulk-send optimized Telnyx sender.
@@ -22,28 +22,63 @@ export async function sendMessageBulkOptimized({
   to,
   text,
   messagingProfileId,
+  idempotencyKey,
 }) {
   if (OUTBOUND_SENDS_DISABLED) {
     throw new Error('Outbound sends are temporarily disabled');
   }
 
-  const response = await telnyxClient.messages.create({
-    from,
-    to: [to],
-    text,
-    type: 'SMS',
-    messaging_profile_id: messagingProfileId,
-    webhook_url: 'https://txt.cx/api/message/status',
-    webhook_failover_url: '',
+  // SDK 2.0.0 does not surface custom headers, so call the API directly to
+  // attach an Idempotency-Key. Auth field already includes the "Bearer " prefix.
+  const authorization = telnyxClient?.getApiField?.('auth');
+  if (!authorization) {
+    throw new Error('Telnyx API key not configured');
+  }
+
+  const response = await fetch('https://api.telnyx.com/v2/messages', {
+    method: 'POST',
+    headers: {
+      Authorization: authorization,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+    },
+    body: JSON.stringify({
+      from,
+      to: [to],
+      text,
+      type: 'SMS',
+      messaging_profile_id: messagingProfileId,
+      webhook_url: 'https://txt.cx/api/message/status',
+      webhook_failover_url: '',
+    }),
   });
+
+  const responseBody = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const firstError = responseBody?.errors?.[0];
+    const error = new Error(firstError?.detail || firstError?.title || `Telnyx API error ${response.status}`);
+    error.statusCode = response.status;
+    error.raw = responseBody?.errors
+      ? {
+          ...responseBody,
+          errors: responseBody.errors.map(err => ({
+            ...err,
+            status: Number(err.status) || response.status,
+          })),
+        }
+      : { errors: [{ status: response.status, title: response.statusText }] };
+    throw error;
+  }
 
   return {
     success: true,
-    telnyxMessageId: response.data?.id,
-    initialStatus: response.data?.to?.[0]?.status || response.data?.status || 'queued',
-    costAmount: response.data?.cost?.amount || null,
-    costCurrency: response.data?.cost?.currency || 'USD',
-    rawData: response.data,
+    telnyxMessageId: responseBody.data?.id,
+    initialStatus: responseBody.data?.to?.[0]?.status || responseBody.data?.status || 'queued',
+    costAmount: responseBody.data?.cost?.amount || null,
+    costCurrency: responseBody.data?.cost?.currency || 'USD',
+    rawData: responseBody.data,
   };
 }
 

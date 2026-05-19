@@ -6,7 +6,7 @@ import { serverLog } from '@/lib/serverLogger'
 import { isContactEligibleForSend } from '@/lib/contactEligibility'
 import crypto from 'crypto'
 
-const OUTBOUND_SENDS_DISABLED = true
+const OUTBOUND_SENDS_DISABLED = false
 
 async function getUserId() {
   const session = await auth()
@@ -1438,6 +1438,7 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
                     to: normalizePhoneForTelnyx(contact.phone),
                     text: contactTextMap.get(contact.id) || messageText,
                     messagingProfileId: groupConfig.messagingProfileId,
+                    idempotencyKey: contactToMessageId.get(contact.id),
                   }),
                   {
                     maxRetries: 3,
@@ -1477,7 +1478,6 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
                       costCurrency: sendResult.costCurrency || 'USD',
                       sentAt: (status === 'sent' || status === 'sending') ? now : null,
                       text: textForContact,
-                      telnyxMetadata: sendResult.rawData ? JSON.parse(JSON.stringify(sendResult.rawData)) : null,
                     }
                   })
                 )

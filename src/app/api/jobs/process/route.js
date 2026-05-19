@@ -5,7 +5,7 @@ import { processDelayedActions } from '@/lib/delayedWorkflow'
 import { executeManualFire, executeDedicatedSend } from '@/lib/actions/campaigns'
 import { processScheduledRedirects } from '@/lib/actions/scheduledRedirects'
 
-const JOB_PROCESSOR_DISABLED = true
+const JOB_PROCESSOR_DISABLED = false
 
 /**
  * Process pending jobs and delayed workflow actions
