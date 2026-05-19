@@ -184,13 +184,13 @@ export async function recoverStaleSendJobs(staleMs = STALE_JOB_TIMEOUT_MS) {
   const result = await prisma.sendJob.updateMany({
     where: {
       status: 'processing',
+      scheduledAt: { not: null }, // only scheduler-managed jobs
       startedAt: { not: null, lte: staleBefore },
       completedAt: null
     },
     data: {
       status: 'pending',
       startedAt: null,
-      scheduledAt: new Date(),
       errorMessage: `Recovered stale processing job at ${new Date().toISOString()}`
     }
   })
@@ -215,3 +215,4 @@ export async function resumeSendJob(jobId) {
     }
   })
 }
+
