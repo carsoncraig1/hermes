@@ -125,7 +125,7 @@ export async function POST(request) {
           // Only set costAmount for sent/delivered/unconfirmed messages (Telnyx bills for these)
           // delivery_unconfirmed messages are still billed (sent to carrier, no confirmation)
           ...(status === 'sent' || status === 'delivered' || status === 'delivery_unconfirmed' ? { costAmount, costCurrency } : { costAmount: null, costCurrency }),
-          telnyxMetadata: payload
+          ...((status === 'sending_failed' || status === 'delivery_failed') ? { telnyxMetadata: payload } : {})
         };
 
         if (sentAt) updateData.sentAt = sentAt;
@@ -350,4 +350,3 @@ export async function POST(request) {
     );
   }
 }
-

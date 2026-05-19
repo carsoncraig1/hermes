@@ -6,6 +6,8 @@ import { serverLog } from '@/lib/serverLogger'
 import { isContactEligibleForSend } from '@/lib/contactEligibility'
 import crypto from 'crypto'
 
+const USE_RAW_BULK_UPDATE = false
+
 async function getUserId() {
   const session = await auth()
   if (!session?.user?.id) {
@@ -1394,6 +1396,7 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
                     to: normalizePhoneForTelnyx(contact.phone),
                     text: contactTextMap.get(contact.id) || messageText,
                     messagingProfileId: groupConfig.messagingProfileId,
+                    idempotencyKey: contactToMessageId.get(contact.id),
                   }),
                   {
                     maxRetries: 3,
@@ -1406,7 +1409,8 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
 
             // Phase 4: bulk update messages + contacts.
             const now = new Date()
-            const messageUpdates = []
+            const successRows = []
+            const failureRows = []
             const successfulContactIds = []
             let groupSuccessCount = 0
             let groupFailCount = 0
@@ -1421,51 +1425,123 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
                 successfulContactIds.push(contact.id)
                 const sendResult = result.value
                 const status = sendResult.initialStatus || 'queued'
-                messageUpdates.push(
-                  prisma.message.update({
-                    where: { id: messageId },
-                    data: {
-                      telnyxMessageId: sendResult.telnyxMessageId,
-                      status,
-                      costAmount: (status === 'sent' || status === 'delivered' || status === 'delivery_unconfirmed') && sendResult.costAmount
-                        ? parseFloat(sendResult.costAmount)
-                        : null,
-                      costCurrency: sendResult.costCurrency || 'USD',
-                      sentAt: (status === 'sent' || status === 'sending') ? now : null,
-                      text: textForContact,
-                      telnyxMetadata: sendResult.rawData ? JSON.parse(JSON.stringify(sendResult.rawData)) : null,
-                    }
-                  })
-                )
+                const billed = status === 'sent' || status === 'delivered' || status === 'delivery_unconfirmed'
+                successRows.push({
+                  id: messageId,
+                  telnyxMessageId: sendResult.telnyxMessageId || null,
+                  status,
+                  costAmount: billed && sendResult.costAmount ? parseFloat(sendResult.costAmount) : null,
+                  costCurrency: sendResult.costCurrency || 'USD',
+                  sentAt: (status === 'sent' || status === 'sending') ? now : null,
+                  text: textForContact,
+                })
               } else {
                 groupFailCount++
                 const errorMessage = result.status === 'rejected'
                   ? (result.reason?.message || 'Unknown send error')
                   : 'Send failed'
-                messageUpdates.push(
-                  prisma.message.update({
-                    where: { id: messageId },
-                    data: {
-                      status: 'sending_failed',
-                      failedAt: now,
-                      errorMessage
-                    }
-                  })
-                )
+                failureRows.push({
+                  id: messageId,
+                  status: 'sending_failed',
+                  failedAt: now,
+                  errorMessage,
+                })
               }
             })
 
-            const txOperations = [...messageUpdates]
-            if (successfulContactIds.length > 0) {
-              txOperations.push(
-                prisma.contact.updateMany({
+            if (USE_RAW_BULK_UPDATE) {
+              if (successRows.length > 0) {
+                const values = successRows.map((r, index) => {
+                  const offset = index * 7
+                  return `($${offset + 1}::text, $${offset + 2}::text, $${offset + 3}::text, $${offset + 4}::numeric, $${offset + 5}::text, $${offset + 6}::timestamp, $${offset + 7}::text)`
+                }).join(', ')
+                const params = successRows.flatMap(r => [
+                  r.id,
+                  r.telnyxMessageId,
+                  r.status,
+                  r.costAmount,
+                  r.costCurrency,
+                  r.sentAt,
+                  r.text,
+                ])
+                await prisma.$executeRawUnsafe(
+                  `UPDATE messages AS m SET
+                     "telnyxMessageId" = v.tid,
+                     status            = v.status,
+                     "costAmount"      = v.cost,
+                     "costCurrency"    = v.currency,
+                     "sentAt"          = v.sent_at,
+                     text              = v.text,
+                     "updatedAt"       = NOW()
+                   FROM (VALUES ${values}) AS v(id, tid, status, cost, currency, sent_at, text)
+                   WHERE m.id = v.id`,
+                  ...params
+                )
+              }
+
+              if (failureRows.length > 0) {
+                const values = failureRows.map((r, index) => {
+                  const offset = index * 4
+                  return `($${offset + 1}::text, $${offset + 2}::text, $${offset + 3}::timestamp, $${offset + 4}::text)`
+                }).join(', ')
+                const params = failureRows.flatMap(r => [r.id, r.status, r.failedAt, r.errorMessage])
+                await prisma.$executeRawUnsafe(
+                  `UPDATE messages AS m SET
+                     status         = v.status,
+                     "failedAt"     = v.failed_at,
+                     "errorMessage" = v.err,
+                     "updatedAt"    = NOW()
+                   FROM (VALUES ${values}) AS v(id, status, failed_at, err)
+                   WHERE m.id = v.id`,
+                  ...params
+                )
+              }
+
+              if (successfulContactIds.length > 0) {
+                await prisma.contact.updateMany({
                   where: { id: { in: successfulContactIds } },
                   data: { lastMessageSent: now }
                 })
-              )
-            }
-            if (txOperations.length > 0) {
-              await prisma.$transaction(txOperations)
+              }
+            } else {
+              const messageUpdates = [
+                ...successRows.map(row =>
+                  prisma.message.update({
+                    where: { id: row.id },
+                    data: {
+                      telnyxMessageId: row.telnyxMessageId,
+                      status: row.status,
+                      costAmount: row.costAmount,
+                      costCurrency: row.costCurrency,
+                      sentAt: row.sentAt,
+                      text: row.text,
+                    }
+                  })
+                ),
+                ...failureRows.map(row =>
+                  prisma.message.update({
+                    where: { id: row.id },
+                    data: {
+                      status: row.status,
+                      failedAt: row.failedAt,
+                      errorMessage: row.errorMessage
+                    }
+                  })
+                )
+              ]
+
+              const txOperations = [...messageUpdates]
+              if (successfulContactIds.length > 0) {
+                txOperations.push(
+                  prisma.contact.updateMany({
+                    where: { id: { in: successfulContactIds } },
+                    data: { lastMessageSent: now }
+                  })
+                )
+              }
+              if (txOperations.length > 0) {
+                await prisma.$transaction(txOperations)
+              }
             }
 
             const perNumberMinBatchTime = Math.ceil((groupContacts.length / (groupConfig.rateLimit || 1200)) * 60000)
