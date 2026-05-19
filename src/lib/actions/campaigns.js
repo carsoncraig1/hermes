@@ -6,6 +6,7 @@ import { serverLog } from '@/lib/serverLogger'
 import { isContactEligibleForSend } from '@/lib/contactEligibility'
 import crypto from 'crypto'
 
+const OUTBOUND_SENDS_DISABLED = true
 const USE_RAW_BULK_UPDATE = false
 
 async function getUserId() {
@@ -388,6 +389,27 @@ export async function executeManualFire(
   const sentContactIds = new Set()
   
   try {
+    if (OUTBOUND_SENDS_DISABLED) {
+      if (existingJobId) {
+        await prisma.sendJob.update({
+          where: { id: existingJobId },
+          data: {
+            status: 'pending',
+            startedAt: null,
+            scheduledAt: new Date(Date.now() + 60 * 60 * 1000),
+            errorMessage: 'Paused because outbound sends are temporarily disabled'
+          }
+        }).catch(() => {})
+      }
+
+      return {
+        success: false,
+        paused: true,
+        reason: 'Outbound sends are temporarily disabled',
+        jobId: existingJobId || null
+      }
+    }
+
     const userId = await resolveExecutionUserId(executionUserId)
     
     // Verify ownership and get campaign
@@ -1159,6 +1181,27 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
   const sentContactIds = new Set()
   
   try {
+    if (OUTBOUND_SENDS_DISABLED) {
+      if (existingJobId) {
+        await prisma.sendJob.update({
+          where: { id: existingJobId },
+          data: {
+            status: 'pending',
+            startedAt: null,
+            scheduledAt: new Date(Date.now() + 60 * 60 * 1000),
+            errorMessage: 'Paused because outbound sends are temporarily disabled'
+          }
+        }).catch(() => {})
+      }
+
+      return {
+        success: false,
+        paused: true,
+        reason: 'Outbound sends are temporarily disabled',
+        jobId: existingJobId || null
+      }
+    }
+
     const userId = await resolveExecutionUserId(executionUserId)
     
     // Verify ownership and get campaign

@@ -10,6 +10,8 @@ import { serverLog } from '@/lib/serverLogger';
 import { getPermanentUnsubscribeReason } from '@/lib/errorParsing';
 import { normalizePhoneForTelnyx } from '@/lib/phoneUtils';
 
+const OUTBOUND_SENDS_DISABLED = true;
+
 /**
  * Bulk-send optimized Telnyx sender.
  * Performs only the Telnyx API call and returns normalized response metadata.
@@ -22,6 +24,10 @@ export async function sendMessageBulkOptimized({
   messagingProfileId,
   idempotencyKey,
 }) {
+  if (OUTBOUND_SENDS_DISABLED) {
+    throw new Error('Outbound sends are temporarily disabled');
+  }
+
   const authorization = telnyxClient?.getApiField?.('auth');
   if (!authorization) {
     throw new Error('Telnyx API key not configured');
@@ -163,6 +169,13 @@ export async function sendMessage({
   let settings = null; // Declare in outer scope for error handling
   
   try {
+    if (OUTBOUND_SENDS_DISABLED) {
+      return {
+        success: false,
+        error: 'Outbound sends are temporarily disabled',
+      };
+    }
+
     // Get userId from session if not provided
     if (!finalUserId) {
       const session = await auth();

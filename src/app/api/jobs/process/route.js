@@ -5,6 +5,8 @@ import { processDelayedActions } from '@/lib/delayedWorkflow'
 import { executeManualFire, executeDedicatedSend } from '@/lib/actions/campaigns'
 import { processScheduledRedirects } from '@/lib/actions/scheduledRedirects'
 
+const JOB_PROCESSOR_DISABLED = true
+
 /**
  * Process pending jobs and delayed workflow actions
  * This endpoint should be called periodically (e.g., via cron job)
@@ -22,6 +24,14 @@ export async function GET(request) {
   }
   
   try {
+    if (JOB_PROCESSOR_DISABLED) {
+      return Response.json({
+        success: true,
+        paused: true,
+        message: 'Job processor is temporarily disabled'
+      })
+    }
+
     await processDelayedActions()
     const scheduledRedirectResults = await processScheduledRedirects()
     const pendingJobs = await getPendingJobs(5)
@@ -69,4 +79,3 @@ export async function GET(request) {
     )
   }
 }
-
