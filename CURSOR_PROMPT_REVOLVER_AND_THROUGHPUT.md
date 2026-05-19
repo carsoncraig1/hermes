@@ -1,1 +1,0 @@
-Create a new export called `sendMessageBulkOptimized` that accepts an array of prepared message objects and ONLY does the Telnyx HTTP call + returns the result. It should NOT do any DB operations. The signature should be:
