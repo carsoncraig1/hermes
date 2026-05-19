@@ -272,7 +272,8 @@ telnyxResults.forEach((result, index) => {
 
 // One bulk UPDATE per outcome class.
 if (successRows.length > 0) {
-  // Build $1, $2, ... placeholders. Prisma's $executeRaw with Prisma.sql allows safe parameterization.
+  // Build $1, $2, ... placeholders. Prisma's $executeRawUnsafe is safe here
+  // because every interpolation is a parameter placeholder, never user data.
   const values = successRows.map((r, i) => {
     const o = i * 7
     return `($${o + 1}::text, $${o + 2}::text, $${o + 3}::text, $${o + 4}::numeric, $${o + 5}::text, $${o + 6}::timestamp, $${o + 7}::text)`
@@ -343,7 +344,7 @@ return {
 
 ### Risks
 
-- **Schema column names.** Postgres column names are case-sensitive when quoted. Confirm `"telnyxMessageId"`, `"costAmount"`, etc. match the actual column names in the `messages` table. (They do per `prisma/schema.prisma` lines 318–365, but verify with `psql \d messages` after deploy.)
+- **Schema column names.** Postgres column names are case-sensitive when quoted. Confirm `"telnyxMessageId"`, `"costAmount"`, etc. match the actual column names in the `messages` table (they do per `prisma/schema.prisma` lines 318–365, but verify with `psql \d messages` after deploy).
 - **`NULL` handling in VALUES.** Postgres needs explicit type casts on the first row of a VALUES clause when columns can be NULL. The `::numeric`, `::text`, `::timestamp` casts above handle this.
 - **`updatedAt`.** Prisma normally auto-bumps this on `update`. Since we're going around Prisma, the raw SQL sets it explicitly with `NOW()`.
 
@@ -356,7 +357,7 @@ return {
 
 ### Rollback
 
-Revert to the `$transaction([...messageUpdates])` block. The schema doesn't change, so revert is a code-only revert.
+Revert to the `$transaction([...messageUpdates])` block. The schema doesn't change, so revert is a code-only revert. Ship behind a `USE_RAW_BULK_UPDATE` env flag so rollback is a single env-var flip in DO.
 
 ---
 
@@ -366,7 +367,7 @@ Revert to the `$transaction([...messageUpdates])` block. The schema doesn't chan
 
 ### Change — `src/lib/sendJob.js`
 
-Around **line 182–203**, broaden the recovery filter to include immediate jobs *and* give immediate jobs a longer stale window (since they tend to be larger, single-shot blasts):
+Around **line 182–203**, broaden the recovery filter to include immediate jobs *and* (since immediate jobs require `scheduledAt` to be set for `getPendingJobs` to pick them up) set `scheduledAt` to `now()` on recovery so the next cron tick will run them:
 
 ```diff
  export async function recoverStaleSendJobs(staleMs = STALE_JOB_TIMEOUT_MS) {
@@ -381,6 +382,7 @@ Around **line 182–203**, broaden the recovery filter to include immediate jobs
      data: {
        status: 'pending',
        startedAt: null,
++      scheduledAt: new Date(),
        errorMessage: `Recovered stale processing job at ${new Date().toISOString()}`
      }
    })
@@ -391,17 +393,6 @@ Around **line 182–203**, broaden the recovery filter to include immediate jobs
 
    return result.count
  }
-```
-
-But wait — that on its own creates a problem: immediate jobs reset to `pending` with `scheduledAt: null` won't be picked up by `getPendingJobs` (which requires `scheduledAt: { not: null }` per lines 159–167). Either also broaden `getPendingJobs`, **or** (preferred) set `scheduledAt` to `now()` on recovery so the cron picks them up:
-
-```diff
-     data: {
-       status: 'pending',
-       startedAt: null,
-+      scheduledAt: new Date(),
-       errorMessage: `Recovered stale processing job at ${new Date().toISOString()}`
-     }
 ```
 
 Setting `scheduledAt` to now means the next cron tick of `/api/jobs/process` will see the job (since `scheduledAt <= now`) and execute it. Failed immediate jobs become effectively re-runnable as scheduled jobs.
@@ -429,7 +420,7 @@ These edits are independent but vary in risk. Ship in this order so you can vali
 
 1. **Item 1 (Pool bump)** — Friday afternoon. Redeploy. Watch for `P2024` errors over the weekend. Zero code change rolls back fast.
 2. **Item 5 (Immediate-job recovery)** — Monday. Operational safety net before increasing send aggressiveness.
-3. **Item 3 (Idempotency keys)** — Tuesday. Validate via a test send + Telnyx dashboard inspection of headers. Idempotency must be live before Item 4 ships.
+3. **Item 3 (Idempotency keys)** — Tuesday. Validate via a test send + Telnyx dashboard inspection of headers. **Idempotency must be live before Item 4 ships.**
 4. **Item 2 (Drop telnyxMetadata on success)** — Wednesday. Two two-line edits. Reversible.
 5. **Item 4 (Raw VALUES UPDATE)** — Thursday morning, behind a feature flag. Add `USE_RAW_BULK_UPDATE=true` env var and an `if (process.env.USE_RAW_BULK_UPDATE === 'true') { …new code… } else { …old $transaction… }` guard. Ship with the flag off. Flip it on for a 50-contact test send, then 500-contact, then 5,000. Watch metrics.
 
