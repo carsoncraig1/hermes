@@ -35,50 +35,26 @@ export async function sendMessageBulkOptimized({
     throw new Error('Telnyx API key not configured');
   }
 
-  const requestHeaders = {
-    Authorization: authorization,
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-    ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
-  };
-
-  const requestBody = {
-    from,
-    to: [to],
-    text,
-    type: 'SMS',
-    messaging_profile_id: messagingProfileId,
-    webhook_url: 'https://txt.cx/api/message/status',
-    webhook_failover_url: '',
-  };
-
-  // TEMP DEBUG: confirm idempotency key + headers reach Telnyx. Remove after verification.
-  console.log('[telnyx-send-debug] request', JSON.stringify({
-    url: 'https://api.telnyx.com/v2/messages',
-    method: 'POST',
-    headers: {
-      ...requestHeaders,
-      Authorization: authorization ? `${authorization.slice(0, 11)}...${authorization.slice(-4)}` : null,
-    },
-    body: requestBody,
-    idempotencyKeyProvided: Boolean(idempotencyKey),
-  }));
-
   const response = await fetch('https://api.telnyx.com/v2/messages', {
     method: 'POST',
-    headers: requestHeaders,
-    body: JSON.stringify(requestBody),
+    headers: {
+      Authorization: authorization,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+    },
+    body: JSON.stringify({
+      from,
+      to: [to],
+      text,
+      type: 'SMS',
+      messaging_profile_id: messagingProfileId,
+      webhook_url: 'https://txt.cx/api/message/status',
+      webhook_failover_url: '',
+    }),
   });
 
   const responseBody = await response.json().catch(() => ({}));
-
-  // TEMP DEBUG: confirm Telnyx echoes the request back. Remove after verification.
-  console.log('[telnyx-send-debug] response', JSON.stringify({
-    status: response.status,
-    ok: response.ok,
-    telnyxRequestId: response.headers.get('x-request-id') || response.headers.get('request-id'),
-    body: responseBody,
-  }));
 
   if (!response.ok) {
     const firstError = responseBody?.errors?.[0];
