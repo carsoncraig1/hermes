@@ -1499,17 +1499,22 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
               }
             })
 
-            const txOperations = [...messageUpdates]
-            if (successfulContactIds.length > 0) {
-              txOperations.push(
-                prisma.contact.updateMany({
-                  where: { id: { in: successfulContactIds } },
-                  data: { lastMessageSent: now }
-                })
-              )
+            // Issue updates outside an interactive txn. Rows are independent;
+            // no atomicity is required, and the Telnyx call in Phase 3 has
+            // already happened — a txn rollback here would leave the messages
+            // sent at the carrier but stale in our DB, so the txn never
+            // protected the real failure mode. Without the txn, the pool
+            // connection is released between updates, freeing capacity for
+            // concurrent webhooks and dashboard reads. Parallel update count
+            // per group is bounded by BATCH_SIZE (50), well under pool size.
+            if (messageUpdates.length > 0) {
+              await Promise.all(messageUpdates)
             }
-            if (txOperations.length > 0) {
-              await prisma.$transaction(txOperations)
+            if (successfulContactIds.length > 0) {
+              await prisma.contact.updateMany({
+                where: { id: { in: successfulContactIds } },
+                data: { lastMessageSent: now }
+              })
             }
 
             const perNumberMinBatchTime = Math.ceil((groupContacts.length / (groupConfig.rateLimit || 1200)) * 60000)
