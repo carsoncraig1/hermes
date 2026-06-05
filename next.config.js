@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Enable src/instrumentation.js (process-level error handlers). Required on Next 14.
+  experimental: {
+    instrumentationHook: true,
+  },
   // Map AUTH_URL to NEXTAUTH_URL for NextAuth v4 compatibility
   env: {
     NEXTAUTH_URL: process.env.AUTH_URL || process.env.NEXTAUTH_URL,
