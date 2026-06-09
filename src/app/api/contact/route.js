@@ -286,13 +286,16 @@ export async function POST(request) {
         })
       }
 
-      // DISABLED: Trigger workflows for new contact (only for new contacts, not updates)
-      // Automated workflow execution is disabled - only manual sends are allowed
-      // if (userId) {
-      //   triggerWorkflowsForContact(contact, userId).catch(err => {
-      //     console.error('Error triggering workflows:', err);
-      //   });
-      // }
+      // Trigger workflows for new contact (only for new contacts, not updates).
+      // Awaited so the send completes within the request lifecycle (serverless
+      // can terminate the function before an unawaited promise resolves).
+      if (userId) {
+        try {
+          await triggerWorkflowsForContact(contact, userId)
+        } catch (err) {
+          console.error('Error triggering workflows:', err)
+        }
+      }
     }
 
     // === REVOLVER: Assign phone number to new/unassigned contact ===

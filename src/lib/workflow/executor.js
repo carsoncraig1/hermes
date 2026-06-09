@@ -639,11 +639,6 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
 
 // Trigger workflows for a new contact
 export async function triggerWorkflowsForContact(contact, userId) {
-  // DISABLED: Automated workflow execution is disabled - only manual sends are allowed
-  console.log(`[DISABLED] Workflow trigger skipped for contact ${contact.phone} - automated workflows are disabled`);
-  return;
-  
-  /* DISABLED CODE BELOW
   try {
     // Enforce subscription check - only trigger workflows for subscribed contacts
     if (!contact.subscribed) {
@@ -756,6 +751,5 @@ export async function triggerWorkflowsForContact(contact, userId) {
   } catch (error) {
     console.error('Error triggering workflows:', error);
   }
-  */
 }
 
