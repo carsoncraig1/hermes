@@ -5,6 +5,23 @@ import { invalidateMessagingProfile } from '@/lib/messagingProfileCache'
 const E164_US_REGEX = /^\+1\d{10}$/
 const ALLOWED_TYPES = new Set(['toll_free', 'local', 'short_code'])
 
+// Shared shape returned to the settings UI (includes the attached .vcf card, if any).
+const PHONE_SELECT = {
+  id: true,
+  phoneNumber: true,
+  friendlyName: true,
+  type: true,
+  messagingProfileId: true,
+  enabled: true,
+  acceptingNewLeads: true,
+  rateLimit: true,
+  currentMonthMessages: true,
+  mediaAssetId: true,
+  mediaAsset: { select: { id: true, label: true, kind: true, contentType: true, sizeBytes: true, source: true } },
+  _count: { select: { contacts: true } },
+  createdAt: true,
+}
+
 async function getUserId() {
   const session = await auth()
   if (!session?.user?.id) {
@@ -18,19 +35,7 @@ export async function GET() {
     const userId = await getUserId()
     const phoneNumbers = await prisma.phoneNumber.findMany({
       where: { userId },
-      select: {
-        id: true,
-        phoneNumber: true,
-        friendlyName: true,
-        type: true,
-        messagingProfileId: true,
-        enabled: true,
-        acceptingNewLeads: true,
-        rateLimit: true,
-        currentMonthMessages: true,
-        _count: { select: { contacts: true } },
-        createdAt: true,
-      },
+      select: PHONE_SELECT,
       orderBy: { createdAt: 'asc' }
     })
 
@@ -95,19 +100,7 @@ export async function POST(request) {
         acceptingNewLeads: true,
         rateLimit: 1200
       },
-      select: {
-        id: true,
-        phoneNumber: true,
-        friendlyName: true,
-        type: true,
-        messagingProfileId: true,
-        enabled: true,
-        acceptingNewLeads: true,
-        rateLimit: true,
-        currentMonthMessages: true,
-        _count: { select: { contacts: true } },
-        createdAt: true,
-      }
+      select: PHONE_SELECT
     })
 
     invalidateMessagingProfile(messagingProfileId)
@@ -157,22 +150,26 @@ export async function PUT(request) {
       updateData.acceptingNewLeads = false
     }
 
+    // Attach/detach a .vcf contact card for this number (verify the asset is the user's).
+    if (body.mediaAssetId !== undefined) {
+      if (body.mediaAssetId) {
+        const asset = await prisma.mediaAsset.findFirst({
+          where: { id: body.mediaAssetId, userId },
+          select: { id: true }
+        })
+        if (!asset) {
+          return Response.json({ error: 'Media asset not found' }, { status: 404 })
+        }
+        updateData.mediaAssetId = asset.id
+      } else {
+        updateData.mediaAssetId = null
+      }
+    }
+
     const updated = await prisma.phoneNumber.update({
       where: { id },
       data: updateData,
-      select: {
-        id: true,
-        phoneNumber: true,
-        friendlyName: true,
-        type: true,
-        messagingProfileId: true,
-        enabled: true,
-        acceptingNewLeads: true,
-        rateLimit: true,
-        currentMonthMessages: true,
-        _count: { select: { contacts: true } },
-        createdAt: true,
-      }
+      select: PHONE_SELECT
     })
 
     if (updateData.messagingProfileId !== undefined) {

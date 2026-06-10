@@ -1,18 +1,19 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import prisma from '@/lib/prisma'
+import { mediaPublicUrl } from '@/lib/mediaCard'
 
 /**
  * Serialize a MediaAsset row into the public asset JSON shape.
+ * `url` is derived from the id (served by /api/media/[id]/card.vcf).
  */
 function serializeAsset(asset) {
   return {
     id: asset.id,
-    url: asset.url,
+    url: mediaPublicUrl(asset.id),
     label: asset.label,
     kind: asset.kind,
     contentType: asset.contentType,
-    filename: asset.filename,
     sizeBytes: asset.sizeBytes,
     source: asset.source,
     createdAt: asset.createdAt.toISOString(),
@@ -34,6 +35,7 @@ export async function GET(request) {
     const assets = await prisma.mediaAsset.findMany({
       where: { userId, ...(kind ? { kind } : {}) },
       orderBy: { createdAt: 'desc' },
+      select: { id: true, label: true, kind: true, contentType: true, sizeBytes: true, source: true, createdAt: true },
     })
 
     return NextResponse.json({ assets: assets.map(serializeAsset) })

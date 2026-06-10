@@ -9,6 +9,7 @@ import { createMessageClickCodes } from '@/lib/messageClickCodes';
 import { serverLog } from '@/lib/serverLogger';
 import { getPermanentUnsubscribeReason } from '@/lib/errorParsing';
 import { normalizePhoneForTelnyx } from '@/lib/phoneUtils';
+import { getCardForFromNumber } from '@/lib/mediaCard';
 
 const OUTBOUND_SENDS_DISABLED = false;
 
@@ -172,13 +173,17 @@ export async function sendMessage({
   skipSubscriptionCheck = false,
   mediaUrls = null,
   mediaAssetId = null,
+  attachVcf = false,
 }) {
   // MMS when one or more media URLs (e.g. a .vcf contact card) are attached.
-  const normalizedMediaUrls = Array.isArray(mediaUrls)
+  // When attachVcf is set, the card is resolved from the sending number below
+  // (once `fromNumber` is known), which may flip these to MMS.
+  let normalizedMediaUrls = Array.isArray(mediaUrls)
     ? mediaUrls.filter(u => typeof u === 'string' && u.trim().length > 0)
     : [];
-  const isMms = normalizedMediaUrls.length > 0;
-  const messageType = isMms ? 'MMS' : 'SMS';
+  let isMms = normalizedMediaUrls.length > 0;
+  let messageType = isMms ? 'MMS' : 'SMS';
+  let resolvedMediaAssetId = mediaAssetId;
   // Declare variables in outer scope for error handling
   let finalUserId = userId;
   let validation = null;
@@ -331,6 +336,18 @@ export async function sendMessage({
       };
     }
 
+    // Resolve the .vcf contact card configured for the sending number (attachVcf toggle).
+    // Only when no explicit media was already provided.
+    if (attachVcf && !isMms) {
+      const card = await getCardForFromNumber(finalUserId, fromNumber);
+      if (card) {
+        normalizedMediaUrls = [card.url];
+        resolvedMediaAssetId = card.mediaAssetId;
+        isMms = true;
+        messageType = 'MMS';
+      }
+    }
+
     // STEP 1: Create message record FIRST (before sending) so we have messageId
     // This allows us to create MessageClickCodes that reference the message
     messageTextWithCodes = text; // Will be modified with click codes
@@ -351,7 +368,7 @@ export async function sendMessage({
         costAmount: null, // Will be updated after sending
         costCurrency: 'USD',
         telnyxMetadata: null, // Will be updated after sending
-        mediaAssetId,
+        mediaAssetId: resolvedMediaAssetId,
         mediaUrls: isMms ? normalizedMediaUrls : null
       });
       messageId = messageRecord.id;
@@ -482,7 +499,7 @@ export async function sendMessage({
           costAmount,
           costCurrency,
           telnyxMetadata: response.data,
-          mediaAssetId,
+          mediaAssetId: resolvedMediaAssetId,
           mediaUrls: isMms ? normalizedMediaUrls : null
         });
         messageId = messageRecord.id;
@@ -630,7 +647,7 @@ export async function sendMessage({
             errorMessage: errorMessage,
             failedAt: new Date(),
             telnyxMetadata: errorDetails || { error: errorMessage },
-            mediaAssetId,
+            mediaAssetId: resolvedMediaAssetId,
             mediaUrls: isMms ? normalizedMediaUrls : null
           });
         }

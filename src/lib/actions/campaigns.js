@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client'
 import { auth } from '@/lib/auth'
 import { serverLog } from '@/lib/serverLogger'
 import { isContactEligibleForSend } from '@/lib/contactEligibility'
+import { mediaPublicUrl } from '@/lib/mediaCard'
 import crypto from 'crypto'
 
 const OUTBOUND_SENDS_DISABLED = false
@@ -20,18 +21,6 @@ async function resolveExecutionUserId(executionUserId = null) {
   return executionUserId || getUserId()
 }
 
-// Resolve an attached media asset id (.vcf/MMS), verifying it belongs to the user.
-// Returns: undefined (caller omitted it → no change), null (clear it), or the verified id.
-async function resolveOwnedMediaAssetId(mediaAssetId, userId) {
-  if (mediaAssetId === undefined) return undefined
-  if (!mediaAssetId) return null
-  const asset = await prisma.mediaAsset.findFirst({
-    where: { id: mediaAssetId, userId },
-    select: { id: true }
-  })
-  if (!asset) throw new Error('Media asset not found')
-  return asset.id
-}
 
 // Helper function to extract shortlink IDs from message text
 // Looks for {{SHORTLINK:ID}} markers or txt.cx/shortlink-ID format
@@ -81,12 +70,9 @@ async function associateShortlinksWithCampaign(campaignId, message, userId, tx) 
   }
 }
 
-export async function createCampaign({ name, message, targetAllSubscribed, selectedTags, selectedSources, selectedLists, workflow, mediaAssetId }) {
+export async function createCampaign({ name, message, targetAllSubscribed, selectedTags, selectedSources, selectedLists, workflow, attachVcf }) {
   try {
     const userId = await getUserId()
-
-    // Resolve and verify ownership of an attached media asset (.vcf/MMS), if any.
-    const resolvedMediaAssetId = await resolveOwnedMediaAssetId(mediaAssetId, userId)
 
     // If workflow is provided, create workflow-based campaign
     if (workflow) {
@@ -134,7 +120,7 @@ export async function createCampaign({ name, message, targetAllSubscribed, selec
           userId,
           name,
           message,
-          ...(resolvedMediaAssetId !== undefined ? { mediaAssetId: resolvedMediaAssetId } : {}),
+          attachVcf: Boolean(attachVcf),
         },
         include: {
           targets: {
@@ -682,7 +668,6 @@ export async function getCampaigns(recentOnly = true) {
             }
           },
           shortlinks: true,
-          mediaAsset: true,
           _count: {
             select: { messages: true }
           }
@@ -768,8 +753,7 @@ export async function getCampaigns(recentOnly = true) {
         updatedAt: campaign.updatedAt,
         targets: campaign.targets,
         shortlinks: campaign.shortlinks,
-        mediaAssetId: campaign.mediaAssetId, // Attached .vcf/MMS asset (so edit modal can pre-populate)
-        mediaAsset: campaign.mediaAsset,
+        attachVcf: campaign.attachVcf, // Whether to attach the sending number's .vcf card
         messages: [], // No longer fetching all messages - use deliveryStats instead
         deliveryStats: {
           total: stats.total,
@@ -883,7 +867,7 @@ export async function deleteCampaign(id) {
   }
 }
 
-export async function updateCampaign({ id, name, message, targetAllSubscribed, selectedTags, selectedSources, selectedLists, mediaAssetId }) {
+export async function updateCampaign({ id, name, message, targetAllSubscribed, selectedTags, selectedSources, selectedLists, attachVcf }) {
   try {
     const userId = await getUserId()
 
@@ -895,9 +879,6 @@ export async function updateCampaign({ id, name, message, targetAllSubscribed, s
       throw new Error('Campaign not found')
     }
 
-    // Resolve and verify ownership of an attached media asset (.vcf/MMS), if any.
-    const resolvedMediaAssetId = await resolveOwnedMediaAssetId(mediaAssetId, userId)
-
     return await prisma.$transaction(async (tx) => {
       // Update the campaign
       const campaign = await tx.campaign.update({
@@ -905,7 +886,7 @@ export async function updateCampaign({ id, name, message, targetAllSubscribed, s
         data: {
           name,
           message,
-          ...(resolvedMediaAssetId !== undefined ? { mediaAssetId: resolvedMediaAssetId } : {}),
+          ...(attachVcf !== undefined ? { attachVcf: Boolean(attachVcf) } : {}),
         }
       })
 
@@ -974,8 +955,7 @@ export async function updateCampaign({ id, name, message, targetAllSubscribed, s
               tag: true
             }
           },
-          shortlinks: true,
-          mediaAsset: true
+          shortlinks: true
         }
       })
       
@@ -996,8 +976,7 @@ export async function updateCampaign({ id, name, message, targetAllSubscribed, s
           updatedAt: updatedCampaign.updatedAt,
           targets: updatedCampaign.targets,
           shortlinks: updatedCampaign.shortlinks,
-          mediaAssetId: updatedCampaign.mediaAssetId,
-          mediaAsset: updatedCampaign.mediaAsset
+          attachVcf: updatedCampaign.attachVcf
         }
       }
       
@@ -1238,8 +1217,7 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
           include: {
             tag: true
           }
-        },
-        mediaAsset: true
+        }
       }
     })
 
@@ -1349,25 +1327,26 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
           id: true,
           phoneNumber: true,
           messagingProfileId: true,
-          rateLimit: true
+          rateLimit: true,
+          mediaAssetId: true
         }
       }).catch(() => [])
     ])
-    
+
     // Validate Telnyx config before starting
     if (!telnyxConfig.client) {
       throw new Error(telnyxConfig.error || 'Telnyx API key not configured')
     }
-    
+
     let messageText = campaign.message
     if (user?.standardOptOutText) {
       messageText = `${campaign.message}\n\n${user.standardOptOutText}`
     }
 
-    // Optional MMS media (e.g. .vcf contact card) attached to the whole campaign.
-    const campaignMediaAssetId = campaign.mediaAsset?.id || null
-    const campaignMediaUrls = campaign.mediaAsset?.url ? [campaign.mediaAsset.url] : null
-    const campaignIsMms = Boolean(campaignMediaUrls)
+    // When the campaign's "attach VCF" toggle is on, each message attaches the
+    // contact card configured for the sending number (resolved per group below).
+    const campaignAttachVcf = Boolean(campaign.attachVcf)
+    const cardUrlFor = (mediaAssetId) => mediaAssetId ? mediaPublicUrl(mediaAssetId) : null
 
     const phoneNumberConfigMap = new Map()
     for (const number of phoneNumbers) {
@@ -1376,16 +1355,27 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
         phoneNumber: number.phoneNumber,
         messagingProfileId: number.messagingProfileId || telnyxConfig.messagingProfileId,
         rateLimit: number.rateLimit || 1200,
-        telnyxClient: telnyxConfig.client
+        telnyxClient: telnyxConfig.client,
+        mediaAssetId: number.mediaAssetId || null,
+        mediaUrl: cardUrlFor(number.mediaAssetId)
       })
     }
 
+    // The legacy/default sender has no PhoneNumber row; resolve its card by
+    // matching the default number against the user's configured numbers.
+    const legacyNumber = user?.telnyxPhoneNumber || telnyxConfig.phoneNumber
+    const legacyNormalized = legacyNumber ? normalizePhoneForTelnyx(legacyNumber) : null
+    const legacyMatch = legacyNormalized
+      ? phoneNumbers.find(pn => normalizePhoneForTelnyx(pn.phoneNumber) === legacyNormalized && pn.mediaAssetId)
+      : null
     phoneNumberConfigMap.set('legacy', {
       key: 'legacy',
-      phoneNumber: user?.telnyxPhoneNumber || telnyxConfig.phoneNumber,
+      phoneNumber: legacyNumber,
       messagingProfileId: user?.telnyxMessagingProfileId || telnyxConfig.messagingProfileId,
       rateLimit: 1200,
-      telnyxClient: telnyxConfig.client
+      telnyxClient: telnyxConfig.client,
+      mediaAssetId: legacyMatch?.mediaAssetId || null,
+      mediaUrl: cardUrlFor(legacyMatch?.mediaAssetId)
     })
     
     let successCount = 0
@@ -1436,6 +1426,12 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
               throw new Error(`Missing sender number for group ${String(groupKey)}`)
             }
 
+            // Resolve the .vcf card for this group's sending number (if attach is on).
+            const groupMediaUrl = campaignAttachVcf ? (groupConfig.mediaUrl || null) : null
+            const groupMediaUrls = groupMediaUrl ? [groupMediaUrl] : null
+            const groupMediaAssetId = groupMediaUrl ? groupConfig.mediaAssetId : null
+            const groupIsMms = Boolean(groupMediaUrl)
+
             // Phase 1: bulk create queued message records.
             const contactMessagePairs = []
             const messageRecords = groupContacts.map(contact => {
@@ -1449,12 +1445,12 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
                 from: groupConfig.phoneNumber,
                 to: contact.phone,
                 text: messageText,
-                type: campaignIsMms ? 'MMS' : 'SMS',
+                type: groupIsMms ? 'MMS' : 'SMS',
                 parts: 1,
                 status: 'queued',
                 direction: 'outbound',
-                mediaAssetId: campaignMediaAssetId,
-                mediaUrls: campaignMediaUrls || undefined,
+                mediaAssetId: groupMediaAssetId,
+                mediaUrls: groupMediaUrls || undefined,
               }
             })
             await prisma.message.createMany({ data: messageRecords })
@@ -1474,7 +1470,7 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
                     text: contactTextMap.get(contact.id) || messageText,
                     messagingProfileId: groupConfig.messagingProfileId,
                     idempotencyKey: contactToMessageId.get(contact.id),
-                    mediaUrls: campaignMediaUrls,
+                    mediaUrls: groupMediaUrls,
                   }),
                   {
                     maxRetries: 3,

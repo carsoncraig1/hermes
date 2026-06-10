@@ -5,7 +5,6 @@ import { createCampaign, updateCampaign } from '@/lib/actions/campaigns'
 import { getTags } from '@/lib/actions/tags'
 import { getShortlinks } from '@/lib/actions/shortlinks'
 import { validateMessage, getSuggestedReplacement } from '@/lib/messageUtils'
-import MediaAttachmentPicker from './MediaAttachmentPicker'
 import styles from './AddCampaignModal.module.css'
 
 // Searchable Multi-Select Component
@@ -161,7 +160,7 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
   const [availableLists, setAvailableLists] = useState([])
   const [availableShortlinks, setAvailableShortlinks] = useState([])
   const [optOutText, setOptOutText] = useState('')
-  const [mediaAsset, setMediaAsset] = useState(campaign?.mediaAsset || null)
+  const [attachVcf, setAttachVcf] = useState(campaign?.attachVcf || false)
   const [loading, setLoading] = useState(false)
 
   // Convert markers to URLs when loading campaign or when shortlinks are loaded
@@ -241,7 +240,7 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
           id: campaign.id,
           name,
           message: messageWithMarkers,
-          mediaAssetId: mediaAsset?.id ?? null,
+          attachVcf,
           targetAllSubscribed,
           selectedTags: targetAllSubscribed ? [] : selectedTags,
           selectedSources: targetAllSubscribed ? [] : selectedSources,
@@ -252,7 +251,7 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
         const newCampaign = await createCampaign({
           name,
           message: messageWithMarkers,
-          mediaAssetId: mediaAsset?.id ?? null,
+          attachVcf,
           targetAllSubscribed,
           selectedTags: targetAllSubscribed ? [] : selectedTags,
           selectedSources: targetAllSubscribed ? [] : selectedSources,
@@ -384,7 +383,18 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
           </div>
 
           <div className={styles.formGroup}>
-            <MediaAttachmentPicker value={mediaAsset} onChange={setMediaAsset} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={attachVcf}
+                onChange={(e) => setAttachVcf(e.target.checked)}
+              />
+              <span>📎 Attach contact card (.vcf)</span>
+            </label>
+            <div className={styles.charCount} style={{ marginTop: 4 }}>
+              Attaches the .vcf configured for the sending number (Settings → Phone Numbers).
+              Sends as MMS (US &amp; Canada only, higher per-message cost). Numbers without a card send normal SMS.
+            </div>
           </div>
 
           <div className={styles.formGroup}>
