@@ -20,6 +20,19 @@ async function resolveExecutionUserId(executionUserId = null) {
   return executionUserId || getUserId()
 }
 
+// Resolve an attached media asset id (.vcf/MMS), verifying it belongs to the user.
+// Returns: undefined (caller omitted it → no change), null (clear it), or the verified id.
+async function resolveOwnedMediaAssetId(mediaAssetId, userId) {
+  if (mediaAssetId === undefined) return undefined
+  if (!mediaAssetId) return null
+  const asset = await prisma.mediaAsset.findFirst({
+    where: { id: mediaAssetId, userId },
+    select: { id: true }
+  })
+  if (!asset) throw new Error('Media asset not found')
+  return asset.id
+}
+
 // Helper function to extract shortlink IDs from message text
 // Looks for {{SHORTLINK:ID}} markers or txt.cx/shortlink-ID format
 function extractShortlinkIds(message) {
@@ -68,10 +81,13 @@ async function associateShortlinksWithCampaign(campaignId, message, userId, tx) 
   }
 }
 
-export async function createCampaign({ name, message, targetAllSubscribed, selectedTags, selectedSources, selectedLists, workflow }) {
+export async function createCampaign({ name, message, targetAllSubscribed, selectedTags, selectedSources, selectedLists, workflow, mediaAssetId }) {
   try {
     const userId = await getUserId()
-    
+
+    // Resolve and verify ownership of an attached media asset (.vcf/MMS), if any.
+    const resolvedMediaAssetId = await resolveOwnedMediaAssetId(mediaAssetId, userId)
+
     // If workflow is provided, create workflow-based campaign
     if (workflow) {
       return await prisma.$transaction(async (tx) => {
@@ -118,6 +134,7 @@ export async function createCampaign({ name, message, targetAllSubscribed, selec
           userId,
           name,
           message,
+          ...(resolvedMediaAssetId !== undefined ? { mediaAssetId: resolvedMediaAssetId } : {}),
         },
         include: {
           targets: {
@@ -665,6 +682,7 @@ export async function getCampaigns(recentOnly = true) {
             }
           },
           shortlinks: true,
+          mediaAsset: true,
           _count: {
             select: { messages: true }
           }
@@ -750,6 +768,8 @@ export async function getCampaigns(recentOnly = true) {
         updatedAt: campaign.updatedAt,
         targets: campaign.targets,
         shortlinks: campaign.shortlinks,
+        mediaAssetId: campaign.mediaAssetId, // Attached .vcf/MMS asset (so edit modal can pre-populate)
+        mediaAsset: campaign.mediaAsset,
         messages: [], // No longer fetching all messages - use deliveryStats instead
         deliveryStats: {
           total: stats.total,
@@ -863,10 +883,10 @@ export async function deleteCampaign(id) {
   }
 }
 
-export async function updateCampaign({ id, name, message, targetAllSubscribed, selectedTags, selectedSources, selectedLists }) {
+export async function updateCampaign({ id, name, message, targetAllSubscribed, selectedTags, selectedSources, selectedLists, mediaAssetId }) {
   try {
     const userId = await getUserId()
-    
+
     // Verify ownership
     const existing = await prisma.campaign.findFirst({
       where: { id, userId }
@@ -874,7 +894,10 @@ export async function updateCampaign({ id, name, message, targetAllSubscribed, s
     if (!existing) {
       throw new Error('Campaign not found')
     }
-    
+
+    // Resolve and verify ownership of an attached media asset (.vcf/MMS), if any.
+    const resolvedMediaAssetId = await resolveOwnedMediaAssetId(mediaAssetId, userId)
+
     return await prisma.$transaction(async (tx) => {
       // Update the campaign
       const campaign = await tx.campaign.update({
@@ -882,6 +905,7 @@ export async function updateCampaign({ id, name, message, targetAllSubscribed, s
         data: {
           name,
           message,
+          ...(resolvedMediaAssetId !== undefined ? { mediaAssetId: resolvedMediaAssetId } : {}),
         }
       })
 
@@ -950,7 +974,8 @@ export async function updateCampaign({ id, name, message, targetAllSubscribed, s
               tag: true
             }
           },
-          shortlinks: true
+          shortlinks: true,
+          mediaAsset: true
         }
       })
       
@@ -970,7 +995,9 @@ export async function updateCampaign({ id, name, message, targetAllSubscribed, s
           createdAt: updatedCampaign.createdAt,
           updatedAt: updatedCampaign.updatedAt,
           targets: updatedCampaign.targets,
-          shortlinks: updatedCampaign.shortlinks
+          shortlinks: updatedCampaign.shortlinks,
+          mediaAssetId: updatedCampaign.mediaAssetId,
+          mediaAsset: updatedCampaign.mediaAsset
         }
       }
       
@@ -1211,10 +1238,11 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
           include: {
             tag: true
           }
-        }
+        },
+        mediaAsset: true
       }
     })
-    
+
     if (!campaign) throw new Error('Campaign not found')
     if (campaign.workflow) throw new Error('Cannot execute workflow campaigns as dedicated send')
     if (!campaign.message) throw new Error('Campaign has no message')
@@ -1336,6 +1364,11 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
       messageText = `${campaign.message}\n\n${user.standardOptOutText}`
     }
 
+    // Optional MMS media (e.g. .vcf contact card) attached to the whole campaign.
+    const campaignMediaAssetId = campaign.mediaAsset?.id || null
+    const campaignMediaUrls = campaign.mediaAsset?.url ? [campaign.mediaAsset.url] : null
+    const campaignIsMms = Boolean(campaignMediaUrls)
+
     const phoneNumberConfigMap = new Map()
     for (const number of phoneNumbers) {
       phoneNumberConfigMap.set(number.id, {
@@ -1416,10 +1449,12 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
                 from: groupConfig.phoneNumber,
                 to: contact.phone,
                 text: messageText,
-                type: 'SMS',
+                type: campaignIsMms ? 'MMS' : 'SMS',
                 parts: 1,
                 status: 'queued',
                 direction: 'outbound',
+                mediaAssetId: campaignMediaAssetId,
+                mediaUrls: campaignMediaUrls || undefined,
               }
             })
             await prisma.message.createMany({ data: messageRecords })
@@ -1439,6 +1474,7 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
                     text: contactTextMap.get(contact.id) || messageText,
                     messagingProfileId: groupConfig.messagingProfileId,
                     idempotencyKey: contactToMessageId.get(contact.id),
+                    mediaUrls: campaignMediaUrls,
                   }),
                   {
                     maxRetries: 3,

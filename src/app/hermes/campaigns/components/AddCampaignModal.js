@@ -5,6 +5,7 @@ import { createCampaign, updateCampaign } from '@/lib/actions/campaigns'
 import { getTags } from '@/lib/actions/tags'
 import { getShortlinks } from '@/lib/actions/shortlinks'
 import { validateMessage, getSuggestedReplacement } from '@/lib/messageUtils'
+import MediaAttachmentPicker from './MediaAttachmentPicker'
 import styles from './AddCampaignModal.module.css'
 
 // Searchable Multi-Select Component
@@ -160,6 +161,7 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
   const [availableLists, setAvailableLists] = useState([])
   const [availableShortlinks, setAvailableShortlinks] = useState([])
   const [optOutText, setOptOutText] = useState('')
+  const [mediaAsset, setMediaAsset] = useState(campaign?.mediaAsset || null)
   const [loading, setLoading] = useState(false)
 
   // Convert markers to URLs when loading campaign or when shortlinks are loaded
@@ -239,6 +241,7 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
           id: campaign.id,
           name,
           message: messageWithMarkers,
+          mediaAssetId: mediaAsset?.id ?? null,
           targetAllSubscribed,
           selectedTags: targetAllSubscribed ? [] : selectedTags,
           selectedSources: targetAllSubscribed ? [] : selectedSources,
@@ -249,6 +252,7 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
         const newCampaign = await createCampaign({
           name,
           message: messageWithMarkers,
+          mediaAssetId: mediaAsset?.id ?? null,
           targetAllSubscribed,
           selectedTags: targetAllSubscribed ? [] : selectedTags,
           selectedSources: targetAllSubscribed ? [] : selectedSources,
@@ -377,6 +381,10 @@ export default function AddCampaignModal({ campaign, onClose, onAdd, onUpdate })
                 </>
               )
             })()}
+          </div>
+
+          <div className={styles.formGroup}>
+            <MediaAttachmentPicker value={mediaAsset} onChange={setMediaAsset} />
           </div>
 
           <div className={styles.formGroup}>

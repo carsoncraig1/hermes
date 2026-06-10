@@ -23,6 +23,7 @@ export async function sendMessageBulkOptimized({
   text,
   messagingProfileId,
   idempotencyKey,
+  mediaUrls = null,
 }) {
   if (OUTBOUND_SENDS_DISABLED) {
     throw new Error('Outbound sends are temporarily disabled');
@@ -35,6 +36,24 @@ export async function sendMessageBulkOptimized({
     throw new Error('Telnyx API key not configured');
   }
 
+  // MMS when media (e.g. a .vcf contact card) is attached; SMS otherwise.
+  const normalizedMediaUrls = Array.isArray(mediaUrls)
+    ? mediaUrls.filter(u => typeof u === 'string' && u.trim().length > 0)
+    : [];
+  const isMms = normalizedMediaUrls.length > 0;
+  const hasText = typeof text === 'string' && text.trim().length > 0;
+
+  const requestBody = {
+    from,
+    to: [to],
+    type: isMms ? 'MMS' : 'SMS',
+    messaging_profile_id: messagingProfileId,
+    webhook_url: 'https://txt.cx/api/message/status',
+    webhook_failover_url: '',
+  };
+  if (hasText || !isMms) requestBody.text = text;
+  if (isMms) requestBody.media_urls = normalizedMediaUrls;
+
   const response = await fetch('https://api.telnyx.com/v2/messages', {
     method: 'POST',
     headers: {
@@ -43,15 +62,7 @@ export async function sendMessageBulkOptimized({
       'Content-Type': 'application/json',
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
-    body: JSON.stringify({
-      from,
-      to: [to],
-      text,
-      type: 'SMS',
-      messaging_profile_id: messagingProfileId,
-      webhook_url: 'https://txt.cx/api/message/status',
-      webhook_failover_url: '',
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   const responseBody = await response.json().catch(() => ({}));
@@ -159,7 +170,15 @@ export async function sendMessage({
   telnyxConfig = null,
   skipRateLimit = false,
   skipSubscriptionCheck = false,
+  mediaUrls = null,
+  mediaAssetId = null,
 }) {
+  // MMS when one or more media URLs (e.g. a .vcf contact card) are attached.
+  const normalizedMediaUrls = Array.isArray(mediaUrls)
+    ? mediaUrls.filter(u => typeof u === 'string' && u.trim().length > 0)
+    : [];
+  const isMms = normalizedMediaUrls.length > 0;
+  const messageType = isMms ? 'MMS' : 'SMS';
   // Declare variables in outer scope for error handling
   let finalUserId = userId;
   let validation = null;
@@ -190,26 +209,33 @@ export async function sendMessage({
       finalUserId = session.user.id;
     }
 
-    // Validate message text
-    validation = validateMessage(text);
-    if (!validation.valid) {
-      // Log validation failure
-      await serverLog(
-        `Message validation failed: ${validation.error}`,
-        'warn',
-        {
-          textLength: text.length,
-          parts: validation.parts,
-          error: validation.error
-        },
-        finalUserId
-      ).catch(err => console.error('Error logging validation failure:', err));
-      
-      return {
-        success: false,
-        error: validation.error,
-        validation
-      };
+    // Validate message text. For MMS, text is optional (media-only is valid),
+    // so only enforce text validation when there is actually text to send.
+    const hasText = typeof text === 'string' && text.trim().length > 0;
+    if (!isMms || hasText) {
+      validation = validateMessage(text);
+      if (!validation.valid) {
+        // Log validation failure
+        await serverLog(
+          `Message validation failed: ${validation.error}`,
+          'warn',
+          {
+            textLength: text?.length ?? 0,
+            parts: validation.parts,
+            error: validation.error
+          },
+          finalUserId
+        ).catch(err => console.error('Error logging validation failure:', err));
+
+        return {
+          success: false,
+          error: validation.error,
+          validation
+        };
+      }
+    } else {
+      // Media-only MMS: synthesize a passing validation result.
+      validation = { valid: true, parts: 1, characterCount: 0, warnings: [], encoding: 'GSM-7' };
     }
 
     // Enforce subscription check if contactId is provided (skip if pre-filtered in bulk send)
@@ -317,14 +343,16 @@ export async function sendMessage({
         campaignId,
         from: fromNumber,
         to,
-        text, // Store original text
-        type: 'SMS',
+        text: text || '', // Store original text ('' for media-only MMS)
+        type: messageType,
         parts: validation.parts,
         status: 'queued', // Will be updated after sending
         direction: 'outbound',
         costAmount: null, // Will be updated after sending
         costCurrency: 'USD',
-        telnyxMetadata: null // Will be updated after sending
+        telnyxMetadata: null, // Will be updated after sending
+        mediaAssetId,
+        mediaUrls: isMms ? normalizedMediaUrls : null
       });
       messageId = messageRecord.id;
     } catch (dbError) {
@@ -334,7 +362,7 @@ export async function sendMessage({
 
     // STEP 2: Create MessageClickCodes for all shortlinks in the message
     // This replaces shortlink markers with code-only URLs (txt.cx/CODE)
-    if (messageId && contactId) {
+    if (messageId && contactId && hasText) {
       try {
         const { modifiedText } = await createMessageClickCodes(
           messageId,
@@ -355,8 +383,7 @@ export async function sendMessage({
     const messageParams = {
       from: fromNumber,
       to: [normalizedTo], // Telnyx requires an array of phone numbers
-      text: messageTextWithCodes, // Use text with click codes embedded
-      type: 'SMS', // SMS or MMS
+      type: messageType, // SMS or MMS (MMS when media is attached)
       messaging_profile_id: settings.messagingProfileId,
       // Webhook configuration - use profile webhooks if configured, otherwise use explicit webhook
       webhook_url: 'https://txt.cx/api/message/status',
@@ -364,6 +391,14 @@ export async function sendMessage({
       // Note: If messaging profile has webhooks configured, they will be used
       // If webhook_url is provided in request, it takes precedence
     };
+    // Only include text when present (MMS may be media-only).
+    if (hasText) {
+      messageParams.text = messageTextWithCodes; // Use text with click codes embedded
+    }
+    // Attach MMS media (e.g. .vcf contact card) for Telnyx to fetch and deliver.
+    if (isMms) {
+      messageParams.media_urls = normalizedMediaUrls;
+    }
 
     // STEP 4: Send message via Telnyx SDK
     // According to docs: telnyx.messages.create(params, callback) for Node.js
@@ -408,7 +443,7 @@ export async function sendMessage({
             costCurrency: (initialStatus === 'sent' || initialStatus === 'delivered') ? costCurrency : 'USD',
             telnyxMetadata: response.data ? JSON.parse(JSON.stringify(response.data)) : null,
             sentAt: initialStatus === 'sent' || initialStatus === 'sending' ? new Date() : null,
-            text: messageTextWithCodes // Update with code-embedded text
+            text: messageTextWithCodes || '' // Update with code-embedded text ('' for media-only MMS)
           }
         }).catch(err => {
           console.error('Error updating message record:', err);
@@ -439,14 +474,16 @@ export async function sendMessage({
           campaignId,
           from: fromNumber,
           to,
-          text: messageTextWithCodes, // Store text with codes
-          type: 'SMS',
+          text: messageTextWithCodes || '', // Store text with codes ('' for media-only MMS)
+          type: messageType,
           parts: validation.parts,
           status: initialStatus,
           direction: 'outbound',
           costAmount,
           costCurrency,
-          telnyxMetadata: response.data
+          telnyxMetadata: response.data,
+          mediaAssetId,
+          mediaUrls: isMms ? normalizedMediaUrls : null
         });
         messageId = messageRecord.id;
       } catch (dbError) {
@@ -583,8 +620,8 @@ export async function sendMessage({
             campaignId,
             from: errorFromNumber || 'unknown',
             to: normalizedToForError,
-            text,
-            type: 'SMS',
+            text: text || '',
+            type: messageType,
             parts: validation?.parts || 1,
             status: 'sending_failed',
             direction: 'outbound',
@@ -592,7 +629,9 @@ export async function sendMessage({
             costCurrency: 'USD',
             errorMessage: errorMessage,
             failedAt: new Date(),
-            telnyxMetadata: errorDetails || { error: errorMessage }
+            telnyxMetadata: errorDetails || { error: errorMessage },
+            mediaAssetId,
+            mediaUrls: isMms ? normalizedMediaUrls : null
           });
         }
       } catch (dbError) {

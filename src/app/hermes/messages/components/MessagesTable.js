@@ -28,6 +28,13 @@ export default function MessagesTable({ initialMessages, initialStats }) {
     return groupMessagesIntoConversations(messages);
   }, [messages]);
 
+  // Count messages that carry an MMS / media attachment for a subtle indicator
+  const attachmentCount = useMemo(() => {
+    return messages.filter(
+      (message) => message.type === 'MMS' || (Array.isArray(message.mediaUrls) && message.mediaUrls.length > 0)
+    ).length;
+  }, [messages]);
+
   useEffect(() => {
     if (!selectedConversationId && conversations.length > 0) {
       setSelectedConversationId(conversations[0].id);
@@ -179,6 +186,14 @@ export default function MessagesTable({ initialMessages, initialStats }) {
             <span className={styles.statLabel}>Total Cost:</span>
             <span className={styles.statValue}>${(stats.totalCost || 0).toFixed(2)}</span>
           </div>
+          {attachmentCount > 0 && (
+            <div className={styles.statItem}>
+              <span className={styles.statLabel}>Attachments:</span>
+              <span className={styles.statValue} title="MMS attachment">
+                📎 {attachmentCount}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

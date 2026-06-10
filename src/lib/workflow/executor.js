@@ -20,11 +20,28 @@ async function resolveShortlinkUrls(messageText, userId) {
   return resolvedMessage;
 }
 
+// Resolve a workflow node's attached media asset (.vcf/MMS) to its public URL.
+async function resolveNodeMediaUrls(mediaAssetId, userId) {
+  if (!mediaAssetId) return { mediaAssetId: null, mediaUrls: null };
+  const asset = await prisma.mediaAsset.findFirst({
+    where: { id: mediaAssetId, userId },
+    select: { id: true, url: true }
+  });
+  if (!asset?.url) return { mediaAssetId: null, mediaUrls: null };
+  return { mediaAssetId: asset.id, mediaUrls: [asset.url] };
+}
+
 // Send message function with real Telnyx integration
-async function sendMessage(contact, messageText, userId, campaignId = null, optOutText = null) {
-  if (!contact.phone || !messageText) {
-    console.error('Missing phone or message text');
-    return { success: false, error: 'Missing phone or message text' };
+async function sendMessage(contact, messageText, userId, campaignId = null, optOutText = null, options = {}) {
+  const { mediaAssetId = null } = options;
+
+  // Resolve attached media (if any) so a node can be media-only.
+  const media = await resolveNodeMediaUrls(mediaAssetId, userId);
+  const hasMedia = Array.isArray(media.mediaUrls) && media.mediaUrls.length > 0;
+
+  if (!contact.phone || (!messageText && !hasMedia)) {
+    console.error('Missing phone or message content');
+    return { success: false, error: 'Missing phone or message content' };
   }
 
   // Enforce subscription check - only send to subscribed contacts
@@ -35,23 +52,25 @@ async function sendMessage(contact, messageText, userId, campaignId = null, optO
 
   try {
     // Resolve shortlink URLs (keep them for tracking)
-    const resolvedMessage = await resolveShortlinkUrls(messageText, userId);
-    
+    const resolvedMessage = await resolveShortlinkUrls(messageText || '', userId);
+
     // Build the message with opt-out text if available
     let finalMessage = resolvedMessage;
-    if (optOutText) {
+    if (resolvedMessage && optOutText) {
       finalMessage = `${resolvedMessage}\n\n${optOutText}`;
     }
-    
+
     // Send via Telnyx with contact and campaign IDs for tracking
     const result = await telnyxSendMessage({
       to: contact.phone,
       text: finalMessage,
       userId: userId,
       contactId: contact.id,
-      campaignId: campaignId
+      campaignId: campaignId,
+      mediaUrls: media.mediaUrls,
+      mediaAssetId: media.mediaAssetId
     });
-    
+
     return result;
   } catch (error) {
     console.error('Error sending message:', error);
@@ -543,9 +562,9 @@ export async function executeWorkflow(workflow, contact, userId, campaignId = nu
         return;
 
       case 'action':
-        // Execute action
-        if (currentNode.data?.message) {
-          const sendResult = await sendMessage(contact, currentNode.data.message, userId, campaignId, optOutText);
+        // Execute action (text message and/or attached .vcf/MMS media)
+        if (currentNode.data?.message || currentNode.data?.mediaAssetId) {
+          const sendResult = await sendMessage(contact, currentNode.data.message, userId, campaignId, optOutText, { mediaAssetId: currentNode.data?.mediaAssetId || null });
           
           // Log action node execution
           await serverLog(
