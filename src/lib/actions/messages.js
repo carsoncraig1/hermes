@@ -234,7 +234,9 @@ export async function createMessageRecord({
   costCurrency = 'USD',
   telnyxMetadata = null,
   errorMessage = null,
-  failedAt = null
+  failedAt = null,
+  mediaAssetId = null,
+  mediaUrls = null
 }) {
   const message = await prisma.message.create({
     data: {
@@ -249,6 +251,8 @@ export async function createMessageRecord({
       parts,
       status,
       direction,
+      mediaAssetId: mediaAssetId || null,
+      mediaUrls: mediaUrls && mediaUrls.length ? mediaUrls : undefined,
       // Only set costAmount for sent/delivered/unconfirmed messages (Telnyx bills for these)
       // delivery_unconfirmed messages are still billed (sent to carrier, no confirmation)
       costAmount: (status === 'sent' || status === 'delivered' || status === 'delivery_unconfirmed') && costAmount ? parseFloat(costAmount) : null,

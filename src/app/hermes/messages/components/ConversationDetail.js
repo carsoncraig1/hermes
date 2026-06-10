@@ -53,6 +53,10 @@ export default function ConversationDetail({
     });
   };
 
+  const isAttachmentMessage = (message) => {
+    return message.type === 'MMS' || (Array.isArray(message.mediaUrls) && message.mediaUrls.length > 0);
+  };
+
   const getStatusIcon = (status) => {
     switch (status) {
       case 'delivered':
@@ -131,7 +135,34 @@ export default function ConversationDetail({
               <div key={message.id} className={styles.messageWrapper}>
                 <div className={`${styles.messageBubble} ${isOutbound ? styles.outbound : styles.inbound}`}>
                   <div className={styles.messageContent}>
-                    <p className={styles.messageText}>{message.text}</p>
+                    {message.text ? (
+                      <p className={styles.messageText}>{message.text}</p>
+                    ) : null}
+                    {isAttachmentMessage(message) && (() => {
+                      const attachmentUrl = message.mediaUrls?.[0];
+                      const isVcard = message.type === 'MMS' || !attachmentUrl
+                        ? true
+                        : /\.vcf(\?|$)/i.test(attachmentUrl);
+                      const chipLabel = isVcard ? 'Contact card' : 'Attachment';
+                      const chipContent = (
+                        <>
+                          <span className={styles.attachmentIcon} aria-hidden="true">📎</span>
+                          <span>{chipLabel}</span>
+                        </>
+                      );
+                      return attachmentUrl ? (
+                        <a
+                          className={styles.attachmentChip}
+                          href={attachmentUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {chipContent}
+                        </a>
+                      ) : (
+                        <span className={styles.attachmentChip}>{chipContent}</span>
+                      );
+                    })()}
                     {message.campaign && (
                       <div className={styles.messageCampaign}>
                         <span className={styles.campaignTag}>Campaign: {message.campaign.name}</span>

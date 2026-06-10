@@ -1,20 +1,6 @@
 import { NextResponse } from 'next/server'
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { auth } from '@/lib/auth'
-
-// S3-compatible client (works with DigitalOcean Spaces, Cloudflare R2, AWS S3)
-const s3Client = new S3Client({
-  region: process.env.S3_REGION || 'us-east-1',
-  endpoint: process.env.S3_ENDPOINT, // e.g., https://nyc3.digitaloceanspaces.com
-  credentials: {
-    accessKeyId: process.env.S3_ACCESS_KEY_ID,
-    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
-  },
-  forcePathStyle: false, // Required for DigitalOcean Spaces
-})
-
-const BUCKET_NAME = process.env.S3_BUCKET_NAME
-const CDN_URL = process.env.S3_CDN_URL // e.g., https://your-space.nyc3.cdn.digitaloceanspaces.com
+import { uploadPublicFile, isStorageConfigured } from '@/lib/storage'
 
 export async function POST(request) {
   try {
@@ -25,9 +11,9 @@ export async function POST(request) {
     }
 
     // Check if S3 is configured
-    if (!BUCKET_NAME || !process.env.S3_ACCESS_KEY_ID) {
-      return NextResponse.json({ 
-        error: 'Cloud storage not configured. Please set up S3/Spaces credentials.' 
+    if (!isStorageConfigured()) {
+      return NextResponse.json({
+        error: 'Cloud storage not configured. Please set up S3/Spaces credentials.'
       }, { status: 500 })
     }
 
@@ -60,22 +46,9 @@ export async function POST(request) {
     const filename = `og-images/${timestamp}-${randomStr}.${ext}`
 
     // Upload to S3/Spaces
-    const command = new PutObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: filename,
-      Body: buffer,
-      ContentType: file.type,
-      ACL: 'public-read', // Make the file publicly accessible
-    })
+    const { url } = await uploadPublicFile({ buffer, key: filename, contentType: file.type })
 
-    await s3Client.send(command)
-
-    // Return the public URL
-    const url = CDN_URL 
-      ? `${CDN_URL}/${filename}`
-      : `${process.env.S3_ENDPOINT}/${BUCKET_NAME}/${filename}`
-
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true, 
       url,
       filename 

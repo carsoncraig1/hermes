@@ -16,6 +16,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { getShortlinks } from '@/lib/actions/shortlinks';
 import { validateMessage, getSuggestedReplacement } from '@/lib/messageUtils';
+import MediaAttachmentPicker from './MediaAttachmentPicker';
 import styles from './WorkflowBuilder.module.css';
 
 // Searchable Single-Select Component for Trigger Source
@@ -337,6 +338,20 @@ const ActionNode = ({ data, selected, id, onDelete, availableShortlinks = [], op
               </>
             );
           })()}
+        </div>
+        <div
+          style={{ marginTop: '0.5rem', fontSize: '0.75rem' }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <MediaAttachmentPicker
+            value={data.mediaAssetId ? { id: data.mediaAssetId, label: data.mediaLabel, url: data.mediaUrl } : null}
+            onChange={(asset) => {
+              data.onChange?.('mediaAssetId', asset?.id || null);
+              data.onChange?.('mediaLabel', asset?.label || null);
+              data.onChange?.('mediaUrl', asset?.url || null);
+            }}
+          />
         </div>
       </div>
       <Handle type="target" position={Position.Left} className={styles.nodeHandle} id="target" />
@@ -740,6 +755,9 @@ const WorkflowBuilder = forwardRef(function WorkflowBuilder({ workflow, onSave, 
         delayUnit: node.data?.delayUnit,
         triggerType: node.data?.triggerType, // Include trigger type
         triggerSource: node.data?.triggerSource, // Include trigger source configuration
+        mediaAssetId: node.data?.mediaAssetId, // Attached media asset (for MMS)
+        mediaLabel: node.data?.mediaLabel,
+        mediaUrl: node.data?.mediaUrl,
         label: node.data?.label,
       },
     }));
