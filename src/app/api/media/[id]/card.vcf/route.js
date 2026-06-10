@@ -16,7 +16,9 @@ export async function GET(request, { params }) {
       return new Response('Not found', { status: 404 })
     }
 
-    const filename = `${(asset.label || 'contact').replace(/[^\w.-]+/g, '_')}.vcf`
+    // Use the label as the filename, stripping any existing .vcf so we don't double it.
+    const base = (asset.label || 'contact').replace(/\.vcf$/i, '').replace(/[^\w.-]+/g, '_')
+    const filename = `${base}.vcf`
 
     return new Response(asset.content, {
       status: 200,
