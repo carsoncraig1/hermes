@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { getBrowserTimeZone, isValidTimeZone } from '@/lib/timezone';
+import PhoneVcfCell from './PhoneVcfCell';
 import styles from './page.module.css';
 
 export default function Settings() {
@@ -912,6 +913,7 @@ if (hrms && conversionOccurred) {
                         <th>Rate Limit (MPM)</th>
                         <th>Enabled</th>
                         <th>Accepting New Leads</th>
+                        <th>Contact Card (.vcf)</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
@@ -998,6 +1000,12 @@ if (hrms && conversionOccurred) {
                             {!number.acceptingNewLeads && (
                               <span className={styles.leadBadge}>Not accepting leads</span>
                             )}
+                          </td>
+                          <td>
+                            <PhoneVcfCell
+                              number={number}
+                              onChange={(mediaAssetId) => handleUpdatePhoneNumber(number.id, { mediaAssetId })}
+                            />
                           </td>
                           <td>
                             <button

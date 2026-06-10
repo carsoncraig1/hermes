@@ -1,39 +1,23 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import prisma from '@/lib/prisma'
-import { uploadPublicFile, isStorageConfigured } from '@/lib/storage'
-import {
-  buildVCardBuffer,
-  looksLikeVCard,
-  defaultLabel,
-  VCARD_CONTENT_TYPE,
-} from '@/lib/vcard'
+import { buildVCard, looksLikeVCard, defaultLabel, VCARD_CONTENT_TYPE } from '@/lib/vcard'
+import { mediaPublicUrl } from '@/lib/mediaCard'
 
-// Max size for an uploaded .vcf file (1MB)
+// Max size for an uploaded .vcf (1MB). vCards are tiny; this just guards abuse.
 const MAX_UPLOAD_SIZE = 1 * 1024 * 1024
 
 /**
- * Generate an object key for a vCard upload.
- * Mirrors the og-image route key scheme: "vcards/<timestamp>-<rand>.vcf".
- * @returns {string}
- */
-function vcardKey() {
-  const timestamp = Date.now()
-  const randomStr = Math.random().toString(36).substring(2, 8)
-  return `vcards/${timestamp}-${randomStr}.vcf`
-}
-
-/**
  * Serialize a MediaAsset row into the public asset JSON shape.
+ * `url` is derived from the id (served by /api/media/[id]/card.vcf) — no stored URL.
  */
 function serializeAsset(asset) {
   return {
     id: asset.id,
-    url: asset.url,
+    url: mediaPublicUrl(asset.id),
     label: asset.label,
     kind: asset.kind,
     contentType: asset.contentType,
-    filename: asset.filename,
     sizeBytes: asset.sizeBytes,
     source: asset.source,
     createdAt: asset.createdAt.toISOString(),
@@ -42,19 +26,11 @@ function serializeAsset(asset) {
 
 export async function POST(request) {
   try {
-    // Check authentication
     const session = await auth()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     const userId = session.user.id
-
-    // Check if cloud storage is configured
-    if (!isStorageConfigured()) {
-      return NextResponse.json({
-        error: 'Cloud storage not configured. Please set up S3/Spaces credentials.',
-      }, { status: 500 })
-    }
 
     const contentType = request.headers.get('content-type') || ''
 
@@ -62,19 +38,12 @@ export async function POST(request) {
     if (contentType.includes('application/json')) {
       const body = await request.json()
 
-      let buffer
+      let vcf
       try {
-        buffer = buildVCardBuffer(body)
+        vcf = buildVCard(body)
       } catch (error) {
         return NextResponse.json({ error: error.message }, { status: 400 })
       }
-
-      const key = vcardKey()
-      const { url } = await uploadPublicFile({
-        buffer,
-        key,
-        contentType: VCARD_CONTENT_TYPE,
-      })
 
       const label = body.label?.trim() || defaultLabel(body)
       const { label: _omitLabel, ...vcardData } = body
@@ -84,9 +53,8 @@ export async function POST(request) {
           userId,
           kind: 'vcard',
           contentType: VCARD_CONTENT_TYPE,
-          url,
-          filename: key,
-          sizeBytes: buffer.length,
+          content: vcf,
+          sizeBytes: Buffer.byteLength(vcf, 'utf8'),
           label,
           source: 'generated',
           vcardData,
@@ -105,27 +73,16 @@ export async function POST(request) {
         return NextResponse.json({ error: 'No file provided' }, { status: 400 })
       }
 
-      const bytes = await file.arrayBuffer()
-      const buffer = Buffer.from(bytes)
+      const text = Buffer.from(await file.arrayBuffer()).toString('utf8')
 
-      if (buffer.length > MAX_UPLOAD_SIZE) {
+      if (Buffer.byteLength(text, 'utf8') > MAX_UPLOAD_SIZE) {
         return NextResponse.json({ error: 'File too large. Maximum size is 1MB.' }, { status: 400 })
       }
-
-      const text = buffer.toString('utf8')
       if (!looksLikeVCard(text)) {
         return NextResponse.json({
           error: 'File does not appear to be a valid .vcf (vCard) file.',
         }, { status: 400 })
       }
-
-      const key = vcardKey()
-      // Force the correct content type so Telnyx interprets it as a contact card.
-      const { url } = await uploadPublicFile({
-        buffer,
-        key,
-        contentType: VCARD_CONTENT_TYPE,
-      })
 
       const providedLabel = formData.get('label')
       const label = (typeof providedLabel === 'string' && providedLabel.trim())
@@ -137,9 +94,8 @@ export async function POST(request) {
           userId,
           kind: 'vcard',
           contentType: VCARD_CONTENT_TYPE,
-          url,
-          filename: key,
-          sizeBytes: buffer.length,
+          content: text,
+          sizeBytes: Buffer.byteLength(text, 'utf8'),
           label,
           source: 'uploaded',
           vcardData: null,

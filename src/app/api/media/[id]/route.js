@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import prisma from '@/lib/prisma'
-import { deletePublicFile } from '@/lib/storage'
 
 export async function DELETE(request, { params }) {
   try {
@@ -16,16 +15,14 @@ export async function DELETE(request, { params }) {
 
     const asset = await prisma.mediaAsset.findFirst({
       where: { id, userId },
+      select: { id: true },
     })
     if (!asset) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
-    // Best-effort storage cleanup (deletePublicFile never throws).
-    await deletePublicFile(asset.filename)
-
-    // Message.mediaAsset and Campaign.mediaAsset are onDelete:SetNull,
-    // so any references are cleared automatically.
+    // Content lives in the row; Message.mediaAsset and PhoneNumber.mediaAsset are
+    // onDelete:SetNull, so references are cleared automatically.
     await prisma.mediaAsset.delete({ where: { id } })
 
     return NextResponse.json({ success: true })
