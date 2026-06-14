@@ -377,10 +377,9 @@ export async function executeManualFire(
   existingJobId = null,
   executionUserId = null
 ) {
-  const { createSendJob, claimAndStartJob, updateSendJobProgress, completeSendJob, failSendJob, getSendJob } = await import('@/lib/sendJob')
+  const { createSendJob, claimAndStartJob, updateSendJobProgress, completeSendJob, failSendJob, getSendJob, findActiveSendJobForCampaign } = await import('@/lib/sendJob')
   const { checkRateLimit } = await import('@/lib/actions/messages')
   const { incrementRateLimitCache } = await import('@/lib/rateLimitCache')
-  const { retryWithBackoff, isRetryableError } = await import('@/lib/retry')
   const { getContactsForManualFirePaginated } = await import('@/lib/contactPagination')
   const { executeWorkflow } = await import('@/lib/workflow/executor')
   
@@ -470,16 +469,41 @@ export async function executeManualFire(
         userId
       ).catch(() => {})
     } else {
+      // Guard: refuse to start if this campaign already has a send in flight.
+      // Re-firing while one is running blasts the whole audience again.
+      const activeJob = await findActiveSendJobForCampaign(campaignIdInt)
+      if (activeJob && activeJob.status === 'processing') {
+        return {
+          success: false,
+          skipped: true,
+          reason: `A send for "${campaign.name}" is already in progress (job ${activeJob.id}). Not starting a duplicate.`,
+          jobId: activeJob.id
+        }
+      }
+
       // Create job for tracking - startImmediately=true prevents cron from picking it up
-      const job = await createSendJob({
-        userId,
-        campaignId: campaignIdInt,
-        jobType: 'manual_fire',
-        totalContacts: firstPage.total,
-        totalBatches,
-        metadata: { selectedTags, selectedSources, selectedLists, targetAllSubscribed },
-        startImmediately: true // Start with 'processing' status to prevent race conditions
-      })
+      let job
+      try {
+        job = await createSendJob({
+          userId,
+          campaignId: campaignIdInt,
+          jobType: 'manual_fire',
+          totalContacts: firstPage.total,
+          totalBatches,
+          metadata: { selectedTags, selectedSources, selectedLists, targetAllSubscribed },
+          startImmediately: true // Start with 'processing' status to prevent race conditions
+        })
+      } catch (err) {
+        // Lost a race to another concurrent fire (unique index). Skip, don't duplicate.
+        if (err?.code === 'ACTIVE_SEND_EXISTS') {
+          return {
+            success: false,
+            skipped: true,
+            reason: `A send for "${campaign.name}" is already in progress. Not starting a duplicate.`
+          }
+        }
+        throw err
+      }
       jobId = job.id
 
       await serverLog(
@@ -534,18 +558,16 @@ export async function executeManualFire(
           await new Promise(resolve => setTimeout(resolve, waitTime))
         }
         
-        // Execute batch with retry
+        // Execute batch. We intentionally do NOT wrap executeWorkflow in a retry.
+        // executeWorkflow is not idempotent: it dispatches the SMS partway through
+        // the graph, so retrying the whole workflow after a downstream error
+        // re-sends the message. Unlike the dedicated path (which retries a single
+        // idempotency-keyed Telnyx call), there is no safe key here, so the only
+        // correct outcome on failure is to fail the contact — never re-send.
         const batchStartTime = Date.now()
         let results = await Promise.allSettled(
           batch.map(contact =>
-            retryWithBackoff(
-              () => executeWorkflow(campaign.workflow, contact, userId, campaignIdInt),
-              {
-                maxRetries: 3,
-                initialDelay: 1000,
-                shouldRetry: isRetryableError
-              }
-            )
+            executeWorkflow(campaign.workflow, contact, userId, campaignIdInt)
               .then(() => {
                 incrementRateLimitCache(userId).catch(() => {})
                 return { success: true, contact }
@@ -1172,7 +1194,7 @@ export async function getCampaignContactCount(campaignId) {
 // @param {Date|string|null} scheduledAt - Optional scheduled execution time (null = execute immediately)
 // @param {string|null} existingJobId - Optional existing job ID to use (for scheduled jobs processed by job processor)
 export async function executeDedicatedSend(campaignId, scheduledAt = null, existingJobId = null, executionUserId = null) {
-  const { createSendJob, claimAndStartJob, updateSendJobProgress, completeSendJob, failSendJob, getSendJob } = await import('@/lib/sendJob')
+  const { createSendJob, claimAndStartJob, updateSendJobProgress, completeSendJob, failSendJob, getSendJob, findActiveSendJobForCampaign } = await import('@/lib/sendJob')
   const { retryWithBackoff, isRetryableError } = await import('@/lib/retry')
   const { getCampaignContactsPaginated } = await import('@/lib/contactPagination')
   const { getTelnyxConfig, sendMessageBulkOptimized } = await import('@/lib/telnyx')
@@ -1269,18 +1291,48 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
         throw new Error('Scheduled time must be in the future')
       }
       
+      // Guard: refuse to start an immediate send while one is already running for
+      // this campaign. A re-fire of a slow send (or a double-click) would blast the
+      // entire audience a second time — the root cause of the duplicate-send
+      // incident. Scheduling is not blocked here; the DB unique index + claim
+      // tolerance prevent two jobs from ever *processing* a campaign at once.
+      if (!scheduledDate) {
+        const activeJob = await findActiveSendJobForCampaign(campaignIdInt)
+        if (activeJob && activeJob.status === 'processing') {
+          return {
+            success: false,
+            skipped: true,
+            reason: `A send for "${campaign.name}" is already in progress (job ${activeJob.id}). Not starting a duplicate.`,
+            jobId: activeJob.id
+          }
+        }
+      }
+
       // Create new job
       // For immediate jobs (no scheduledAt), create with startImmediately=true
       // This creates the job with status='processing' so cron can never pick it up
-      const job = await createSendJob({
-        userId,
-        campaignId: campaignIdInt,
-        jobType: 'dedicated_send',
-        totalContacts: firstPage.total,
-        totalBatches,
-        scheduledAt: scheduledDate,
-        startImmediately: !scheduledDate // Start immediately if no scheduled date
-      })
+      let job
+      try {
+        job = await createSendJob({
+          userId,
+          campaignId: campaignIdInt,
+          jobType: 'dedicated_send',
+          totalContacts: firstPage.total,
+          totalBatches,
+          scheduledAt: scheduledDate,
+          startImmediately: !scheduledDate // Start immediately if no scheduled date
+        })
+      } catch (err) {
+        // Lost a race to another concurrent fire (unique index). Skip, don't duplicate.
+        if (err?.code === 'ACTIVE_SEND_EXISTS') {
+          return {
+            success: false,
+            skipped: true,
+            reason: `A send for "${campaign.name}" is already in progress. Not starting a duplicate.`
+          }
+        }
+        throw err
+      }
       jobId = job.id
       
       if (!scheduledDate) {
@@ -1469,7 +1521,10 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
                     to: normalizePhoneForTelnyx(contact.phone),
                     text: contactTextMap.get(contact.id) || messageText,
                     messagingProfileId: groupConfig.messagingProfileId,
-                    idempotencyKey: contactToMessageId.get(contact.id),
+                    // Key on (job, contact), NOT the per-execution message UUID, so a
+                    // re-run/resume of this job reuses the same key and Telnyx dedupes
+                    // instead of sending a second message to an already-messaged contact.
+                    idempotencyKey: `${jobId}:${contact.id}`,
                     mediaUrls: groupMediaUrls,
                   }),
                   {
