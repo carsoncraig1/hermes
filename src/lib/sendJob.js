@@ -27,19 +27,49 @@ export async function createSendJob({
   scheduledAt = null,
   startImmediately = false
 }) {
-  return await prisma.sendJob.create({
-    data: {
-      userId,
-      campaignId,
-      jobType,
-      // If startImmediately, create as 'processing' to prevent cron job from picking it up
-      status: startImmediately ? 'processing' : 'pending',
-      startedAt: startImmediately ? new Date() : null,
-      totalContacts,
-      totalBatches,
-      metadata,
-      scheduledAt: scheduledAt ? new Date(scheduledAt) : null
+  try {
+    return await prisma.sendJob.create({
+      data: {
+        userId,
+        campaignId,
+        jobType,
+        // If startImmediately, create as 'processing' to prevent cron job from picking it up
+        status: startImmediately ? 'processing' : 'pending',
+        startedAt: startImmediately ? new Date() : null,
+        totalContacts,
+        totalBatches,
+        metadata,
+        scheduledAt: scheduledAt ? new Date(scheduledAt) : null
+      }
+    })
+  } catch (err) {
+    // The partial unique index `uniq_active_send_per_campaign` (one 'processing'
+    // job per campaign) rejected this insert: a send for this campaign is already
+    // running. Surface a typed error so callers skip instead of starting a second
+    // full-audience blast (the duplicate-send incident root cause).
+    if (err?.code === 'P2002') {
+      const conflict = new Error('ACTIVE_SEND_EXISTS')
+      conflict.code = 'ACTIVE_SEND_EXISTS'
+      throw conflict
     }
+    throw err
+  }
+}
+
+/**
+ * Find the in-flight send job for a campaign, if any. At most one job per
+ * campaign may be actively sending ('processing') at a time — enforced here and
+ * by the `uniq_active_send_per_campaign` partial unique index. A 'pending'
+ * (scheduled, not yet running) job is also returned so callers can avoid
+ * stacking immediate sends on top of a queued one.
+ * @param {number} campaignId
+ * @returns {Promise<{id: string, status: string, jobType: string, createdAt: Date}|null>}
+ */
+export async function findActiveSendJobForCampaign(campaignId) {
+  return await prisma.sendJob.findFirst({
+    where: { campaignId, status: { in: ['pending', 'processing'] } },
+    select: { id: true, status: true, jobType: true, createdAt: true },
+    orderBy: { createdAt: 'asc' }
   })
 }
 
@@ -67,19 +97,27 @@ export async function updateSendJobProgress(jobId, updates) {
 export async function claimAndStartJob(jobId) {
   // Atomically update only if status is still 'pending'
   // This prevents two processes from both claiming the same job
-  const result = await prisma.sendJob.updateMany({
-    where: {
-      id: jobId,
-      status: 'pending' // Only claim if still pending
-    },
-    data: {
-      status: 'processing',
-      startedAt: new Date()
-    }
-  })
-  
-  // If count is 0, the job was already claimed by another process
-  return result.count > 0
+  try {
+    const result = await prisma.sendJob.updateMany({
+      where: {
+        id: jobId,
+        status: 'pending' // Only claim if still pending
+      },
+      data: {
+        status: 'processing',
+        startedAt: new Date()
+      }
+    })
+
+    // If count is 0, the job was already claimed by another process
+    return result.count > 0
+  } catch (err) {
+    // The partial unique index rejected the transition to 'processing' because
+    // another job for this campaign is already sending. Treat as "not claimed"
+    // so this job stays pending rather than starting a concurrent duplicate send.
+    if (err?.code === 'P2002') return false
+    throw err
+  }
 }
 
 /**
@@ -174,10 +212,22 @@ export async function getPendingJobs(limit = 10) {
 }
 
 /**
- * Recover stale scheduled jobs stuck in processing
- * Jobs are considered stale if they have been processing for too long
- * @param {number} staleMs - Maximum processing age before recovery
- * @returns {Promise<number>} - Number of jobs recovered
+ * Fail send jobs whose worker has died mid-send.
+ *
+ * Staleness is measured by the job HEARTBEAT (`updatedAt`, refreshed every batch
+ * by updateSendJobProgress) — NOT by `startedAt`. A large send legitimately runs
+ * for far longer than staleMs; as long as it keeps making progress it is healthy
+ * and must never be touched. Keying off `startedAt` is what caused duplicate
+ * sends: a healthy 30+ minute job looked "stale" after staleMs and got re-run.
+ *
+ * A stalled job is marked terminal `failed`. It is NEVER flipped back to
+ * `pending`, because sends are not resumable — re-running restarts from the first
+ * contact and re-sends every message already delivered (Telnyx idempotency keys
+ * differ across executions). Failing safe and surfacing the job for a deliberate
+ * `resumeSendJob` is the only correct behavior for billed messaging.
+ *
+ * @param {number} staleMs - Heartbeat age (ms) with no progress before a job is considered dead
+ * @returns {Promise<number>} - Number of jobs failed
  */
 export async function recoverStaleSendJobs(staleMs = STALE_JOB_TIMEOUT_MS) {
   const staleBefore = new Date(Date.now() - staleMs)
@@ -185,18 +235,18 @@ export async function recoverStaleSendJobs(staleMs = STALE_JOB_TIMEOUT_MS) {
     where: {
       status: 'processing',
       scheduledAt: { not: null }, // only scheduler-managed jobs
-      startedAt: { not: null, lte: staleBefore },
+      startedAt: { not: null },
+      updatedAt: { lte: staleBefore }, // heartbeat: no progress for staleMs => worker is dead
       completedAt: null
     },
     data: {
-      status: 'pending',
-      startedAt: null,
-      errorMessage: `Recovered stale processing job at ${new Date().toISOString()}`
+      status: 'failed',
+      errorMessage: `Send worker stalled with no progress for ${Math.round(staleMs / 60000)}m; failed at ${new Date().toISOString()} to prevent duplicate sends. Resume manually if it was incomplete.`
     }
   })
 
   if (result.count > 0) {
-    console.warn(`Recovered ${result.count} stale send jobs`)
+    console.warn(`Failed ${result.count} stalled send job(s) to prevent duplicate re-sends`)
   }
 
   return result.count

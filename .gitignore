@@ -25,3 +25,8 @@ yarn-error.log*
 .env
 *.env
 
+
+# Incident data exports (contain phone numbers / PII — never commit)
+logs*.txt
+customer_mdr_report_*.csv
+cdr_customer_request-*.csv

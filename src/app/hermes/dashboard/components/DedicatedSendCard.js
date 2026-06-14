@@ -79,7 +79,10 @@ export default function DedicatedSendCard({ initialCampaigns = [], userTimezone 
       setScheduleEnabled(false);
       setScheduledDateTime('');
       
-      if (result.scheduled) {
+      if (result.skipped) {
+        // A send is already in flight for this campaign — refused to start a duplicate.
+        alert(result.reason || 'A send for this campaign is already in progress.');
+      } else if (result.scheduled) {
         const scheduledDate = formatDateTimeInTimeZone(result.scheduledAt, effectiveTimezone);
         alert(`Campaign scheduled successfully!\n\nScheduled for: ${scheduledDate} (${effectiveTimezone})\nJob ID: ${result.jobId}`);
       } else {
