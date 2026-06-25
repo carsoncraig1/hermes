@@ -71,7 +71,7 @@ export async function createClickWithHrms(
  */
 export function appendHrmsToUrl(destination, hrms) {
   if (!destination || !hrms) return destination;
-  
+
   try {
     const url = new URL(destination);
     url.searchParams.set('hrms', hrms);
@@ -80,6 +80,42 @@ export function appendHrmsToUrl(destination, hrms) {
     // If URL parsing fails, append as query string
     const separator = destination.includes('?') ? '&' : '?';
     return `${destination}${separator}hrms=${encodeURIComponent(hrms)}`;
+  }
+}
+
+/**
+ * Hash a clicker's phone number for privacy-preserving identification on the
+ * destination side. Strips to digits only (drops the leading "+", spaces, dashes)
+ * so the hashed value is digits-with-country-code (e.g. "15551234567"), then
+ * SHA-256 (lowercase hex). No salt, so the same phone always produces the same
+ * hash — allowing external systems (e.g. Meta advanced matching) to match it.
+ * @param {string} phone - Phone number (E.164 as stored, e.g. "+15551234567")
+ * @returns {string|null} - Lowercase hex SHA-256 digest, or null if no digits
+ */
+export function hashPhone(phone) {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, ''); // e.g. "+15551234567" -> "15551234567"
+  if (!digits) return null;
+  return crypto.createHash('sha256').update(digits).digest('hex');
+}
+
+/**
+ * Append phone_hash parameter to a destination URL
+ * @param {string} destination - Destination URL (may already include hrms)
+ * @param {string} phoneHash - Hashed phone number
+ * @returns {string} - Destination URL with phone_hash parameter
+ */
+export function appendPhoneHashToUrl(destination, phoneHash) {
+  if (!destination || !phoneHash) return destination;
+
+  try {
+    const url = new URL(destination);
+    url.searchParams.set('phone_hash', phoneHash);
+    return url.toString();
+  } catch (error) {
+    // If URL parsing fails, append as query string
+    const separator = destination.includes('?') ? '&' : '?';
+    return `${destination}${separator}phone_hash=${encodeURIComponent(phoneHash)}`;
   }
 }
 
