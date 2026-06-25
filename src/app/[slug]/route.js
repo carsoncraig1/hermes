@@ -37,6 +37,7 @@ const KNOWN_PATHS = new Set([
   'robots.txt', 'sitemap.xml', 'sitemap.txt', 'sitemaps.xml',
   'hermes', 'api', 'favicon.ico', 'favicon.png', 'favicon.svg',
   'apple-touch-icon.png', 'apple-touch-icon-precomposed.png',
+  'feed', 'feeds', 'rss', 'atom', // RSS/feed-reader auto-probes
 ])
 const SCANNER_PATTERNS = [
   /\.php$/i,           // WordPress/vulnerability scanners
@@ -50,6 +51,12 @@ function shouldSuppressNotFoundLog(code) {
   if (!code || typeof code !== 'string') return true
   const lower = code.toLowerCase()
   if (KNOWN_PATHS.has(lower)) return true
+  // Real click codes are base62 (legacy 3-char, dynamic 5-6 char) — purely
+  // alphanumeric. Anything containing a dot, slash, or other punctuation is a
+  // file-path/scanner probe (xll.asp, randkeyword.PhP7, foo.php, wp-admin),
+  // never a typo'd real code, so suppress its log. Only affects logging; the
+  // fallback redirect below is unchanged.
+  if (!/^[a-z0-9]+$/i.test(code)) return true
   if (SCANNER_PATTERNS.some(p => p.test(code))) return true
   return false
 }
