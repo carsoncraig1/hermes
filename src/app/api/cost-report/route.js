@@ -113,14 +113,30 @@ export async function GET(request) {
     }
     const { start, end, startTs, endTsExclusive } = range;
 
-    // Per-send (shortlink) x day rollup. msg_links dedups codes to one row per
-    // (message, shortlink); link_counts drives the even cost split for the rare
-    // message that contains multiple shortlinks.
+    // Per-send (shortlink) x day rollup. msgs narrows to the window FIRST —
+    // the sargable createdAt bracket (sentAt trails createdAt by seconds, so
+    // ±2 days is a safe envelope) hits the (userId, createdAt) index, then the
+    // precise COALESCE filter trims the edges. Click codes are then joined per
+    // message id (indexed), never scanned table-wide. msg_links dedups codes to
+    // one row per (message, shortlink); link_counts drives the even cost split
+    // for the rare message that contains multiple shortlinks.
+    const bracketStart = new Date(startTs.getTime() - 2 * 86400000);
+    const bracketEnd = new Date(endTsExclusive.getTime() + 2 * 86400000);
     const sendRows = await prisma.$queryRaw`
-      WITH msg_links AS (
-        SELECT DISTINCT "messageId" AS message_id, "shortlinkId" AS shortlink_id
-        FROM "message_click_codes"
-        WHERE "userId" = ${userId}
+      WITH msgs AS (
+        SELECT m.id, m."costAmount", m.parts,
+               (COALESCE(m."sentAt", m."createdAt") AT TIME ZONE 'UTC')::date AS day
+        FROM "messages" m
+        WHERE m."userId" = ${userId}
+          AND m.direction = 'outbound'
+          AND m."createdAt" >= ${bracketStart} AND m."createdAt" < ${bracketEnd}
+          AND COALESCE(m."sentAt", m."createdAt") >= ${startTs}
+          AND COALESCE(m."sentAt", m."createdAt") < ${endTsExclusive}
+      ),
+      msg_links AS (
+        SELECT DISTINCT c."messageId" AS message_id, c."shortlinkId" AS shortlink_id
+        FROM "message_click_codes" c
+        JOIN msgs ON msgs.id = c."messageId"
       ),
       link_counts AS (
         SELECT message_id, COUNT(*)::numeric AS n_links
@@ -129,18 +145,14 @@ export async function GET(request) {
       )
       SELECT
         ml.shortlink_id AS send_id,
-        to_char((COALESCE(m."sentAt", m."createdAt") AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS date,
+        to_char(m.day, 'YYYY-MM-DD') AS date,
         COUNT(*)::int AS message_count,
         COUNT(*) FILTER (WHERE m."costAmount" IS NOT NULL)::int AS billed_count,
         COALESCE(SUM(m.parts), 0)::int AS parts,
         ROUND(SUM(COALESCE(m."costAmount", 0) / lc.n_links), 4)::float8 AS total_cost
-      FROM "messages" m
+      FROM msgs m
       JOIN msg_links ml ON ml.message_id = m.id
       JOIN link_counts lc ON lc.message_id = m.id
-      WHERE m."userId" = ${userId}
-        AND m.direction = 'outbound'
-        AND COALESCE(m."sentAt", m."createdAt") >= ${startTs}
-        AND COALESCE(m."sentAt", m."createdAt") < ${endTsExclusive}
       GROUP BY 1, 2
       ORDER BY 2, 1
     `;
@@ -158,6 +170,7 @@ export async function GET(request) {
       FROM "messages" m
       WHERE m."userId" = ${userId}
         AND m.direction = 'outbound'
+        AND m."createdAt" >= ${bracketStart} AND m."createdAt" < ${bracketEnd}
         AND COALESCE(m."sentAt", m."createdAt") >= ${startTs}
         AND COALESCE(m."sentAt", m."createdAt") < ${endTsExclusive}
         AND NOT EXISTS (
