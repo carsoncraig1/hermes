@@ -18,6 +18,14 @@ async function getUserIdFromApiKey(apiKey) {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_RANGE_DAYS = 400;
 
+// Bumped on every behavior change; echoed on all responses so a probe of the
+// (unauthenticated) 401 path confirms which build is actually serving traffic.
+const REPORT_REV = '3';
+
+function json(body, status = 200) {
+  return NextResponse.json(body, { status, headers: { 'x-cost-report-rev': REPORT_REV } });
+}
+
 /**
  * Parse the requested date range from query params.
  * - date=YYYY-MM-DD           -> that single UTC day
@@ -91,27 +99,37 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
 
+    const t0 = Date.now();
     const apiKey = searchParams.get('key');
     if (!apiKey) {
-      return NextResponse.json(
+      return json(
         { error: 'API key is required. Include your hermes-api-key as the "key" parameter.' },
-        { status: 401 }
+        401
       );
     }
 
     const userId = await getUserIdFromApiKey(apiKey);
     if (!userId) {
-      return NextResponse.json(
-        { error: 'Invalid API key' },
-        { status: 401 }
-      );
+      return json({ error: 'Invalid API key' }, 401);
     }
 
     const range = parseDateRange(searchParams);
     if (range.error) {
-      return NextResponse.json({ error: range.error }, { status: 400 });
+      return json({ error: range.error }, 400);
     }
     const { start, end, startTs, endTsExclusive } = range;
+    console.log(`[cost-report] rev=${REPORT_REV} start window=${start}..${end} auth=${Date.now() - t0}ms`);
+
+    // debug=1: log which indexes actually exist on the two hot tables — the
+    // schema declares them but migrations here are hand-applied, so prod may
+    // be missing them (the difference between ms and minutes for this report).
+    if (searchParams.get('debug') === '1') {
+      const idx = await prisma.$queryRaw`
+        SELECT tablename, indexname FROM pg_indexes
+        WHERE tablename IN ('messages', 'message_click_codes')
+        ORDER BY tablename, indexname`;
+      console.log(`[cost-report] indexes: ${idx.map((r) => `${r.tablename}.${r.indexname}`).join(', ')}`);
+    }
 
     // Per-send (shortlink) x day rollup. msgs narrows to the window FIRST —
     // the sargable createdAt bracket (sentAt trails createdAt by seconds, so
@@ -122,6 +140,7 @@ export async function GET(request) {
     // for the rare message that contains multiple shortlinks.
     const bracketStart = new Date(startTs.getTime() - 2 * 86400000);
     const bracketEnd = new Date(endTsExclusive.getTime() + 2 * 86400000);
+    const tSend = Date.now();
     const sendRows = await prisma.$queryRaw`
       WITH msgs AS (
         SELECT m.id, m."costAmount", m.parts,
@@ -157,9 +176,12 @@ export async function GET(request) {
       ORDER BY 2, 1
     `;
 
+    console.log(`[cost-report] sendRows query: ${sendRows.length} row(s) in ${Date.now() - tSend}ms`);
+
     // Outbound cost that has NO shortlink linkage (plain-text sends, or codes
     // deleted by cleanup). Surfaced per campaign so nothing is silently missing
     // from day totals; callers decide whether/where to book it.
+    const tUnattr = Date.now();
     const unattributedRows = await prisma.$queryRaw`
       SELECT
         m."campaignId" AS campaign_id,
@@ -180,6 +202,8 @@ export async function GET(request) {
       HAVING SUM(COALESCE(m."costAmount", 0)) > 0
       ORDER BY 2, 1
     `;
+
+    console.log(`[cost-report] unattributed query: ${unattributedRows.length} row(s) in ${Date.now() - tUnattr}ms`);
 
     // Attach shortlink + campaign names for the send rows
     const shortlinkIds = [...new Set(sendRows.map((r) => r.send_id))];
@@ -228,7 +252,8 @@ export async function GET(request) {
       total_cost: r.total_cost
     }));
 
-    return NextResponse.json({
+    console.log(`[cost-report] done window=${start}..${end} rows=${rows.length} total=${Date.now() - t0}ms`);
+    return json({
       start,
       end,
       currency: 'USD',
@@ -236,10 +261,7 @@ export async function GET(request) {
       unattributed
     });
   } catch (error) {
-    console.error('Error building cost report:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('[cost-report] ERROR:', error);
+    return json({ error: 'Internal server error' }, 500);
   }
 }
