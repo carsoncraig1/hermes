@@ -20,10 +20,31 @@ const MAX_RANGE_DAYS = 400;
 
 // Bumped on every behavior change; echoed on all responses so a probe of the
 // (unauthenticated) 401 path confirms which build is actually serving traffic.
-const REPORT_REV = '4';
+const REPORT_REV = '5';
 
 function json(body, status = 200) {
   return NextResponse.json(body, { status, headers: { 'x-cost-report-rev': REPORT_REV } });
+}
+
+// In-memory cache of finished reports for FULLY-PAST windows (immutable data).
+// The DB can take >90s per day under live send load — longer than callers
+// (and Cloudflare, ~100s) will wait. But the computation still completes
+// server-side after the client bails, so caching it turns a caller's retry
+// into an instant hit. Per-container and lost on deploy, which is fine: it
+// only needs to survive between an abandoned attempt and its retry.
+const reportCache = new Map(); // key -> { body, at }
+const REPORT_CACHE_MAX = 200;
+
+function cacheKey(userId, start, end) {
+  return `${userId}|${start}|${end}`;
+}
+
+function cachePut(key, body) {
+  if (reportCache.size >= REPORT_CACHE_MAX) {
+    const oldest = reportCache.keys().next().value; // Map preserves insertion order
+    reportCache.delete(oldest);
+  }
+  reportCache.set(key, { body, at: Date.now() });
 }
 
 /**
@@ -118,6 +139,15 @@ export async function GET(request) {
       return json({ error: range.error }, 400);
     }
     const { start, end, startTs, endTsExclusive } = range;
+
+    // Fully-past windows are immutable -> serve from cache when we have it.
+    const todayStartUTC = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00.000Z');
+    const isPastWindow = endTsExclusive <= todayStartUTC;
+    const key = cacheKey(userId, start, end);
+    if (isPastWindow && reportCache.has(key)) {
+      console.log(`[cost-report] rev=${REPORT_REV} CACHE HIT window=${start}..${end}`);
+      return json(reportCache.get(key).body);
+    }
     console.log(`[cost-report] rev=${REPORT_REV} start window=${start}..${end} auth=${Date.now() - t0}ms`);
 
     // debug=1: log which indexes actually exist on the two hot tables — the
@@ -254,13 +284,9 @@ export async function GET(request) {
     }));
 
     console.log(`[cost-report] done window=${start}..${end} rows=${rows.length} total=${Date.now() - t0}ms`);
-    return json({
-      start,
-      end,
-      currency: 'USD',
-      rows,
-      unattributed
-    });
+    const body = { start, end, currency: 'USD', rows, unattributed };
+    if (isPastWindow) cachePut(key, body);
+    return json(body);
   } catch (error) {
     console.error('[cost-report] ERROR:', error);
     return json({ error: 'Internal server error' }, 500);
