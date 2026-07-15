@@ -21,7 +21,7 @@ const MAX_RANGE_DAYS = 400;
 
 // Bumped on every behavior change; echoed on all responses so a probe of the
 // (unauthenticated) 401 path confirms which build is actually serving traffic.
-const REPORT_REV = '6';
+const REPORT_REV = '7';
 
 // Hard server-side cap per report query. Abandoned HTTP attempts used to leave
 // their queries running to completion ("zombies") — several stacked zombies
@@ -213,6 +213,24 @@ export async function GET(request) {
       ORDER BY 3, 1
     `;
 
+    // maintenance=1: one-shot hygiene, auth-gated. ANALYZE refreshes the stale
+    // stats that cause the rows=1 misestimates; pg_cancel_backend clears
+    // zombie report queries left by abandoned pre-rev-6 attempts (same-role
+    // backends only — no superuser needed). Both safe to re-run.
+    if (searchParams.get('maintenance') === '1') {
+      const tM = Date.now();
+      await prisma.$executeRaw`ANALYZE "messages"`;
+      await prisma.$executeRaw`ANALYZE "message_click_codes"`;
+      const cancelled = await prisma.$queryRaw`
+        SELECT pg_cancel_backend(pid) AS ok, pid
+        FROM pg_stat_activity
+        WHERE state = 'active' AND pid <> pg_backend_pid()
+          AND query LIKE '%message_click_codes%'
+          AND query_start < now() - interval '5 minutes'`;
+      console.log(`[cost-report] maintenance: analyzed 2 tables, cancelled ${cancelled.length} stale quer(ies) in ${Date.now() - tM}ms`);
+      return json({ analyzed: ['messages', 'message_click_codes'], cancelled: cancelled.length, ms: Date.now() - tM });
+    }
+
     // explain=1: log + return the query PLAN (no execution) — how we diagnose
     // a window that never finishes without adding load.
     if (searchParams.get('explain') === '1') {
@@ -222,9 +240,15 @@ export async function GET(request) {
       return json({ start, end, explain: lines });
     }
 
+    // enable_nestloop=off: table stats on fast-growing messages go stale, the
+    // planner estimates rows=1 for recent date ranges and nested-loops two CTE
+    // scans on a join FILTER — O(n^2), billions of comparisons per day of data
+    // (observed: 45-90s per day, heavy days never finish). Hash joins are the
+    // right shape at every scale here, so force them for this query only.
     const tQuery = Date.now();
-    const [, allRows] = await prisma.$transaction([
+    const [, , allRows] = await prisma.$transaction([
       prisma.$executeRaw`SET LOCAL statement_timeout = ${Prisma.raw(String(STATEMENT_TIMEOUT_MS))}`,
+      prisma.$executeRaw`SET LOCAL enable_nestloop = off`,
       prisma.$queryRaw(reportSql),
     ]);
     console.log(`[cost-report] combined query: ${allRows.length} row(s) in ${Date.now() - tQuery}ms`);
