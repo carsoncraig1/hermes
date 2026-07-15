@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 
 /**
@@ -20,7 +21,13 @@ const MAX_RANGE_DAYS = 400;
 
 // Bumped on every behavior change; echoed on all responses so a probe of the
 // (unauthenticated) 401 path confirms which build is actually serving traffic.
-const REPORT_REV = '5';
+const REPORT_REV = '6';
+
+// Hard server-side cap per report query. Abandoned HTTP attempts used to leave
+// their queries running to completion ("zombies") — several stacked zombies
+// starve the DB and make every subsequent attempt slower, a death spiral on
+// heavy days. Past this cap the query errors out and frees the connection.
+const STATEMENT_TIMEOUT_MS = 240000;
 
 function json(body, status = 200) {
   return NextResponse.json(body, { status, headers: { 'x-cost-report-rev': REPORT_REV } });
@@ -170,8 +177,7 @@ export async function GET(request) {
     // drives the even cost split for the rare message with multiple shortlinks.
     const bracketStart = new Date(startTs.getTime() - 1 * 86400000);
     const bracketEnd = new Date(endTsExclusive.getTime() + 1 * 86400000);
-    const tQuery = Date.now();
-    const allRows = await prisma.$queryRaw`
+    const reportSql = Prisma.sql`
       WITH msgs AS (
         SELECT m.id, m."costAmount", m.parts, m."campaignId",
                (COALESCE(m."sentAt", m."createdAt") AT TIME ZONE 'UTC')::date AS day
@@ -206,6 +212,21 @@ export async function GET(request) {
       GROUP BY 1, 2, 3
       ORDER BY 3, 1
     `;
+
+    // explain=1: log + return the query PLAN (no execution) — how we diagnose
+    // a window that never finishes without adding load.
+    if (searchParams.get('explain') === '1') {
+      const plan = await prisma.$queryRaw(Prisma.sql`EXPLAIN (FORMAT TEXT) ${reportSql}`);
+      const lines = plan.map((r) => r['QUERY PLAN']);
+      console.log(`[cost-report] EXPLAIN window=${start}..${end}:\n${lines.join('\n')}`);
+      return json({ start, end, explain: lines });
+    }
+
+    const tQuery = Date.now();
+    const [, allRows] = await prisma.$transaction([
+      prisma.$executeRaw`SET LOCAL statement_timeout = ${Prisma.raw(String(STATEMENT_TIMEOUT_MS))}`,
+      prisma.$queryRaw(reportSql),
+    ]);
     console.log(`[cost-report] combined query: ${allRows.length} row(s) in ${Date.now() - tQuery}ms`);
 
     // Split the single scan into the two report sections. Send rows collapse

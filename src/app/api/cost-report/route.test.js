@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const findUniqueUserMock = vi.hoisted(() => vi.fn())
 const queryRawMock = vi.hoisted(() => vi.fn())
+const executeRawMock = vi.hoisted(() => vi.fn())
 const findManyShortlinkMock = vi.hoisted(() => vi.fn())
 const findManyCampaignMock = vi.hoisted(() => vi.fn())
 
@@ -9,6 +10,8 @@ vi.mock('@/lib/prisma', () => ({
   default: {
     user: { findUnique: findUniqueUserMock },
     $queryRaw: queryRawMock,
+    $executeRaw: executeRawMock,
+    $transaction: (ops) => Promise.all(ops),
     shortlink: { findMany: findManyShortlinkMock },
     campaign: { findMany: findManyCampaignMock }
   }
