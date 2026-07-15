@@ -20,7 +20,7 @@ const MAX_RANGE_DAYS = 400;
 
 // Bumped on every behavior change; echoed on all responses so a probe of the
 // (unauthenticated) 401 path confirms which build is actually serving traffic.
-const REPORT_REV = '3';
+const REPORT_REV = '4';
 
 function json(body, status = 200) {
   return NextResponse.json(body, { status, headers: { 'x-cost-report-rev': REPORT_REV } });
@@ -131,19 +131,19 @@ export async function GET(request) {
       console.log(`[cost-report] indexes: ${idx.map((r) => `${r.tablename}.${r.indexname}`).join(', ')}`);
     }
 
-    // Per-send (shortlink) x day rollup. msgs narrows to the window FIRST —
-    // the sargable createdAt bracket (sentAt trails createdAt by seconds, so
-    // ±2 days is a safe envelope) hits the (userId, createdAt) index, then the
-    // precise COALESCE filter trims the edges. Click codes are then joined per
-    // message id (indexed), never scanned table-wide. msg_links dedups codes to
-    // one row per (message, shortlink); link_counts drives the even cost split
-    // for the rare message that contains multiple shortlinks.
-    const bracketStart = new Date(startTs.getTime() - 2 * 86400000);
-    const bracketEnd = new Date(endTsExclusive.getTime() + 2 * 86400000);
-    const tSend = Date.now();
-    const sendRows = await prisma.$queryRaw`
+    // ONE pass over the window's messages: msgs narrows FIRST — the sargable
+    // createdAt bracket (sentAt trails createdAt by seconds, so ±1 day is a
+    // safe envelope) hits the (userId, direction, createdAt) index, then the
+    // precise COALESCE filter trims the edges. Click codes join per message id
+    // (indexed), LEFT so link-less messages ride the same scan: rows with a
+    // shortlink become send rows, rows without become 'unattributed'. n_links
+    // drives the even cost split for the rare message with multiple shortlinks.
+    const bracketStart = new Date(startTs.getTime() - 1 * 86400000);
+    const bracketEnd = new Date(endTsExclusive.getTime() + 1 * 86400000);
+    const tQuery = Date.now();
+    const allRows = await prisma.$queryRaw`
       WITH msgs AS (
-        SELECT m.id, m."costAmount", m.parts,
+        SELECT m.id, m."costAmount", m.parts, m."campaignId",
                (COALESCE(m."sentAt", m."createdAt") AT TIME ZONE 'UTC')::date AS day
         FROM "messages" m
         WHERE m."userId" = ${userId}
@@ -164,46 +164,47 @@ export async function GET(request) {
       )
       SELECT
         ml.shortlink_id AS send_id,
+        m."campaignId" AS campaign_id,
         to_char(m.day, 'YYYY-MM-DD') AS date,
         COUNT(*)::int AS message_count,
         COUNT(*) FILTER (WHERE m."costAmount" IS NOT NULL)::int AS billed_count,
         COALESCE(SUM(m.parts), 0)::int AS parts,
-        ROUND(SUM(COALESCE(m."costAmount", 0) / lc.n_links), 4)::float8 AS total_cost
+        ROUND(SUM(COALESCE(m."costAmount", 0) / COALESCE(lc.n_links, 1)), 4)::float8 AS total_cost
       FROM msgs m
-      JOIN msg_links ml ON ml.message_id = m.id
-      JOIN link_counts lc ON lc.message_id = m.id
-      GROUP BY 1, 2
-      ORDER BY 2, 1
+      LEFT JOIN msg_links ml ON ml.message_id = m.id
+      LEFT JOIN link_counts lc ON lc.message_id = m.id
+      GROUP BY 1, 2, 3
+      ORDER BY 3, 1
     `;
+    console.log(`[cost-report] combined query: ${allRows.length} row(s) in ${Date.now() - tQuery}ms`);
 
-    console.log(`[cost-report] sendRows query: ${sendRows.length} row(s) in ${Date.now() - tSend}ms`);
-
-    // Outbound cost that has NO shortlink linkage (plain-text sends, or codes
-    // deleted by cleanup). Surfaced per campaign so nothing is silently missing
-    // from day totals; callers decide whether/where to book it.
-    const tUnattr = Date.now();
-    const unattributedRows = await prisma.$queryRaw`
-      SELECT
-        m."campaignId" AS campaign_id,
-        to_char((COALESCE(m."sentAt", m."createdAt") AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS date,
-        COUNT(*)::int AS message_count,
-        COUNT(*) FILTER (WHERE m."costAmount" IS NOT NULL)::int AS billed_count,
-        ROUND(SUM(COALESCE(m."costAmount", 0)), 4)::float8 AS total_cost
-      FROM "messages" m
-      WHERE m."userId" = ${userId}
-        AND m.direction = 'outbound'
-        AND m."createdAt" >= ${bracketStart} AND m."createdAt" < ${bracketEnd}
-        AND COALESCE(m."sentAt", m."createdAt") >= ${startTs}
-        AND COALESCE(m."sentAt", m."createdAt") < ${endTsExclusive}
-        AND NOT EXISTS (
-          SELECT 1 FROM "message_click_codes" c WHERE c."messageId" = m.id
-        )
-      GROUP BY 1, 2
-      HAVING SUM(COALESCE(m."costAmount", 0)) > 0
-      ORDER BY 2, 1
-    `;
-
-    console.log(`[cost-report] unattributed query: ${unattributedRows.length} row(s) in ${Date.now() - tUnattr}ms`);
+    // Split the single scan into the two report sections. Send rows collapse
+    // across campaign_id (a shortlink's messages can span campaigns); rows with
+    // no shortlink linkage surface per campaign as 'unattributed' when they
+    // carry cost, so nothing silently drops from day totals.
+    const round4 = (n) => Math.round(n * 10000) / 10000;
+    const sendGrouped = new Map();
+    const unattrGrouped = new Map();
+    for (const r of allRows) {
+      if (r.send_id != null) {
+        const k = `${r.send_id}|${r.date}`;
+        const cur = sendGrouped.get(k) || { send_id: r.send_id, date: r.date, message_count: 0, billed_count: 0, parts: 0, total_cost: 0 };
+        cur.message_count += r.message_count;
+        cur.billed_count += r.billed_count;
+        cur.parts += r.parts;
+        cur.total_cost = round4(cur.total_cost + r.total_cost);
+        sendGrouped.set(k, cur);
+      } else if (r.total_cost > 0) {
+        const k = `${r.campaign_id}|${r.date}`;
+        const cur = unattrGrouped.get(k) || { campaign_id: r.campaign_id, date: r.date, message_count: 0, billed_count: 0, total_cost: 0 };
+        cur.message_count += r.message_count;
+        cur.billed_count += r.billed_count;
+        cur.total_cost = round4(cur.total_cost + r.total_cost);
+        unattrGrouped.set(k, cur);
+      }
+    }
+    const sendRows = [...sendGrouped.values()];
+    const unattributedRows = [...unattrGrouped.values()];
 
     // Attach shortlink + campaign names for the send rows
     const shortlinkIds = [...new Set(sendRows.map((r) => r.send_id))];

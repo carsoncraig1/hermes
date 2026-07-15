@@ -70,13 +70,13 @@ describe('/api/cost-report route', () => {
 
   it('returns per-send rows enriched with shortlink + campaign names', async () => {
     findUniqueUserMock.mockResolvedValueOnce({ id: 'user_a' })
-    queryRawMock
-      .mockResolvedValueOnce([
-        { send_id: 150, date: '2026-07-13', message_count: 100, billed_count: 98, parts: 100, total_cost: 1.23 }
-      ])
-      .mockResolvedValueOnce([
-        { campaign_id: 7, date: '2026-07-13', message_count: 5, billed_count: 5, total_cost: 0.05 }
-      ])
+    queryRawMock.mockResolvedValueOnce([
+      // combined single-scan rows: (send_id, campaign_id, date) grain
+      { send_id: 150, campaign_id: 3, date: '2026-07-13', message_count: 60, billed_count: 59, parts: 60, total_cost: 1.0 },
+      { send_id: 150, campaign_id: null, date: '2026-07-13', message_count: 40, billed_count: 39, parts: 40, total_cost: 0.23 },
+      { send_id: null, campaign_id: 7, date: '2026-07-13', message_count: 5, billed_count: 5, parts: 5, total_cost: 0.05 },
+      { send_id: null, campaign_id: 8, date: '2026-07-13', message_count: 9, billed_count: 0, parts: 9, total_cost: 0 }
+    ])
     findManyShortlinkMock.mockResolvedValueOnce([
       { id: 150, nickname: 'JLL', campaign: { id: 3, name: 'JLL Blast' } }
     ])
@@ -89,7 +89,7 @@ describe('/api/cost-report route', () => {
       {
         send_id: 150,
         date: '2026-07-13',
-        message_count: 100,
+        message_count: 100, // 60 + 40 collapsed across campaign split
         billed_count: 98,
         parts: 100,
         total_cost: 1.23,
@@ -98,6 +98,7 @@ describe('/api/cost-report route', () => {
         campaign_name: 'JLL Blast'
       }
     ])
+    // zero-cost link-less rows (campaign 8) must NOT appear in unattributed
     expect(body.unattributed).toEqual([
       {
         campaign_id: 7,
