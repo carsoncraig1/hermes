@@ -38,6 +38,30 @@ const SETTLE_HOURS = 12;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Migrations here are hand-applied, so the cache table bootstraps itself:
+// one idempotent CREATE on the first request per container (no-op after the
+// table exists). Mirrors prisma/migrations/add_cost_report_day_cache.sql.
+let cacheTableReady = null;
+function ensureCacheTable() {
+  if (!cacheTableReady) {
+    cacheTableReady = (async () => {
+      await prisma.$executeRaw`CREATE TABLE IF NOT EXISTS "cost_report_days" (
+        "id" SERIAL PRIMARY KEY,
+        "userId" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "day" VARCHAR(10) NOT NULL,
+        "body" JSONB NOT NULL,
+        "computedAt" TIMESTAMP(3) NOT NULL DEFAULT NOW()
+      )`;
+      await prisma.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS "cost_report_days_userId_day_key"
+        ON "cost_report_days"("userId", "day")`;
+    })().catch((error) => {
+      cacheTableReady = null; // retry on next request instead of caching the failure
+      throw error;
+    });
+  }
+  return cacheTableReady;
+}
+
 function json(body, status = 200) {
   return NextResponse.json(body, { status, headers: { 'x-cost-report-rev': REPORT_REV } });
 }
@@ -267,6 +291,8 @@ export async function GET(request) {
       console.log(`[cost-report] EXPLAIN day=${days[0].day}:\n${lines.join('\n')}`);
       return json({ start, end, explain_day: days[0].day, explain: lines });
     }
+
+    await ensureCacheTable();
 
     // Load durably cached slices for settled days (skipped by refresh=1).
     const forceRefresh = searchParams.get('refresh') === '1';
