@@ -48,6 +48,7 @@ model User {
   spamFilterEvents            SpamFilterEvent[]
   phoneNumbers                PhoneNumber[]
   mediaAssets                 MediaAsset[]
+  costReportDays              CostReportDay[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -328,6 +329,22 @@ model ShortlinkClick {
   @@index([hrms])
   @@index([messageClickCodeId])
   @@map("shortlink_clicks")
+}
+
+// Durable per-day cache for /api/cost-report. A settled UTC day's cost slice
+// is immutable, so it is computed once and persisted — replacing the
+// per-container in-memory cache that was lost on every deploy/restart and
+// forced 100s+ recomputes of heavy historical days.
+model CostReportDay {
+  id         Int      @id @default(autoincrement())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  day        String // UTC day, 'YYYY-MM-DD'
+  body       Json // Raw combined-scan rows for the day (name-free; names attached at read time)
+  computedAt DateTime @default(now())
+
+  @@unique([userId, day])
+  @@map("cost_report_days")
 }
 
 model ConsoleLog {
