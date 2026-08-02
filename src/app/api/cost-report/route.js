@@ -21,7 +21,7 @@ const MAX_RANGE_DAYS = 400;
 
 // Bumped on every behavior change; echoed on all responses so a probe of the
 // (unauthenticated) 401 path confirms which build is actually serving traffic.
-const REPORT_REV = '8';
+const REPORT_REV = '9';
 
 // Hard server-side cap per DAY query (rev 8 computes day-by-day, so this now
 // bounds a single day, not a whole window). Abandoned HTTP attempts used to
@@ -156,24 +156,61 @@ function buildDaySql(userId, dayStartTs, dayEndExclusive) {
 // comparisons per day of data (observed: 45-90s per day, heavy days never
 // finish). Hash joins are the right shape at every scale here, so force them
 // for this query only.
+async function runScan(userId, fromTs, toTs) {
+  const [, , rows] = await prisma.$transaction([
+    prisma.$executeRaw`SET LOCAL statement_timeout = ${Prisma.raw(String(STATEMENT_TIMEOUT_MS))}`,
+    prisma.$executeRaw`SET LOCAL enable_nestloop = off`,
+    prisma.$queryRaw(buildDaySql(userId, fromTs, toTs)),
+  ]);
+  return rows;
+}
+
+// Prisma P2010 wrapping Postgres 57014 = our SET LOCAL statement_timeout fired.
+function isStatementTimeout(error) {
+  return error?.code === 'P2010' && String(error?.meta?.code ?? '') === '57014';
+}
+
+// The heaviest send days (observed: 2026-07-05..07-08) exceed the statement
+// timeout as a single query and would otherwise never complete — and never
+// reach the durable cache. Slicing the day bounds each query's work: every
+// aggregate is additive and each message falls in exactly one slice (by its
+// COALESCE(sentAt, createdAt) instant), so concatenated slice rows group to
+// identical day totals downstream.
+const DAY_CHUNKS = 6; // 4-hour slices; ~1/6 of a day that misses 240s fits easily
+
 async function computeDayRows(userId, day) {
   const dayStartTs = new Date(`${day}T00:00:00.000Z`);
   const dayEndExclusive = new Date(dayStartTs.getTime() + DAY_MS);
   const t = Date.now();
   try {
-    const [, , rows] = await prisma.$transaction([
-      prisma.$executeRaw`SET LOCAL statement_timeout = ${Prisma.raw(String(STATEMENT_TIMEOUT_MS))}`,
-      prisma.$executeRaw`SET LOCAL enable_nestloop = off`,
-      prisma.$queryRaw(buildDaySql(userId, dayStartTs, dayEndExclusive)),
-    ]);
+    const rows = await runScan(userId, dayStartTs, dayEndExclusive);
     console.log(`[cost-report] day=${day} query: ${rows.length} row(s) in ${Date.now() - t}ms`);
     return rows;
   } catch (error) {
-    // Log which day died so a timed-out backfill window is diagnosable from a
-    // single line; earlier days of the window are already persisted.
-    console.error(`[cost-report] day=${day} FAILED after ${Date.now() - t}ms`);
-    throw error;
+    if (!isStatementTimeout(error)) {
+      console.error(`[cost-report] day=${day} FAILED after ${Date.now() - t}ms`);
+      throw error;
+    }
+    console.log(`[cost-report] day=${day} timed out at ${Date.now() - t}ms — falling back to ${DAY_CHUNKS} sub-day chunks`);
   }
+
+  const chunkMs = DAY_MS / DAY_CHUNKS;
+  const rows = [];
+  for (let i = 0; i < DAY_CHUNKS; i++) {
+    const fromTs = new Date(dayStartTs.getTime() + i * chunkMs);
+    const toTs = new Date(dayStartTs.getTime() + (i + 1) * chunkMs);
+    const tC = Date.now();
+    try {
+      const chunkRows = await runScan(userId, fromTs, toTs);
+      rows.push(...chunkRows);
+      console.log(`[cost-report] day=${day} chunk ${i + 1}/${DAY_CHUNKS}: ${chunkRows.length} row(s) in ${Date.now() - tC}ms`);
+    } catch (error) {
+      console.error(`[cost-report] day=${day} chunk ${i + 1}/${DAY_CHUNKS} FAILED after ${Date.now() - tC}ms`);
+      throw error;
+    }
+  }
+  console.log(`[cost-report] day=${day} chunked: ${rows.length} row(s) in ${Date.now() - t}ms total`);
+  return rows;
 }
 
 /**
@@ -200,6 +237,11 @@ async function computeDayRows(userId, day) {
  * re-pulled backfill window reads them back in milliseconds instead of
  * recomputing 100-230s scans, and a timeout partway through a multi-day
  * window keeps the days already computed (the retry only runs what's left).
+ *
+ * Rev 9: a day whose single query exceeds the statement timeout (the heaviest
+ * blast days) automatically falls back to 4-hour sub-day chunks — each its own
+ * bounded query — merged into the same day slice and cached. Every day now
+ * converges, no matter how heavy.
  *
  * Message -> shortlink linkage is via message_click_codes (one code per
  * shortlink per message at send time). A message containing N distinct

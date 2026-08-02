@@ -182,13 +182,66 @@ describe('/api/cost-report route', () => {
   it('does not durably cache an unsettled (current) day', async () => {
     findUniqueUserMock.mockResolvedValueOnce({ id: 'user_a' })
     const today = new Date().toISOString().slice(0, 10)
+    // no shortlink/campaign findMany mocks: empty day rows -> name lookups skipped
+    // (queuing unconsumed mockResolvedValueOnce values here would leak into later tests)
     queryRawMock.mockResolvedValueOnce([])
-    findManyShortlinkMock.mockResolvedValueOnce([])
-    findManyCampaignMock.mockResolvedValueOnce([])
 
     const res = await GET({ url: `https://x.test/api/cost-report?key=k&date=${today}` })
     expect(res.status).toBe(200)
     expect(costReportDayFindManyMock).not.toHaveBeenCalled() // no settled days to look up
+    expect(costReportDayUpsertMock).not.toHaveBeenCalled()
+  })
+
+  it('falls back to sub-day chunks when the day query hits the statement timeout', async () => {
+    findUniqueUserMock.mockResolvedValueOnce({ id: 'user_a' })
+    const timeoutError = Object.assign(new Error('canceling statement due to statement timeout'), {
+      code: 'P2010',
+      meta: { code: '57014' }
+    })
+    // full-day attempt times out, then 6 chunk queries succeed
+    queryRawMock.mockRejectedValueOnce(timeoutError)
+    for (let i = 0; i < 6; i++) {
+      queryRawMock.mockResolvedValueOnce(
+        i < 2
+          ? [{ send_id: 150, campaign_id: 3, date: '2026-07-07', message_count: 10, billed_count: 10, parts: 10, total_cost: 0.10 }]
+          : []
+      )
+    }
+    findManyShortlinkMock.mockResolvedValueOnce([
+      { id: 150, nickname: 'JLL', campaign: { id: 3, name: 'JLL Blast' } }
+    ])
+    findManyCampaignMock.mockResolvedValueOnce([])
+
+    const res = await GET({ url: 'https://x.test/api/cost-report?key=k&date=2026-07-07' })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(queryRawMock).toHaveBeenCalledTimes(7) // 1 failed full-day + 6 chunks
+    // chunk rows merged: 2 chunks x 10 messages collapse into one day row
+    expect(body.rows).toEqual([
+      {
+        send_id: 150,
+        date: '2026-07-07',
+        message_count: 20,
+        billed_count: 20,
+        parts: 20,
+        total_cost: 0.2,
+        nickname: 'JLL',
+        campaign_id: 3,
+        campaign_name: 'JLL Blast'
+      }
+    ])
+    // merged chunk rows are what gets durably cached
+    expect(costReportDayUpsertMock).toHaveBeenCalledTimes(1)
+    expect(costReportDayUpsertMock.mock.calls[0][0].create.body.rows).toHaveLength(2)
+  })
+
+  it('does not chunk on non-timeout errors', async () => {
+    findUniqueUserMock.mockResolvedValueOnce({ id: 'user_a' })
+    queryRawMock.mockRejectedValueOnce(Object.assign(new Error('connection refused'), { code: 'P1001' }))
+
+    const res = await GET({ url: 'https://x.test/api/cost-report?key=k&date=2026-07-07' })
+    expect(res.status).toBe(500)
+    expect(queryRawMock).toHaveBeenCalledTimes(1)
     expect(costReportDayUpsertMock).not.toHaveBeenCalled()
   })
 
