@@ -21,7 +21,7 @@ const MAX_RANGE_DAYS = 400;
 
 // Bumped on every behavior change; echoed on all responses so a probe of the
 // (unauthenticated) 401 path confirms which build is actually serving traffic.
-const REPORT_REV = '9';
+const REPORT_REV = '10';
 
 // Hard server-side cap per DAY query (rev 8 computes day-by-day, so this now
 // bounds a single day, not a whole window). Abandoned HTTP attempts used to
@@ -103,66 +103,84 @@ export function parseDateRange(searchParams, now = new Date()) {
   return { start: startStr, end: endStr, startTs, endTsExclusive };
 }
 
-// ONE pass over a single day's messages: msgs narrows FIRST — the sargable
-// createdAt bracket (sentAt trails createdAt by seconds, so ±1 day is a safe
-// envelope) hits the (userId, direction, createdAt) index, then the precise
-// COALESCE filter trims the edges. Click codes join per message id (indexed),
-// LEFT so link-less messages ride the same scan: rows with a shortlink become
-// send rows, rows without become 'unattributed'. n_links drives the even cost
-// split for the rare message with multiple shortlinks.
-function buildDaySql(userId, dayStartTs, dayEndExclusive) {
-  const bracketStart = new Date(dayStartTs.getTime() - DAY_MS);
-  const bracketEnd = new Date(dayEndExclusive.getTime() + DAY_MS);
+// Step-1 SQL: the window's messages only — no joins. The sargable createdAt
+// bracket keeps the scan on the (userId, direction, createdAt) index, then the
+// precise COALESCE filter trims the edges. createdAt <= COALESCE(sentAt,
+// createdAt) always, and sentAt trails createdAt by seconds — so
+// [fromTs - 1 day, toTs) fully envelopes the precise filter.
+function buildMessagesSql(userId, fromTs, toTs) {
+  const bracketStart = new Date(fromTs.getTime() - DAY_MS);
   return Prisma.sql`
-    WITH msgs AS (
-      SELECT m.id, m."costAmount", m.parts, m."campaignId",
-             (COALESCE(m."sentAt", m."createdAt") AT TIME ZONE 'UTC')::date AS day
-      FROM "messages" m
-      WHERE m."userId" = ${userId}
-        AND m.direction = 'outbound'
-        AND m."createdAt" >= ${bracketStart} AND m."createdAt" < ${bracketEnd}
-        AND COALESCE(m."sentAt", m."createdAt") >= ${dayStartTs}
-        AND COALESCE(m."sentAt", m."createdAt") < ${dayEndExclusive}
-    ),
-    msg_links AS (
-      SELECT DISTINCT c."messageId" AS message_id, c."shortlinkId" AS shortlink_id
-      FROM "message_click_codes" c
-      JOIN msgs ON msgs.id = c."messageId"
-    ),
-    link_counts AS (
-      SELECT message_id, COUNT(*)::numeric AS n_links
-      FROM msg_links
-      GROUP BY message_id
-    )
-    SELECT
-      ml.shortlink_id AS send_id,
-      m."campaignId" AS campaign_id,
-      to_char(m.day, 'YYYY-MM-DD') AS date,
-      COUNT(*)::int AS message_count,
-      COUNT(*) FILTER (WHERE m."costAmount" IS NOT NULL)::int AS billed_count,
-      COALESCE(SUM(m.parts), 0)::int AS parts,
-      ROUND(SUM(COALESCE(m."costAmount", 0) / COALESCE(lc.n_links, 1)), 4)::float8 AS total_cost
-    FROM msgs m
-    LEFT JOIN msg_links ml ON ml.message_id = m.id
-    LEFT JOIN link_counts lc ON lc.message_id = m.id
-    GROUP BY 1, 2, 3
-    ORDER BY 3, 1
+    SELECT m.id,
+           m."costAmount"::float8 AS cost,
+           m.parts,
+           m."campaignId" AS campaign_id,
+           to_char((COALESCE(m."sentAt", m."createdAt") AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS date
+    FROM "messages" m
+    WHERE m."userId" = ${userId}
+      AND m.direction = 'outbound'
+      AND m."createdAt" >= ${bracketStart} AND m."createdAt" < ${toTs}
+      AND COALESCE(m."sentAt", m."createdAt") >= ${fromTs}
+      AND COALESCE(m."sentAt", m."createdAt") < ${toTs}
   `;
 }
 
-// Run one day's combined scan. enable_nestloop=off: table stats on
-// fast-growing messages go stale, the planner estimates rows=1 for recent date
-// ranges and nested-loops two CTE scans on a join FILTER — O(n^2), billions of
-// comparisons per day of data (observed: 45-90s per day, heavy days never
-// finish). Hash joins are the right shape at every scale here, so force them
-// for this query only.
+// Two-step scan (rev 10). The old single combined query joined click codes in
+// SQL; with enable_nestloop=off (needed against planner misestimates) that hash
+// join re-scanned the ENTIRE message_click_codes table on every request — a
+// fixed cost that grows with total table size, which by late August exceeded
+// the 240s timeout for every uncached day (even 4-hour chunks). Instead:
+// (1) index-bracketed scan of the window's messages, (2) batched IN() probes
+// of the message_click_codes (messageId) index, (3) aggregate in JS. Work is
+// proportional to the window's message count, never to table size, and there
+// is no join for the planner to misestimate.
+const LINK_BATCH = 1000;
+
 async function runScan(userId, fromTs, toTs) {
-  const [, , rows] = await prisma.$transaction([
+  const [, msgs] = await prisma.$transaction([
     prisma.$executeRaw`SET LOCAL statement_timeout = ${Prisma.raw(String(STATEMENT_TIMEOUT_MS))}`,
-    prisma.$executeRaw`SET LOCAL enable_nestloop = off`,
-    prisma.$queryRaw(buildDaySql(userId, fromTs, toTs)),
+    prisma.$queryRaw(buildMessagesSql(userId, fromTs, toTs)),
   ]);
-  return rows;
+
+  // Distinct (message, shortlink) pairs for the window's messages, batched so
+  // each probe is a bounded set of indexed lookups.
+  const linksByMessage = new Map();
+  for (let i = 0; i < msgs.length; i += LINK_BATCH) {
+    const batch = msgs.slice(i, i + LINK_BATCH).map((m) => m.id);
+    const links = await prisma.$queryRaw(Prisma.sql`
+      SELECT DISTINCT "messageId" AS message_id, "shortlinkId" AS shortlink_id
+      FROM "message_click_codes"
+      WHERE "messageId" IN (${Prisma.join(batch)})
+    `);
+    for (const l of links) {
+      const arr = linksByMessage.get(l.message_id);
+      if (arr) arr.push(l.shortlink_id);
+      else linksByMessage.set(l.message_id, [l.shortlink_id]);
+    }
+  }
+
+  // Aggregate to the same row grain the old combined query produced:
+  // (send_id, campaign_id, date). A message's cost splits evenly across its
+  // distinct shortlinks; counts/parts attach whole to each link row, and
+  // link-less messages become send_id=null rows ('unattributed' downstream).
+  const round4 = (n) => Math.round(n * 10000) / 10000;
+  const grouped = new Map();
+  for (const m of msgs) {
+    const links = linksByMessage.get(m.id) || [null];
+    for (const sendId of links) {
+      const k = `${sendId}|${m.campaign_id}|${m.date}`;
+      const cur = grouped.get(k) || {
+        send_id: sendId, campaign_id: m.campaign_id, date: m.date,
+        message_count: 0, billed_count: 0, parts: 0, total_cost: 0
+      };
+      cur.message_count += 1;
+      if (m.cost != null) cur.billed_count += 1;
+      cur.parts += m.parts;
+      cur.total_cost += (m.cost ?? 0) / links.length;
+      grouped.set(k, cur);
+    }
+  }
+  return [...grouped.values()].map((r) => ({ ...r, total_cost: round4(r.total_cost) }));
 }
 
 // Prisma P2010 wrapping Postgres 57014 = our SET LOCAL statement_timeout fired.
@@ -242,6 +260,12 @@ async function computeDayRows(userId, day) {
  * blast days) automatically falls back to 4-hour sub-day chunks — each its own
  * bounded query — merged into the same day slice and cached. Every day now
  * converges, no matter how heavy.
+ *
+ * Rev 10: the combined SQL join was replaced with a two-step scan (messages
+ * via index bracket, then batched IN() probes for click codes, aggregated in
+ * JS) after the join's full-table-scan fixed cost grew past the timeout for
+ * every day. Per-day cost now scales with that day's message count only; the
+ * chunk fallback remains as a safety net.
  *
  * Message -> shortlink linkage is via message_click_codes (one code per
  * shortlink per message at send time). A message containing N distinct
@@ -323,11 +347,12 @@ export async function GET(request) {
       return json({ analyzed: ['messages', 'message_click_codes'], cancelled: cancelled.length, ms: Date.now() - tM });
     }
 
-    // explain=1: log + return the PLAN of the window's first day (no
-    // execution) — representative of what each per-day query will run.
+    // explain=1: log + return the PLAN of the window's first day's step-1
+    // messages scan (no execution) — the only query with a plan worth checking;
+    // the link lookups are bounded IN() probes of the messageId index.
     if (searchParams.get('explain') === '1') {
       const dayStartTs = new Date(`${days[0].day}T00:00:00.000Z`);
-      const daySql = buildDaySql(userId, dayStartTs, new Date(dayStartTs.getTime() + DAY_MS));
+      const daySql = buildMessagesSql(userId, dayStartTs, new Date(dayStartTs.getTime() + DAY_MS));
       const plan = await prisma.$queryRaw(Prisma.sql`EXPLAIN (FORMAT TEXT) ${daySql}`);
       const lines = plan.map((r) => r['QUERY PLAN']);
       console.log(`[cost-report] EXPLAIN day=${days[0].day}:\n${lines.join('\n')}`);

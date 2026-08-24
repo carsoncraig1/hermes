@@ -52,6 +52,9 @@ describe('parseDateRange', () => {
   })
 })
 
+// Two-step scan mocks (rev 10): the first $queryRaw per scan returns MESSAGE
+// rows { id, cost, parts, campaign_id, date }; if any messages come back, the
+// next $queryRaw returns click-code LINK rows { message_id, shortlink_id }.
 describe('/api/cost-report route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -76,14 +79,17 @@ describe('/api/cost-report route', () => {
     expect(res.status).toBe(400)
   })
 
-  it('returns per-send rows enriched with shortlink + campaign names', async () => {
+  it('aggregates messages + links into per-send rows enriched with names', async () => {
     findUniqueUserMock.mockResolvedValueOnce({ id: 'user_a' })
     queryRawMock.mockResolvedValueOnce([
-      // combined single-scan rows: (send_id, campaign_id, date) grain
-      { send_id: 150, campaign_id: 3, date: '2026-07-13', message_count: 60, billed_count: 59, parts: 60, total_cost: 1.0 },
-      { send_id: 150, campaign_id: null, date: '2026-07-13', message_count: 40, billed_count: 39, parts: 40, total_cost: 0.23 },
-      { send_id: null, campaign_id: 7, date: '2026-07-13', message_count: 5, billed_count: 5, parts: 5, total_cost: 0.05 },
-      { send_id: null, campaign_id: 8, date: '2026-07-13', message_count: 9, billed_count: 0, parts: 9, total_cost: 0 }
+      { id: 'm1', cost: 1.0, parts: 2, campaign_id: 3, date: '2026-07-13' },
+      { id: 'm2', cost: 0.23, parts: 1, campaign_id: null, date: '2026-07-13' }, // same shortlink, campaign split
+      { id: 'm3', cost: 0.05, parts: 1, campaign_id: 7, date: '2026-07-13' }, // link-less, costed -> unattributed
+      { id: 'm4', cost: null, parts: 1, campaign_id: 8, date: '2026-07-13' } // link-less, zero cost -> dropped
+    ])
+    queryRawMock.mockResolvedValueOnce([
+      { message_id: 'm1', shortlink_id: 150 },
+      { message_id: 'm2', shortlink_id: 150 }
     ])
     findManyShortlinkMock.mockResolvedValueOnce([
       { id: 150, nickname: 'JLL', campaign: { id: 3, name: 'JLL Blast' } }
@@ -93,13 +99,14 @@ describe('/api/cost-report route', () => {
     const res = await GET({ url: 'https://x.test/api/cost-report?key=k&date=2026-07-13' })
     expect(res.status).toBe(200)
     const body = await res.json()
+    expect(queryRawMock).toHaveBeenCalledTimes(2) // messages + one link batch
     expect(body.rows).toEqual([
       {
         send_id: 150,
         date: '2026-07-13',
-        message_count: 100, // 60 + 40 collapsed across campaign split
-        billed_count: 98,
-        parts: 100,
+        message_count: 2, // m1 + m2 collapsed across campaign split
+        billed_count: 2,
+        parts: 3,
         total_cost: 1.23,
         nickname: 'JLL',
         campaign_id: 3,
@@ -112,33 +119,52 @@ describe('/api/cost-report route', () => {
         campaign_id: 7,
         campaign_name: 'Welcome Flow',
         date: '2026-07-13',
-        message_count: 5,
-        billed_count: 5,
+        message_count: 1,
+        billed_count: 1,
         total_cost: 0.05
       }
     ])
     expect(body.currency).toBe('USD')
   })
 
+  it('splits a multi-shortlink message cost evenly across its links', async () => {
+    findUniqueUserMock.mockResolvedValueOnce({ id: 'user_a' })
+    queryRawMock.mockResolvedValueOnce([
+      { id: 'm1', cost: 0.5, parts: 1, campaign_id: 3, date: '2026-07-13' }
+    ])
+    queryRawMock.mockResolvedValueOnce([
+      { message_id: 'm1', shortlink_id: 150 },
+      { message_id: 'm1', shortlink_id: 151 }
+    ])
+    findManyShortlinkMock.mockResolvedValueOnce([])
+    findManyCampaignMock.mockResolvedValueOnce([])
+
+    const res = await GET({ url: 'https://x.test/api/cost-report?key=k&date=2026-07-13' })
+    const body = await res.json()
+    const costs = body.rows.map((r) => [r.send_id, r.total_cost]).sort()
+    expect(costs).toEqual([[150, 0.25], [151, 0.25]])
+  })
+
   it('persists a computed settled day to the durable cache', async () => {
     findUniqueUserMock.mockResolvedValueOnce({ id: 'user_a' })
-    const dayRows = [
-      { send_id: 9, campaign_id: 1, date: '2026-07-13', message_count: 2, billed_count: 2, parts: 2, total_cost: 0.02 }
-    ]
-    queryRawMock.mockResolvedValueOnce(dayRows)
+    queryRawMock.mockResolvedValueOnce([
+      { id: 'm9', cost: 0.02, parts: 2, campaign_id: 1, date: '2026-07-13' }
+    ])
+    queryRawMock.mockResolvedValueOnce([{ message_id: 'm9', shortlink_id: 9 }])
     findManyShortlinkMock.mockResolvedValueOnce([])
     findManyCampaignMock.mockResolvedValueOnce([])
 
     const res = await GET({ url: 'https://x.test/api/cost-report?key=k&date=2026-07-13' })
     expect(res.status).toBe(200)
     expect(costReportDayUpsertMock).toHaveBeenCalledTimes(1)
-    expect(costReportDayUpsertMock.mock.calls[0][0]).toMatchObject({
-      where: { userId_day: { userId: 'user_a', day: '2026-07-13' } },
-      create: { userId: 'user_a', day: '2026-07-13', body: { rows: dayRows } }
-    })
+    const call = costReportDayUpsertMock.mock.calls[0][0]
+    expect(call.where).toEqual({ userId_day: { userId: 'user_a', day: '2026-07-13' } })
+    expect(call.create.body.rows).toEqual([
+      { send_id: 9, campaign_id: 1, date: '2026-07-13', message_count: 1, billed_count: 1, parts: 2, total_cost: 0.02 }
+    ])
   })
 
-  it('serves a cached settled day without running the day query', async () => {
+  it('serves a cached settled day without running any scan queries', async () => {
     findUniqueUserMock.mockResolvedValueOnce({ id: 'user_a' })
     costReportDayFindManyMock.mockResolvedValueOnce([
       {
@@ -167,46 +193,51 @@ describe('/api/cost-report route', () => {
   it('recomputes cached days when refresh=1 and overwrites the cache', async () => {
     findUniqueUserMock.mockResolvedValueOnce({ id: 'user_a' })
     queryRawMock.mockResolvedValueOnce([
-      { send_id: 150, campaign_id: 3, date: '2026-07-13', message_count: 11, billed_count: 11, parts: 11, total_cost: 0.11 }
+      { id: 'm1', cost: 0.11, parts: 1, campaign_id: 3, date: '2026-07-13' }
     ])
+    queryRawMock.mockResolvedValueOnce([{ message_id: 'm1', shortlink_id: 150 }])
     findManyShortlinkMock.mockResolvedValueOnce([])
     findManyCampaignMock.mockResolvedValueOnce([])
 
     const res = await GET({ url: 'https://x.test/api/cost-report?key=k&date=2026-07-13&refresh=1' })
     expect(res.status).toBe(200)
     expect(costReportDayFindManyMock).not.toHaveBeenCalled()
-    expect(queryRawMock).toHaveBeenCalledTimes(1)
+    expect(queryRawMock).toHaveBeenCalledTimes(2)
     expect(costReportDayUpsertMock).toHaveBeenCalledTimes(1)
   })
 
   it('does not durably cache an unsettled (current) day', async () => {
     findUniqueUserMock.mockResolvedValueOnce({ id: 'user_a' })
     const today = new Date().toISOString().slice(0, 10)
-    // no shortlink/campaign findMany mocks: empty day rows -> name lookups skipped
+    // empty message scan -> no link query, no name lookups
     // (queuing unconsumed mockResolvedValueOnce values here would leak into later tests)
     queryRawMock.mockResolvedValueOnce([])
 
     const res = await GET({ url: `https://x.test/api/cost-report?key=k&date=${today}` })
     expect(res.status).toBe(200)
+    expect(queryRawMock).toHaveBeenCalledTimes(1) // messages only, no links for an empty day
     expect(costReportDayFindManyMock).not.toHaveBeenCalled() // no settled days to look up
     expect(costReportDayUpsertMock).not.toHaveBeenCalled()
   })
 
-  it('falls back to sub-day chunks when the day query hits the statement timeout', async () => {
+  it('falls back to sub-day chunks when the messages scan hits the statement timeout', async () => {
     findUniqueUserMock.mockResolvedValueOnce({ id: 'user_a' })
     const timeoutError = Object.assign(new Error('canceling statement due to statement timeout'), {
       code: 'P2010',
       meta: { code: '57014' }
     })
-    // full-day attempt times out, then 6 chunk queries succeed
+    // full-day messages scan times out...
     queryRawMock.mockRejectedValueOnce(timeoutError)
-    for (let i = 0; i < 6; i++) {
-      queryRawMock.mockResolvedValueOnce(
-        i < 2
-          ? [{ send_id: 150, campaign_id: 3, date: '2026-07-07', message_count: 10, billed_count: 10, parts: 10, total_cost: 0.10 }]
-          : []
-      )
-    }
+    // ...chunk 1 finds two messages + their links, chunks 2-6 are empty
+    queryRawMock.mockResolvedValueOnce([
+      { id: 'm1', cost: 0.1, parts: 1, campaign_id: 3, date: '2026-07-07' },
+      { id: 'm2', cost: 0.1, parts: 1, campaign_id: 3, date: '2026-07-07' }
+    ])
+    queryRawMock.mockResolvedValueOnce([
+      { message_id: 'm1', shortlink_id: 150 },
+      { message_id: 'm2', shortlink_id: 150 }
+    ])
+    for (let i = 0; i < 5; i++) queryRawMock.mockResolvedValueOnce([])
     findManyShortlinkMock.mockResolvedValueOnce([
       { id: 150, nickname: 'JLL', campaign: { id: 3, name: 'JLL Blast' } }
     ])
@@ -215,15 +246,15 @@ describe('/api/cost-report route', () => {
     const res = await GET({ url: 'https://x.test/api/cost-report?key=k&date=2026-07-07' })
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(queryRawMock).toHaveBeenCalledTimes(7) // 1 failed full-day + 6 chunks
-    // chunk rows merged: 2 chunks x 10 messages collapse into one day row
+    // 1 failed full-day scan + chunk1 (messages + links) + 5 empty chunk scans
+    expect(queryRawMock).toHaveBeenCalledTimes(8)
     expect(body.rows).toEqual([
       {
         send_id: 150,
         date: '2026-07-07',
-        message_count: 20,
-        billed_count: 20,
-        parts: 20,
+        message_count: 2,
+        billed_count: 2,
+        parts: 2,
         total_cost: 0.2,
         nickname: 'JLL',
         campaign_id: 3,
@@ -232,7 +263,7 @@ describe('/api/cost-report route', () => {
     ])
     // merged chunk rows are what gets durably cached
     expect(costReportDayUpsertMock).toHaveBeenCalledTimes(1)
-    expect(costReportDayUpsertMock.mock.calls[0][0].create.body.rows).toHaveLength(2)
+    expect(costReportDayUpsertMock.mock.calls[0][0].create.body.rows).toHaveLength(1)
   })
 
   it('does not chunk on non-timeout errors', async () => {
@@ -255,10 +286,11 @@ describe('/api/cost-report route', () => {
         }
       }
     ])
-    // only the uncached day (2026-07-14) hits the DB
+    // only the uncached day (2026-07-14) hits the DB: messages + links
     queryRawMock.mockResolvedValueOnce([
-      { send_id: 150, campaign_id: 3, date: '2026-07-14', message_count: 7, billed_count: 7, parts: 7, total_cost: 0.07 }
+      { id: 'm1', cost: 0.07, parts: 7, campaign_id: 3, date: '2026-07-14' }
     ])
+    queryRawMock.mockResolvedValueOnce([{ message_id: 'm1', shortlink_id: 150 }])
     findManyShortlinkMock.mockResolvedValueOnce([
       { id: 150, nickname: 'JLL', campaign: { id: 3, name: 'JLL Blast' } }
     ])
@@ -267,7 +299,7 @@ describe('/api/cost-report route', () => {
     const res = await GET({ url: 'https://x.test/api/cost-report?key=k&start=2026-07-13&end=2026-07-14' })
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(queryRawMock).toHaveBeenCalledTimes(1)
+    expect(queryRawMock).toHaveBeenCalledTimes(2)
     expect(costReportDayUpsertMock).toHaveBeenCalledTimes(1) // only the computed day
     expect(body.rows.map((r) => r.date).sort()).toEqual(['2026-07-13', '2026-07-14'])
   })
