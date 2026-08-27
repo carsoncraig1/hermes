@@ -678,9 +678,14 @@ export async function getCampaigns(recentOnly = true) {
       ]
     } : { userId }
     
-    // OPTIMIZED: Fetch campaigns without ALL messages - use _count and separate aggregate queries
+    // OPTIMIZED: Fetch campaigns without messages. The old _count of messages
+    // per campaign was never read (stats come from the groupBy below and the
+    // messagesSent counter) but made Postgres count EVERY message ever sent,
+    // per campaign, on every page load — the reason the Campaigns page
+    // crawled for high-volume accounts. take caps the recent list; the
+    // `lastMessageSent: null` OR otherwise pulls every never-sent draft ever.
     const [campaigns, messageStatsByCampaign, costByCampaign] = await Promise.all([
-      // Get campaigns with targets and shortlinks (no messages)
+      // Get campaigns with targets and shortlinks (no messages, no counts)
       prisma.campaign.findMany({
         where: campaignWhere,
         include: {
@@ -689,14 +694,12 @@ export async function getCampaigns(recentOnly = true) {
               tag: true
             }
           },
-          shortlinks: true,
-          _count: {
-            select: { messages: true }
-          }
+          shortlinks: true
         },
         orderBy: {
           createdAt: 'desc'
-        }
+        },
+        ...(recentOnly && { take: 300 })
       }),
       
       // Get message counts by campaign and status (only for recent campaigns if recentOnly)
