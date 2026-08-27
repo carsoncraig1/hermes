@@ -94,51 +94,59 @@ export async function getMessages(filters = {}) {
 
 /**
  * Get message statistics
+ *
+ * These are ALL-TIME numbers over the user's entire outbound history, which
+ * for high-volume accounts is millions of rows — the old implementation ran
+ * FIVE separate unbounded scans (4 counts + a cost SUM) per call and made the
+ * Messages page unusably slow for those accounts. One groupBy pass now yields
+ * every count and the delivered cost sum, and a short per-user cache absorbs
+ * page reloads and multiple tabs.
  * @returns {Promise<Object>} - Message statistics
  */
+const MESSAGE_STATS_TTL_MS = 60 * 1000;
+const messageStatsCache = new Map();
+
 export async function getMessageStats() {
   try {
     const userId = await getUserId();
-    
-    const [total, delivered, failed, queued, totalCost] = await Promise.all([
-      prisma.message.count({
-        where: { userId, direction: 'outbound' }
-      }),
-      prisma.message.count({
-        where: { userId, direction: 'outbound', status: 'delivered' }
-      }),
-      prisma.message.count({
-        where: { 
-          userId, 
-          direction: 'outbound',
-          status: { in: ['sending_failed', 'delivery_failed'] }
-        }
-      }),
-      prisma.message.count({
-        where: { 
-          userId, 
-          direction: 'outbound',
-          status: { in: ['queued', 'sending'] }
-        }
-      }),
-      prisma.message.aggregate({
-        where: { 
-          userId, 
-          direction: 'outbound',
-          status: 'delivered' // Only delivered messages are billed by Telnyx
-        },
-        _sum: { costAmount: true }
-      })
-    ]);
 
-    return {
+    const cached = messageStatsCache.get(userId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+
+    const byStatus = await prisma.message.groupBy({
+      by: ['status'],
+      where: { userId, direction: 'outbound' },
+      _count: true,
+      _sum: { costAmount: true }
+    });
+
+    let total = 0, delivered = 0, failed = 0, queued = 0, totalCost = 0;
+    for (const stat of byStatus) {
+      total += stat._count;
+      if (stat.status === 'delivered') {
+        delivered = stat._count;
+        // Only delivered messages are billed by Telnyx
+        totalCost = stat._sum?.costAmount ? parseFloat(stat._sum.costAmount.toString()) : 0;
+      } else if (stat.status === 'sending_failed' || stat.status === 'delivery_failed') {
+        failed += stat._count;
+      } else if (stat.status === 'queued' || stat.status === 'sending') {
+        queued += stat._count;
+      }
+    }
+
+    const data = {
       total,
       delivered,
       failed,
       queued,
-      totalCost: totalCost._sum.costAmount ? parseFloat(totalCost._sum.costAmount) : 0,
+      totalCost,
       deliveryRate: total > 0 ? (delivered / total) * 100 : 0
     };
+
+    messageStatsCache.set(userId, { data, expiresAt: Date.now() + MESSAGE_STATS_TTL_MS });
+    return data;
   } catch (error) {
     console.error('Error fetching message stats:', error);
     throw error;

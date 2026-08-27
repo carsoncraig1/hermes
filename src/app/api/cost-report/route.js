@@ -21,7 +21,7 @@ const MAX_RANGE_DAYS = 400;
 
 // Bumped on every behavior change; echoed on all responses so a probe of the
 // (unauthenticated) 401 path confirms which build is actually serving traffic.
-const REPORT_REV = '10';
+const REPORT_REV = '11'; // no cost-report change in 11 — bumped as the deploy probe for the messages-page perf fix
 
 // Hard server-side cap per DAY query (rev 8 computes day-by-day, so this now
 // bounds a single day, not a whole window). Abandoned HTTP attempts used to

@@ -41,6 +41,20 @@ export default function MessagesTable({ initialMessages, initialStats }) {
     }
   }, [conversations, selectedConversationId]);
 
+  // Stats scan the user's all-time history and are no longer awaited during
+  // SSR (they were blocking first paint for minutes on high-volume accounts).
+  // Load them after mount; the cards render 0s until they arrive.
+  useEffect(() => {
+    if (initialStats) return;
+    let cancelled = false;
+    getMessageStats()
+      .then((freshStats) => {
+        if (!cancelled) setStats(freshStats);
+      })
+      .catch((error) => console.error('Error loading message stats:', error));
+    return () => { cancelled = true; };
+  }, [initialStats]);
+
   const loadPage = async (newPage, filters = {}, includeRecentFilter = null) => {
     setLoading(true);
     try {
