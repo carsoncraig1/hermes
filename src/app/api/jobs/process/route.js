@@ -32,10 +32,10 @@ export async function GET(request) {
       })
     }
 
-    await processDelayedActions()
+    const delayedCount = await processDelayedActions()
     const scheduledRedirectResults = await processScheduledRedirects()
     const pendingJobs = await getPendingJobs(5)
-    
+
     const results = []
     for (const job of pendingJobs) {
       try {
@@ -51,7 +51,7 @@ export async function GET(request) {
             targetAllSubscribed: metadata.targetAllSubscribed || false
           }, job.id, job.userId)
         }
-        
+
         if (result?.skipped) {
           results.push({ jobId: job.id, status: 'skipped', reason: result.reason })
         } else {
@@ -62,7 +62,13 @@ export async function GET(request) {
         results.push({ jobId: job.id, status: 'error', error: error.message })
       }
     }
-    
+
+    // Heartbeat: one line per authorized run. The processor used to be silent
+    // when idle, which made "cron is dead" indistinguishable from "nothing
+    // scheduled" in the logs — a dead cron silently strands every scheduled
+    // send. This line is the liveness signal.
+    console.log(`[jobs] tick delayed=${delayedCount ?? 0} redirects=${scheduledRedirectResults.length} scheduled=${results.length}`)
+
     return Response.json({
       success: true,
       delayedActionsProcessed: true,

@@ -158,7 +158,7 @@ export async function executeDelayedAction(actionId) {
  */
 export async function processDelayedActions() {
   const actions = await getReadyDelayedActions(100)
-  
+
   // Process in parallel with limit
   const BATCH_SIZE = 10
   for (let i = 0; i < actions.length; i += BATCH_SIZE) {
@@ -167,5 +167,6 @@ export async function processDelayedActions() {
       batch.map(action => executeDelayedAction(action.id))
     )
   }
+  return actions.length
 }
 
