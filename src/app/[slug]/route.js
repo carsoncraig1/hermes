@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
-import { createClickWithHrms, appendHrmsToUrl, generateHrms, hashPhone, appendPhoneHashToUrl } from '@/lib/revenue'
+import { createClickWithHrms, appendHrmsToUrl, generateHrms, appendRecipientIdentityToUrl } from '@/lib/revenue'
 import { lookupMessageClickCode, markCodeAsClicked, markCodeAsOpened } from '@/lib/messageClickCodes'
 import { expandShortlinkDestinationMacros } from '@/lib/shortlinkDestinationMacros'
 
@@ -360,14 +360,11 @@ export async function GET(request, { params }) {
           { expand: true }
         )
 
-        // Hash of the clicker's phone (E.164 as stored), appended on every real
-        // click that has a known contact. null when there's no contact phone.
-        const phoneHash = macroContact?.phone ? hashPhone(macroContact.phone) : null
 
         // Only proceed if this was a new click
         if (clickResult.isNewClick && clickResult.hrms) {
           hrms = clickResult.hrms
-          destinationWithHrms = appendPhoneHashToUrl(appendHrmsToUrl(baseDestination, hrms), phoneHash)
+          destinationWithHrms = appendRecipientIdentityToUrl(appendHrmsToUrl(baseDestination, hrms), macroContact?.phone)
 
           // Get updated click count for logging
           const updatedShortlink = await prisma.shortlink.findUnique({
@@ -379,8 +376,8 @@ export async function GET(request, { params }) {
           console.log(`Shortlink click (${code}) ${shortlinkName} · ${clickCount} total`)
         } else {
           // Code was already clicked - this is a refresh/retry, don't count it
-          // Still redirect to destination (with phone_hash) but without HRMS tracking
-          destinationWithHrms = appendPhoneHashToUrl(baseDestination, phoneHash)
+          // Keep recipient identity on repeats without creating another HRMS.
+          destinationWithHrms = appendRecipientIdentityToUrl(baseDestination, macroContact?.phone)
           const shortlinkName = shortlink.nickname || `Shortlink #${shortlink.id}`
           console.log(`Shortlink click (${code}) ${shortlinkName} · repeat`)
         }

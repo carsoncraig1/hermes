@@ -105,6 +105,23 @@ export function hashPhone(phone) {
  * @param {string} phoneHash - Hashed phone number
  * @returns {string} - Destination URL with phone_hash parameter
  */
+/** Add the recipient's raw phone alongside the existing, unchanged hash. */
+export function appendRecipientIdentityToUrl(destination, phone) {
+  if (typeof phone !== 'string' || !phone) return destination;
+  const enriched = appendPhoneHashToUrl(destination, hashPhone(phone));
+  const digits = phone.replace(/\D/g, '');
+  // Match the receiver's supported NANP scope. Never invent a country code or
+  // alter the legacy hash contract for unsupported historical contact values.
+  if (!destination || !/^\+?[\d\s().-]+$/.test(phone.trim()) || !/^1[2-9]\d{2}[2-9]\d{6}$/.test(digits)) return enriched;
+  try {
+    const url = new URL(enriched);
+    url.searchParams.set('phone', digits);
+    return url.toString();
+  } catch {
+    return enriched;
+  }
+}
+
 export function appendPhoneHashToUrl(destination, phoneHash) {
   if (!destination || !phoneHash) return destination;
 
