@@ -118,8 +118,21 @@ export function appendRecipientIdentityToUrl(destination, phone) {
     url.searchParams.set('phone', digits);
     return url.toString();
   } catch {
-    return enriched;
+    return setFallbackQueryParam(enriched, 'phone', digits);
   }
+}
+
+// Preserve relative paths, protocol-relative hosts and malformed destination
+// text without resolving against a different host. Query data precedes fragments.
+function setFallbackQueryParam(destination, key, value) {
+  const fragmentIndex = destination.indexOf('#');
+  const fragment = fragmentIndex < 0 ? '' : destination.slice(fragmentIndex);
+  const beforeFragment = fragmentIndex < 0 ? destination : destination.slice(0, fragmentIndex);
+  const queryIndex = beforeFragment.indexOf('?');
+  const path = queryIndex < 0 ? beforeFragment : beforeFragment.slice(0, queryIndex);
+  const params = new URLSearchParams(queryIndex < 0 ? '' : beforeFragment.slice(queryIndex + 1));
+  params.set(key, value);
+  return `${path}?${params.toString()}${fragment}`;
 }
 
 export function appendPhoneHashToUrl(destination, phoneHash) {
@@ -130,9 +143,7 @@ export function appendPhoneHashToUrl(destination, phoneHash) {
     url.searchParams.set('phone_hash', phoneHash);
     return url.toString();
   } catch (error) {
-    // If URL parsing fails, append as query string
-    const separator = destination.includes('?') ? '&' : '?';
-    return `${destination}${separator}phone_hash=${encodeURIComponent(phoneHash)}`;
+    return setFallbackQueryParam(destination, 'phone_hash', phoneHash);
   }
 }
 
