@@ -1201,7 +1201,7 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
   const { retryWithBackoff, isRetryableError } = await import('@/lib/retry')
   const { getCampaignContactsPaginated } = await import('@/lib/contactPagination')
   const { getTelnyxConfig, sendMessageBulkOptimized } = await import('@/lib/telnyx')
-  const { normalizePhoneForTelnyx } = await import('@/lib/phoneUtils')
+  const { normalizePhoneNumber } = await import('@/lib/phoneUtils')
   const { createMessageClickCodesBatch } = await import('@/lib/messageClickCodes')
   
   let jobId = existingJobId
@@ -1419,9 +1419,9 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
     // The legacy/default sender has no PhoneNumber row; resolve its card by
     // matching the default number against the user's configured numbers.
     const legacyNumber = user?.telnyxPhoneNumber || telnyxConfig.phoneNumber
-    const legacyNormalized = legacyNumber ? normalizePhoneForTelnyx(legacyNumber) : null
+    const legacyNormalized = legacyNumber ? normalizePhoneNumber(legacyNumber) : null
     const legacyMatch = legacyNormalized
-      ? phoneNumbers.find(pn => normalizePhoneForTelnyx(pn.phoneNumber) === legacyNormalized && pn.mediaAssetId)
+      ? phoneNumbers.find(pn => normalizePhoneNumber(pn.phoneNumber) === legacyNormalized && pn.mediaAssetId)
       : null
     phoneNumberConfigMap.set('legacy', {
       key: 'legacy',
@@ -1521,7 +1521,7 @@ export async function executeDedicatedSend(campaignId, scheduledAt = null, exist
                   () => sendMessageBulkOptimized({
                     telnyxClient: groupConfig.telnyxClient,
                     from: groupConfig.phoneNumber,
-                    to: normalizePhoneForTelnyx(contact.phone),
+                    to: normalizePhoneNumber(contact.phone),
                     text: contactTextMap.get(contact.id) || messageText,
                     messagingProfileId: groupConfig.messagingProfileId,
                     // Key on (job, contact), NOT the per-execution message UUID, so a

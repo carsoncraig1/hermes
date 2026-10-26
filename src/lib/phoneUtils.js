@@ -1,27 +1,28 @@
+import { parsePhoneNumberFromString } from 'libphonenumber-js/min';
+
 /**
- * Normalize phone number to E.164 format for Telnyx.
- * Ensures phone numbers are in the format +1XXXXXXXXXX when possible.
+ * Canonical storage/provider format: +<country code><national number>.
+ * International input requires an explicit + country code. Bare 10-digit and
+ * 11-digit 1-prefixed numbers retain the existing NANP default.
+ * Checks recognized calling codes and possible lengths, not number ownership.
  */
-export function normalizePhoneForTelnyx(phone) {
-  if (!phone) return null;
+export function normalizePhoneNumber(phone) {
+  if (typeof phone !== 'string') return null;
+  const value = phone.trim();
+  if (!/^\+?[\d\s().-]+$/.test(value)) return null;
 
-  if (phone.startsWith('+')) {
-    return phone;
+  const digits = value.replace(/\D/g, '');
+  let international;
+  if (value.startsWith('+')) {
+    international = `+${digits}`;
+  } else if (digits.length === 10) {
+    international = `+1${digits}`;
+  } else if (digits.length === 11 && digits.startsWith('1')) {
+    international = `+${digits}`;
+  } else {
+    return null;
   }
 
-  const digits = phone.replace(/\D/g, '');
-
-  if (digits.length === 11 && digits[0] === '1') {
-    return `+${digits}`;
-  }
-
-  if (digits.length === 10) {
-    return `+1${digits}`;
-  }
-
-  if (digits.length === 11) {
-    return `+${digits}`;
-  }
-
-  return phone;
+  const parsed = parsePhoneNumberFromString(international);
+  return parsed?.isPossible() ? parsed.number : null;
 }

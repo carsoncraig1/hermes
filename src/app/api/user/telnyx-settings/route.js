@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 import { invalidateMessagingProfile } from '@/lib/messagingProfileCache'
+import { normalizePhoneNumber } from '@/lib/phoneUtils'
 
 export async function GET() {
   try {
@@ -43,13 +44,14 @@ export async function PUT(request) {
     const body = await request.json()
     const { telnyxApiKey, telnyxPhoneNumber, telnyxMessagingProfileId } = body
 
-    // Validate phone number format if provided
-    if (telnyxPhoneNumber && telnyxPhoneNumber.trim()) {
-      // Basic validation - should be in E.164 format
-      const phoneRegex = /^\+1[0-9]{10}$/
-      if (!phoneRegex.test(telnyxPhoneNumber.trim())) {
+    let normalizedPhoneNumber
+    if (telnyxPhoneNumber !== undefined) {
+      const clearing = telnyxPhoneNumber === null ||
+        (typeof telnyxPhoneNumber === 'string' && !telnyxPhoneNumber.trim())
+      normalizedPhoneNumber = clearing ? null : normalizePhoneNumber(telnyxPhoneNumber)
+      if (!clearing && !normalizedPhoneNumber) {
         return Response.json(
-          { error: 'Phone number must be in E.164 format (+1XXXXXXXXXX)' },
+          { error: 'Invalid phone number. Include + and the country code for international numbers; bare 10-digit numbers default to +1.' },
           { status: 400 }
         )
       }
@@ -66,7 +68,7 @@ export async function PUT(request) {
       where: { id: session.user.id },
       data: {
         telnyxApiKey: telnyxApiKey?.trim() || null,
-        telnyxPhoneNumber: telnyxPhoneNumber?.trim() || null,
+        telnyxPhoneNumber: normalizedPhoneNumber,
         telnyxMessagingProfileId: nextProfileId,
       },
       select: {

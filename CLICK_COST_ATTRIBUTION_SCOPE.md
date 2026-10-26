@@ -36,6 +36,18 @@ Cost is **not** attached to the redirect URL at all. Instead:
    `delta = totalCost − costAttributed` — freezes it onto that click, advances the campaign's
    attributed counters, and returns it.
 
+Recipient-specific real-click redirects automatically add `phone` and `phone_hash`
+when the recipient has a normalizable number; destination URL tokens are not required.
+Storage uses international E.164 (`+` plus country code and national digits), not
+US-only `+1`. The URL's unhashed `phone` is the canonical stored number without `+`;
+`phone_hash` is unsalted SHA-256 of those exact digits, encoded as lowercase hex.
+For example, `+442079460958` sends `phone=442079460958` and hashes `442079460958`.
+Bare 10-digit NANP input retains the default country code `1`. Missing or invalid
+numbers contribute neither identity parameter. Bot previews and generic legacy
+shortlinks do not receive recipient identity parameters.
+See [Phone normalization](PHONE_NORMALIZATION.md) for validation, all intake paths,
+and non-destructive historical-data backfill instructions.
+
 ### Why delta semantics
 
 Each pulled click receives the spend accrued since the previous pulled click. Therefore, on the

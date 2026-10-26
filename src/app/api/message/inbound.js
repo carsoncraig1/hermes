@@ -1,34 +1,6 @@
 import prisma from '@/lib/prisma'
 
-// Helper function to normalize phone numbers (same as in contact route)
-function normalizePhoneNumber(phone) {
-  if (!phone) return null
-  
-  const cleaned = phone.trim()
-  const digits = cleaned.replace(/\D/g, '')
-  
-  if (cleaned.startsWith('+')) {
-    if (digits.startsWith('1') && digits.length === 11) {
-      return `+${digits}`
-    }
-    if (digits.length > 0 && !digits.startsWith('1')) {
-      return null
-    }
-    if (digits.startsWith('1') && digits.length !== 11) {
-      return null
-    }
-  }
-  
-  if (digits.length === 11 && digits[0] === '1') {
-    return `+${digits}`
-  }
-  
-  if (digits.length === 10) {
-    return `+1${digits}`
-  }
-  
-  return null
-}
+import { normalizePhoneNumber } from '@/lib/phoneUtils'
 
 export async function POST(request) {
   try {

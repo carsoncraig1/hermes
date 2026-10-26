@@ -1,8 +1,8 @@
 import { auth } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 import { invalidateMessagingProfile } from '@/lib/messagingProfileCache'
+import { normalizePhoneNumber } from '@/lib/phoneUtils'
 
-const E164_US_REGEX = /^\+1\d{10}$/
 const ALLOWED_TYPES = new Set(['toll_free', 'local', 'short_code'])
 
 // Shared shape returned to the settings UI (includes the attached .vcf card, if any).
@@ -64,13 +64,13 @@ export async function POST(request) {
     const userId = await getUserId()
     const body = await request.json()
 
-    const phoneNumber = body.phoneNumber?.trim()
+    const phoneNumber = normalizePhoneNumber(body.phoneNumber)
     const friendlyName = body.friendlyName?.trim() || null
     const type = body.type?.trim() || 'toll_free'
     const messagingProfileId = body.messagingProfileId?.trim() || null
 
-    if (!phoneNumber || !E164_US_REGEX.test(phoneNumber)) {
-      return Response.json({ error: 'Phone number must be in E.164 format (+1XXXXXXXXXX)' }, { status: 400 })
+    if (!phoneNumber) {
+      return Response.json({ error: 'Invalid phone number. Include + and the country code for international numbers; bare 10-digit numbers default to +1.' }, { status: 400 })
     }
     if (!ALLOWED_TYPES.has(type)) {
       return Response.json({ error: 'Invalid phone number type' }, { status: 400 })

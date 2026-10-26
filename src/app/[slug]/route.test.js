@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createHash } from 'node:crypto';
 const mocks = vi.hoisted(() => ({
   contact: { findFirst: vi.fn(), update: vi.fn().mockResolvedValue({}) },
   shortlink: { findUnique: vi.fn(), update: vi.fn().mockResolvedValue({}) },
@@ -17,7 +18,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   shortlink = { id: 1, userId: 'tenant-a', destination, enabled: true, clicks: 0 };
   mocks.lookup.mockResolvedValue({ id: 2, contactId: 3, messageId: 'msg-test', shortlink });
-  mocks.contact.findFirst.mockResolvedValue({ id: 3, phone: '+1 (202) 555-0123' });
+  mocks.contact.findFirst.mockResolvedValue({ id: 3, phone: '(202) 555-0123' });
   mocks.shortlink.findUnique.mockResolvedValue({ ...shortlink, clicks: 1 });
   mocks.messageClickCode.findUnique.mockResolvedValue({ id: 2, contactId: 3, clicked: false });
 });
@@ -76,5 +77,13 @@ describe('recipient redirect', () => {
     expect(u.hash).toBe('#part');
     expect(mocks.shortlinkClick.create).toHaveBeenCalledTimes(1);
     expect(mocks.contact.findFirst.mock.calls[0][0].where).toEqual({id:3,userId:'tenant-a'});
+  });
+  it.each([false, true])('adds both international identities on recipient clicks, repeat=%s', async (repeat) => {
+    mocks.contact.findFirst.mockResolvedValue({ id: 3, phone: '+442079460958' });
+    mocks.messageClickCode.findUnique.mockResolvedValue({ id: 2, contactId: 3, clicked: repeat });
+    const url = await invoke();
+    expect(url.searchParams.get('phone')).toBe('442079460958');
+    expect(url.searchParams.get('phone_hash')).toBe(createHash('sha256').update('442079460958').digest('hex'));
+    expect(url.searchParams.has('hrms')).toBe(!repeat);
   });
 });

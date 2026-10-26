@@ -8,7 +8,7 @@ import { checkRateLimit, createMessageRecord } from '@/lib/actions/messages';
 import { createMessageClickCodes } from '@/lib/messageClickCodes';
 import { serverLog } from '@/lib/serverLogger';
 import { getPermanentUnsubscribeReason } from '@/lib/errorParsing';
-import { normalizePhoneForTelnyx } from '@/lib/phoneUtils';
+import { normalizePhoneNumber } from '@/lib/phoneUtils';
 import { getCardForFromNumber } from '@/lib/mediaCard';
 
 const OUTBOUND_SENDS_DISABLED = false;
@@ -318,7 +318,7 @@ export async function sendMessage({
     }
 
     // Normalize phone numbers to E.164 format for Telnyx
-    normalizedTo = normalizePhoneForTelnyx(to);
+    normalizedTo = normalizePhoneNumber(to);
     if (!normalizedTo) {
       return {
         success: false,
@@ -327,7 +327,7 @@ export async function sendMessage({
     }
 
     // Use provided from number, or user's default, or fallback
-    fromNumber = normalizePhoneForTelnyx(from || settings.phoneNumber || process.env.TELNYX_PHONE_NUMBER || process.env.TELNYX_FROM_NUMBER);
+    fromNumber = normalizePhoneNumber(from || settings.phoneNumber || process.env.TELNYX_PHONE_NUMBER || process.env.TELNYX_FROM_NUMBER);
     
     if (!fromNumber) {
       return {
@@ -555,8 +555,8 @@ export async function sendMessage({
       if (finalUserId) {
         errorSettings = await getUserTelnyxSettings(finalUserId);
         const rawFromNumber = from || errorSettings.phoneNumber || process.env.TELNYX_PHONE_NUMBER || process.env.TELNYX_FROM_NUMBER;
-        errorFromNumber = rawFromNumber ? normalizePhoneForTelnyx(rawFromNumber) : null;
-        errorNormalizedTo = normalizePhoneForTelnyx(to) || to;
+        errorFromNumber = rawFromNumber ? normalizePhoneNumber(rawFromNumber) : null;
+        errorNormalizedTo = normalizePhoneNumber(to) || to;
       }
     } catch (settingsError) {
       console.error('Error getting settings for error handling:', settingsError);
@@ -615,7 +615,7 @@ export async function sendMessage({
     // Update existing message record to failed status, or create one if it doesn't exist
     if (finalUserId) {
       try {
-        const normalizedToForError = errorNormalizedTo || normalizePhoneForTelnyx(to) || to;
+        const normalizedToForError = errorNormalizedTo || normalizePhoneNumber(to) || to;
         
         // If we have an existing message record (created before sending), update it
         if (messageRecord && messageId) {

@@ -120,7 +120,7 @@ model Contact {
   firstName              String?
   lastName               String?
   email                  String?
-  phone                  String // Required - used for deduplication
+  phone                  String // Canonical international E.164: +country code + national digits
   clickid                String[]                @default([]) // Array of click IDs
   source                 String? // Changed from tag to source
   age                    String?

@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma';
 import crypto from 'crypto';
+import { normalizePhoneNumber } from '@/lib/phoneUtils';
 
 /**
  * Generate a unique hrms (Hermes Revenue Tracking) parameter
@@ -83,36 +84,30 @@ export function appendHrmsToUrl(destination, hrms) {
   }
 }
 
-/**
- * Hash a clicker's phone number for privacy-preserving identification on the
- * destination side. Strips to digits only (drops the leading "+", spaces, dashes)
- * so the hashed value is digits-with-country-code (e.g. "15551234567"), then
- * SHA-256 (lowercase hex). No salt, so the same phone always produces the same
- * hash — allowing external systems (e.g. Meta advanced matching) to match it.
- * @param {string} phone - Phone number (E.164 as stored, e.g. "+15551234567")
- * @returns {string|null} - Lowercase hex SHA-256 digest, or null if no digits
- */
-export function hashPhone(phone) {
-  if (!phone) return null;
-  const digits = phone.replace(/\D/g, ''); // e.g. "+15551234567" -> "15551234567"
-  if (!digits) return null;
-  return crypto.createHash('sha256').update(digits).digest('hex');
+function normalizePhoneDigits(phone) {
+  return normalizePhoneNumber(phone)?.slice(1) || null;
+}
+
+function hashNormalizedPhone(digits) {
+  return digits ? crypto.createHash('sha256').update(digits).digest('hex') : null;
 }
 
 /**
- * Append phone_hash parameter to a destination URL
- * @param {string} destination - Destination URL (may already include hrms)
- * @param {string} phoneHash - Hashed phone number
- * @returns {string} - Destination URL with phone_hash parameter
+ * Hash a clicker's phone number for privacy-preserving identification on the
+ * destination side. Normalizes to international E.164, then removes the "+".
+ * SHA-256 (lowercase hex), with no salt, lets external systems match the phone.
+ * @param {string} phone - International phone, or a national NANP phone
+ * @returns {string|null} - Lowercase hex SHA-256 digest, or null for invalid input
  */
-/** Add the recipient's raw phone alongside the existing, unchanged hash. */
+export function hashPhone(phone) {
+  return hashNormalizedPhone(normalizePhoneDigits(phone));
+}
+
+/** Add the recipient's raw phone alongside its normalized phone hash. */
 export function appendRecipientIdentityToUrl(destination, phone) {
-  if (typeof phone !== 'string' || !phone) return destination;
-  const enriched = appendPhoneHashToUrl(destination, hashPhone(phone));
-  const digits = phone.replace(/\D/g, '');
-  // Match the receiver's supported NANP scope. Never invent a country code or
-  // alter the legacy hash contract for unsupported historical contact values.
-  if (!destination || !/^\+?[\d\s().-]+$/.test(phone.trim()) || !/^1[2-9]\d{2}[2-9]\d{6}$/.test(digits)) return enriched;
+  const digits = normalizePhoneDigits(phone);
+  if (!destination || !digits) return destination;
+  const enriched = appendPhoneHashToUrl(destination, hashNormalizedPhone(digits));
   try {
     const url = new URL(enriched);
     url.searchParams.set('phone', digits);

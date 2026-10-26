@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { getBrowserTimeZone, isValidTimeZone } from '@/lib/timezone';
+import { normalizePhoneNumber } from '@/lib/phoneUtils';
 import PhoneVcfCell from './PhoneVcfCell';
 import styles from './page.module.css';
 
@@ -140,12 +141,19 @@ export default function Settings() {
   };
 
   const handleSaveTelnyx = async () => {
+    const phoneNumber = telnyxSettings.telnyxPhoneNumber.trim()
+      ? normalizePhoneNumber(telnyxSettings.telnyxPhoneNumber)
+      : '';
+    if (phoneNumber === null) {
+      alert('Invalid phone number. Include + and the country code for international numbers; bare 10-digit numbers default to +1.');
+      return;
+    }
     setTelnyxSaving(true);
     try {
       const response = await fetch('/api/user/telnyx-settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(telnyxSettings),
+        body: JSON.stringify({ ...telnyxSettings, telnyxPhoneNumber: phoneNumber }),
       });
       
       if (response.ok) {
@@ -219,13 +227,7 @@ export default function Settings() {
     }
   };
 
-  const formatPhoneNumber = (value) => {
-    if (!value) return '';
-    const digits = value.replace(/\D/g, '');
-    const base = digits.startsWith('1') && digits.length === 11 ? digits.slice(1) : digits;
-    if (base.length !== 10) return value;
-    return `(${base.slice(0, 3)}) ${base.slice(3, 6)}-${base.slice(6)}`;
-  };
+  const formatPhoneNumber = (value) => normalizePhoneNumber(value) || value || '';
 
   const truncateProfileId = (value) => {
     if (!value) return '';
@@ -244,8 +246,9 @@ export default function Settings() {
   };
 
   const handleAddPhoneNumber = async () => {
-    if (!/^\+1\d{10}$/.test(newPhoneNumber.phoneNumber.trim())) {
-      alert('Phone number must be in E.164 format (+1XXXXXXXXXX)');
+    const phoneNumber = normalizePhoneNumber(newPhoneNumber.phoneNumber);
+    if (!phoneNumber) {
+      alert('Invalid phone number. Include + and the country code for international numbers; bare 10-digit numbers default to +1.');
       return;
     }
 
@@ -254,7 +257,7 @@ export default function Settings() {
       const response = await fetch('/api/user/phone-numbers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPhoneNumber),
+        body: JSON.stringify({ ...newPhoneNumber, phoneNumber }),
       });
       if (!response.ok) {
         const errorData = await response.json();
@@ -418,10 +421,10 @@ export default function Settings() {
                     </pre>
 
                     <h3>Request Body</h3>
-                    <p>All fields are optional except <code>phone</code> (must be a valid US phone number):</p>
+                    <p>All fields are optional except <code>phone</code> (an international phone number with a country code, or a bare 10-digit NANP number):</p>
                     <pre className={styles.codeBlock}>
                       <code>{`{
-  "phone": "+15551234567",        // Required - US phone number only (10 digits, or with +1)
+  "phone": "+15551234567",        // Required - international +country code and national digits
   "firstName": "John",            // Optional
   "lastName": "Doe",              // Optional
   "email": "john@example.com",   // Optional
@@ -462,7 +465,7 @@ export default function Settings() {
     'hermes-api-key': '${apiKey || 'your-api-key-here'}'
   },
   body: JSON.stringify({
-    phone: '5551234567',  // 10-digit US number (will be normalized to +15551234567)
+    phone: '5551234567',  // Bare 10-digit NANP number defaults to +15551234567
     firstName: 'John',
     lastName: 'Doe',
     email: 'john@example.com',
@@ -501,20 +504,22 @@ export default function Settings() {
                     <p>Common error messages:</p>
                     <ul>
                       <li><code>"Phone number is required"</code> - Phone field is missing</li>
-                      <li><code>"Invalid phone number format. Only US phone numbers are accepted..."</code> - Non-US number or invalid format</li>
+                      <li><code>"Invalid phone number format..."</code> - Malformed input, unsupported country code, or impossible phone number length</li>
                       <li><code>"Invalid API key"</code> - API key is missing or invalid</li>
                       <li><code>"Authentication required..."</code> - No valid authentication provided</li>
                     </ul>
 
                     <h3>Phone Number Format</h3>
-                    <p><strong>US phone numbers only.</strong> Phone numbers should be in E.164 format:</p>
+                    <p>Phone numbers are stored in canonical international E.164 format: <code>+</code>, country code, then national digits.</p>
                     <ul>
-                      <li>10-digit US number: <code>5551234567</code> → normalized to <code>+15551234567</code></li>
-                      <li>11-digit US number with country code: <code>15551234567</code> → normalized to <code>+15551234567</code></li>
-                      <li>US number with +1: <code>+15551234567</code> → accepted as-is</li>
-                      <li>The API will automatically normalize valid US formats</li>
-                      <li><strong>Non-US country codes are rejected</strong></li>
+                      <li>International numbers require an explicit <code>+</code> country code: <code>+44 20 7946 0958</code> → <code>+442079460958</code></li>
+                      <li>Bare 10-digit numbers default to the North American Numbering Plan (+1): <code>5551234567</code> → <code>+15551234567</code></li>
+                      <li>11 digits beginning with 1 are also accepted: <code>15551234567</code> → <code>+15551234567</code></li>
+                      <li>Spaces, parentheses, dots, and dashes are accepted; extensions, letters, malformed input, and other unprefixed international numbers are rejected.</li>
+                      <li>Validation checks recognized country codes and possible number lengths; it does not verify ownership or whether a number is allocated.</li>
                     </ul>
+                    <h3>Phone Identity in Links</h3>
+                    <p>Raw phone values in generated links and SHA256 phone-hash inputs use the canonical stored number without the leading <code>+</code>. For example, <code>+442079460958</code> becomes <code>442079460958</code>; SHA256 hashes that exact digits-only string.</p>
 
                     <h3>Deduplication</h3>
                     <p>Contacts are automatically deduplicated by phone number <strong>per account</strong>. If a contact with the same phone number already exists:</p>
@@ -854,7 +859,7 @@ if (hrms && conversionOccurred) {
                     style={{ marginTop: 0 }}
                   />
                   <small style={{ display: 'block', marginTop: '0.25rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                    The phone number that will appear as the sender. Must be in E.164 format (+1XXXXXXXXXX).
+                    The sender number. Include + and the country code for international numbers (for example, +442079460958). Bare 10-digit NANP numbers default to +1. Leave blank to clear.
                   </small>
                 </div>
                 <div style={{ marginBottom: '1rem' }}>
@@ -1038,6 +1043,7 @@ if (hrms && conversionOccurred) {
 
                 <div className={styles.addPhoneForm}>
                   <h3>Add Phone Number</h3>
+                  <p className={styles.cardDescription}>Use + and the country code for international numbers (for example, +442079460958). Bare 10-digit NANP numbers default to +1. Formatting spaces, parentheses, dots, and dashes are accepted.</p>
                   <div className={styles.addPhoneGrid}>
                     <input
                       className={styles.phoneInput}

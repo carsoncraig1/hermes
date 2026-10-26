@@ -11,7 +11,7 @@
  *   node scripts/deduplicate-contacts.js              # Actually perform deduplication
  * 
  * What it does:
- *   1. Normalizes all phone numbers to E.164 format (+1XXXXXXXXXX)
+ *   1. Normalizes all phone numbers to international E.164 format
  *   2. Groups contacts by (userId, normalizedPhone)
  *   3. For duplicates, keeps the newest contact and merges data from older ones
  *   4. Merges: tags (union), clickids (union), keeps newest non-null values for other fields
@@ -19,43 +19,10 @@
  */
 
 const { PrismaClient } = require('@prisma/client');
+const { normalizePhoneNumber } = require('../src/lib/phoneUtils.js');
 
 const prisma = new PrismaClient();
 
-// Normalize phone number to E.164 format (+1XXXXXXXXXX for US numbers)
-function normalizePhone(phone) {
-  if (!phone) return null;
-  
-  const cleaned = phone.trim();
-  const digits = cleaned.replace(/\D/g, '');
-  
-  // Already in E.164 format with +1
-  if (cleaned.startsWith('+1') && digits.length === 11) {
-    return `+${digits}`;
-  }
-  
-  // Starts with + but not +1 (non-US) - keep as is but normalize
-  if (cleaned.startsWith('+')) {
-    if (digits.startsWith('1') && digits.length === 11) {
-      return `+${digits}`;
-    }
-    // Non-US number, return normalized
-    return `+${digits}`;
-  }
-  
-  // 11 digits starting with 1 (US number without +)
-  if (digits.length === 11 && digits[0] === '1') {
-    return `+${digits}`;
-  }
-  
-  // 10 digits (US number without country code)
-  if (digits.length === 10) {
-    return `+1${digits}`;
-  }
-  
-  // Can't normalize - return original (will be flagged)
-  return null;
-}
 
 async function findDuplicates() {
   console.log('🔍 Scanning all contacts...\n');
@@ -94,7 +61,7 @@ async function findDuplicates() {
     process.stdout.write(`\r   Processing: ${totalContacts.toLocaleString()} / ${totalCount.toLocaleString()} (${progress}%)`);
     
     for (const contact of batch) {
-      const normalized = normalizePhone(contact.phone);
+      const normalized = normalizePhoneNumber(contact.phone);
       
       if (!normalized) {
         invalidPhones.push({
@@ -338,7 +305,7 @@ async function normalizeAllPhones(dryRun) {
     if (contacts.length === 0) break;
     
     for (const contact of contacts) {
-      const normalized = normalizePhone(contact.phone);
+      const normalized = normalizePhoneNumber(contact.phone);
       if (normalized && normalized !== contact.phone) {
         toNormalize.push({
           id: contact.id,

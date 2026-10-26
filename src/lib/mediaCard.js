@@ -1,5 +1,5 @@
 import prisma from '@/lib/prisma'
-import { normalizePhoneForTelnyx } from '@/lib/phoneUtils'
+import { normalizePhoneNumber } from '@/lib/phoneUtils'
 
 // Public base URL Telnyx fetches media from. Matches the hard-coded webhook host
 // used elsewhere (https://txt.cx/api/message/status); overridable via env.
@@ -24,7 +24,7 @@ export function mediaPublicUrl(id) {
  */
 export async function getCardForFromNumber(userId, fromNumber) {
   if (!userId || !fromNumber) return null
-  const normalized = normalizePhoneForTelnyx(fromNumber)
+  const normalized = normalizePhoneNumber(fromNumber)
   if (!normalized) return null
 
   const row = await prisma.phoneNumber.findFirst({

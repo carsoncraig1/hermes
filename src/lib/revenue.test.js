@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import crypto from 'node:crypto';
+import { createHash } from 'node:crypto';
 vi.mock('@/lib/prisma', () => ({ default: {} }));
 import { hashPhone, appendPhoneHashToUrl, appendRecipientIdentityToUrl } from './revenue';
 
@@ -31,11 +31,11 @@ describe('fallback query contract', () => {
   it.each([null, undefined, '', false, 0])('keeps the URL unchanged with no phone: %s', (phone) => {
     expect(appendRecipientIdentityToUrl('/offer?x=1#frag', phone)).toBe('/offer?x=1#frag');
   });
-  it('preserves unsupported phone hashing without adding raw identity', () => {
-    const result = appendRecipientIdentityToUrl('/offer#frag', '2025550123');
+  it.each(['2025550123', '(202) 555-0123', '12025550123', '+1 (202) 555-0123'])('uses the same canonical identity on relative destinations for %s', (phone) => {
+    const result = appendRecipientIdentityToUrl('/offer#frag', phone);
     const parsed = new URL(result, 'https://example.com');
-    expect(parsed.searchParams.get('phone_hash')).toBe(hashPhone('2025550123'));
-    expect(parsed.searchParams.has('phone')).toBe(false);
+    expect(parsed.searchParams.get('phone_hash')).toBe(fixtureHash);
+    expect(parsed.searchParams.get('phone')).toBe('12025550123');
     expect(parsed.hash).toBe('#frag');
   });
   it('encodes fallback hash values as query data, not URL syntax', () => {
@@ -57,10 +57,10 @@ describe('recipient identity URL', () => {
     expect(parsed.hash).toBe('#part');
     expect(result.startsWith('/offer?')).toBe(true);
   });
-  it.each([null, undefined, '', 'no digits', '2025550123', '+1 012 155 0123', '12025550123ext9', 12025550123])('does not invent raw identity for unsupported input %s', (phone) => {
+  it.each([null, undefined, '', 'no digits', '+1 202 555', '+999 123456789', '12025550123ext9', 12025550123])('omits both identities for unsupported input %s', (phone) => {
     const u = new URL(appendRecipientIdentityToUrl('https://example.com/path#part', phone));
     expect(u.searchParams.has('phone')).toBe(false);
-    if (!phone || phone === 'no digits') expect(u.searchParams.has('phone_hash')).toBe(false);
+    expect(u.searchParams.has('phone_hash')).toBe(false);
   });
   it('is idempotent and replaces duplicate identity keys without dropping other duplicate keys', () => {
     const dest = 'https://example.com/?phone=old&phone=older&phone_hash=old&phone_hash=older&x=1&x=2#frag';
@@ -72,10 +72,27 @@ describe('recipient identity URL', () => {
     expect(u.searchParams.getAll('x')).toEqual(['1', '2']);
     expect(u.hash).toBe('#frag');
   });
-  it('preserves the established digits-only SHA256 contract', () => {
-    expect(hashPhone('+1 (202) 555-0123')).toBe(crypto.createHash('sha256').update('12025550123').digest('hex'));
-    expect(hashPhone('')).toBeNull();
-    expect(hashPhone('no digits')).toBeNull();
+  it.each(['(555) 123-4567', '5551234567', '15551234567', '+1 (555) 123-4567'])('hashes %s as unsalted SHA-256 of 15551234567', (phone) => {
+    expect(hashPhone(phone)).toBe('d6736136ea896c1bfdc553e0e86e702c70d060d805696ca3e4e9e0961353860a');
+  });
+  it.each([null, undefined, '', 'no digits'])('omits hashes when there are no phone digits: %s', (phone) => {
+    expect(hashPhone(phone)).toBeNull();
+  });
+  it.each([
+    ['+44 20 7946 0958', '442079460958'],
+    ['+61 (2) 9374-4000', '61293744000'],
+    ['+91 98765 43210', '919876543210'],
+    ['+65 6123 4567', '6561234567'],
+    ['+39 02 36618 300', '390236618300'],
+  ])('uses the international country code for both identities: %s', (phone, digits) => {
+    const expectedHash = createHash('sha256').update(digits).digest('hex');
+    const result = appendRecipientIdentityToUrl('/offer?hrms=keep#part', phone);
+    const url = new URL(result, 'https://example.com');
+    expect(url.searchParams.get('phone')).toBe(digits);
+    expect(url.searchParams.get('phone_hash')).toBe(expectedHash);
+    expect(hashPhone(phone)).toBe(expectedHash);
+    expect(url.searchParams.get('hrms')).toBe('keep');
+    expect(url.hash).toBe('#part');
   });
   it('adds canonical raw phone alongside the unchanged phone hash', () => {
     const u = new URL(appendRecipientIdentityToUrl('https://example.com/visit?hrms=test&email_hash=unchanged&x=a%2Bb#section', '+1 (202) 555-0123'));

@@ -1,28 +1,9 @@
+import { normalizePhoneNumber } from '@/lib/phoneUtils';
+
 /**
  * Utility functions for grouping messages into conversations
  */
 
-/**
- * Normalize phone number for conversation grouping
- * @param {string} phone - Phone number
- * @returns {string} - Normalized phone number
- */
-export function normalizePhoneForConversation(phone) {
-  if (!phone) return null;
-  // Remove all non-digit characters except +
-  const cleaned = phone.replace(/[^\d+]/g, '');
-  // Ensure it starts with +1 for US numbers
-  if (cleaned.startsWith('+1')) {
-    return cleaned;
-  }
-  if (cleaned.startsWith('1') && cleaned.length === 11) {
-    return `+${cleaned}`;
-  }
-  if (cleaned.length === 10) {
-    return `+1${cleaned}`;
-  }
-  return cleaned;
-}
 
 /**
  * Get conversation key from message
@@ -33,9 +14,9 @@ export function normalizePhoneForConversation(phone) {
  */
 export function getConversationKey(message) {
   if (message.direction === 'outbound') {
-    return normalizePhoneForConversation(message.to);
+    return normalizePhoneNumber(message.to);
   } else {
-    return normalizePhoneForConversation(message.from);
+    return normalizePhoneNumber(message.from);
   }
 }
 
@@ -54,13 +35,13 @@ export function groupMessagesIntoConversations(messages) {
     if (!conversationMap.has(key)) {
       // Determine the contact phone number (opposite of direction)
       const contactPhone = message.direction === 'outbound' 
-        ? normalizePhoneForConversation(message.to)
-        : normalizePhoneForConversation(message.from);
+        ? normalizePhoneNumber(message.to)
+        : normalizePhoneNumber(message.from);
       
       // Get user's phone number (for outbound it's 'from', for inbound it's 'to')
       const userPhone = message.direction === 'outbound'
-        ? normalizePhoneForConversation(message.from)
-        : normalizePhoneForConversation(message.to);
+        ? normalizePhoneNumber(message.from)
+        : normalizePhoneNumber(message.to);
 
       conversationMap.set(key, {
         id: key,

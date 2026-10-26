@@ -1,48 +1,8 @@
 import prisma from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { triggerWorkflowsForContact } from '@/lib/workflow/executor'
+import { normalizePhoneNumber } from '@/lib/phoneUtils'
 
-// Helper function to normalize phone numbers
-// Only accepts US phone numbers and converts to E.164 format (+1XXXXXXXXXX)
-// Rejects any phone numbers with non-US country codes
-function normalizePhoneNumber(phone) {
-  if (!phone) return null
-  
-  // Remove all non-digit characters except leading +
-  const cleaned = phone.trim()
-  
-  // Extract digits only
-  const digits = cleaned.replace(/\D/g, '')
-  
-  // Check if it starts with + (indicating country code)
-  if (cleaned.startsWith('+')) {
-    // If it starts with +1, it's a US number
-    if (digits.startsWith('1') && digits.length === 11) {
-      return `+${digits}`
-    }
-    // If it starts with + but not +1, reject (non-US country code)
-    if (digits.length > 0 && !digits.startsWith('1')) {
-      return null // Reject non-US country codes
-    }
-    // If it's +1 but wrong length, reject
-    if (digits.startsWith('1') && digits.length !== 11) {
-      return null
-    }
-  }
-  
-  // If it has 11 digits and starts with 1, it's a US number
-  if (digits.length === 11 && digits[0] === '1') {
-    return `+${digits}`
-  }
-  
-  // If it has exactly 10 digits, assume US number and add +1
-  if (digits.length === 10) {
-    return `+1${digits}`
-  }
-  
-  // Reject anything else (wrong length, invalid format, etc.)
-  return null
-}
 
 // Helper function to get user ID from session or API key
 async function getUserId(request) {
@@ -121,7 +81,7 @@ export async function POST(request) {
     
     if (!normalizedPhone) {
       return Response.json({
-        error: 'Invalid phone number format. Only US phone numbers are accepted. Please provide a 10-digit US phone number (with or without +1).'
+        error: 'Invalid phone number format. Include + and the country code for international numbers; 10-digit NANP numbers may omit +1.'
       }, { status: 400 })
     }
 
@@ -373,6 +333,11 @@ export async function PUT(request) {
 
     // Normalize phone number
     const normalizedPhone = normalizePhoneNumber(data.phone)
+    if (!normalizedPhone) {
+      return Response.json({
+        error: 'Invalid phone number format. Include + and the country code for international numbers; 10-digit NANP numbers may omit +1.'
+      }, { status: 400 })
+    }
     
     // Check for duplicate phone number (excluding current contact)
     if (normalizedPhone) {

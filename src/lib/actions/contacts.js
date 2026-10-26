@@ -2,6 +2,7 @@
 
 import prisma from '@/lib/prisma'
 import { auth } from '@/lib/auth'
+import { normalizePhoneNumber } from '@/lib/phoneUtils'
 
 async function getUserId() {
   const session = await auth()
@@ -202,6 +203,8 @@ export async function getContactsPaginated(page = 0, pageSize = 20, filters = {}
 export async function addContact(data) {
   try {
     const userId = await getUserId()
+    const phone = normalizePhoneNumber(data.phone)
+    if (!phone) throw new Error('Invalid phone number. Include + and the country code for international numbers.')
     
     // Handle tags - either connect existing ones or create new ones (for this user)
     const tagConnections = await Promise.all(
@@ -231,7 +234,7 @@ export async function addContact(data) {
         firstName: data.firstName || null,
         lastName: data.lastName || null,
         email: data.email || null,
-        phone: data.phone,
+        phone,
         clickid: clickidArray,
         source: data.source || null,
         age: data.age || null,
@@ -270,8 +273,20 @@ export async function addContactsBatch(contactsData, batchSize = 1000) {
     
     // Process in batches
     for (let i = 0; i < contactsData.length; i += batchSize) {
-      const batch = contactsData.slice(i, i + batchSize)
-      const batchStartIndex = i
+      const batch = []
+      const rowIndexes = []
+      contactsData.slice(i, i + batchSize).forEach((contact, index) => {
+        const phone = normalizePhoneNumber(contact.phone)
+        const row = i + index + 2
+        if (!phone) {
+          failedCount++
+          errors.push({ row, contact, error: 'Invalid phone number. Include + and the country code for international numbers.' })
+          return
+        }
+        batch.push({ ...contact, phone })
+        rowIndexes.push(row)
+      })
+      if (batch.length === 0) continue
       
       // Process batch in transaction
       try {
@@ -378,7 +393,7 @@ export async function addContactsBatch(contactsData, batchSize = 1000) {
               }
             } catch (contactError) {
               failedCount++
-              const rowIndex = batchStartIndex + batchIdx + 2 // +2 for header and 0-indexing
+              const rowIndex = rowIndexes[batchIdx]
               errors.push({
                 row: rowIndex,
                 contact: contactData,
@@ -469,7 +484,7 @@ export async function addContactsBatch(contactsData, batchSize = 1000) {
         batch.forEach((contactData, idx) => {
           failedCount++
           errors.push({
-            row: batchStartIndex + idx + 2,
+            row: rowIndexes[idx],
             contact: contactData,
             error: batchError.message || 'Batch processing error'
           })
@@ -491,6 +506,10 @@ export async function addContactsBatch(contactsData, batchSize = 1000) {
 export async function updateContact(data) {
   try {
     const userId = await getUserId()
+    const phone = data.phone === undefined ? undefined : normalizePhoneNumber(data.phone)
+    if (data.phone !== undefined && !phone) {
+      throw new Error('Invalid phone number. Include + and the country code for international numbers.')
+    }
     
     // Verify ownership
     const existing = await prisma.contact.findFirst({
@@ -559,7 +578,7 @@ export async function updateContact(data) {
       firstName: data.firstName !== undefined ? (data.firstName || null) : undefined,
       lastName: data.lastName !== undefined ? (data.lastName || null) : undefined,
       email: data.email !== undefined ? (data.email || null) : undefined,
-      phone: data.phone,
+      phone,
       clickid: clickidArray.length > 0 ? clickidArray : undefined,
       source: data.source !== undefined ? (data.source || null) : undefined,
       age: data.age !== undefined ? (data.age || null) : undefined,

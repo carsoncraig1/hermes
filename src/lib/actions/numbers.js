@@ -2,6 +2,7 @@
 
 import prisma from '@/lib/prisma'
 import { auth } from '@/lib/auth'
+import { normalizePhoneNumber } from '@/lib/phoneUtils'
 
 async function getUserId() {
   const session = await auth()
@@ -38,11 +39,15 @@ export async function getNumbers() {
 export async function addNumber(data) {
   try {
     const userId = await getUserId()
+    const phoneNumber = normalizePhoneNumber(data.phoneNumber)
+    if (!phoneNumber) {
+      throw new Error('Invalid phone number')
+    }
     
     const number = await prisma.number.create({
       data: {
         userId,
-        phoneNumber: data.phoneNumber,
+        phoneNumber,
         status: data.status || 'ACTIVE',
       },
       include: {
@@ -60,6 +65,10 @@ export async function addNumber(data) {
 export async function updateNumber(data) {
   try {
     const userId = await getUserId()
+    const phoneNumber = data.phoneNumber === undefined ? undefined : normalizePhoneNumber(data.phoneNumber)
+    if (data.phoneNumber !== undefined && !phoneNumber) {
+      throw new Error('Invalid phone number')
+    }
     
     // Verify ownership
     const existing = await prisma.number.findFirst({
@@ -72,7 +81,7 @@ export async function updateNumber(data) {
     const number = await prisma.number.update({
       where: { id: data.id },
       data: {
-        phoneNumber: data.phoneNumber,
+        phoneNumber,
         status: data.status,
       },
       include: {
